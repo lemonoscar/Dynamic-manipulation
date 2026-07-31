@@ -244,6 +244,7 @@ class ProceduralWorkcellCfg(SpawnerCfg):
     """Spawner configuration for the static station shell."""
 
     func: Callable = MISSING
+    include_local_sort_trays: bool = True
 
 
 def _make_materials(
@@ -488,8 +489,12 @@ def _spawn_sort_tray(
     color: tuple[float, float, float],
 ) -> None:
     material = _static_visual_material(f"{root}/Looks/tray", color)
-    center_x, center_y, _ = center_xyz
-    floor_top = 0.345
+    center_x, center_y, center_z = center_xyz
+    # Receptacle centers are defined 55 mm above the tray floor.  Computing
+    # the floor from the manifest-driven center preserves the V1 value
+    # (0.40 -> 0.345 m) while allowing the remote mobile workcell to use a
+    # higher, well-conditioned X5 release surface.
+    floor_top = center_z - 0.055
     floor_thickness = 0.020
     outer_x = 0.22
     outer_y = 0.27
@@ -666,19 +671,22 @@ def spawn_conveyor_workcell(
         collision=False,
     )
 
-    # Two semantically distinct sorting trays on the robot side.
-    sort_zones = {
-        zone.zone_id: zone
-        for zone in RECEPTACLE_ASSETS
-        if zone.zone_id.startswith("sort_bin_")
-    }
-    for zone_id in ("sort_bin_blue", "sort_bin_yellow"):
-        zone = sort_zones[zone_id]
-        _spawn_sort_tray(
-            f"{prim_path}/receptacles/{zone_id}",
-            center_xyz=zone.center_xyz_m,
-            color=zone.color_rgb,
-        )
+    # Two semantically distinct sorting trays on the robot side. Scene variants
+    # may omit them to leave a clear mobile-delivery corridor; V1 keeps them by
+    # default.
+    if cfg.include_local_sort_trays:
+        sort_zones = {
+            zone.zone_id: zone
+            for zone in RECEPTACLE_ASSETS
+            if zone.zone_id.startswith("sort_bin_")
+        }
+        for zone_id in ("sort_bin_blue", "sort_bin_yellow"):
+            zone = sort_zones[zone_id]
+            _spawn_sort_tray(
+                f"{prim_path}/receptacles/{zone_id}",
+                center_xyz=zone.center_xyz_m,
+                color=zone.color_rgb,
+            )
 
     # Downstream catch tray is post-exit and therefore cannot turn a missed
     # target into a successful placement.

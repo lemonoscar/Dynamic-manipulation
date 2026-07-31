@@ -82,7 +82,10 @@ class _EpisodeContext:
     settled_linear_speed_mps: float
     settled_angular_speed_radps: float
     placement_dwell_s: float
+    physics_hz: int
+    camera_hz: int
     camera_resolutions: Mapping[str, tuple[int, int]]
+    camera_roles: Mapping[str, str]
     chunk_sizes: Mapping[str, int]
 
 
@@ -325,6 +328,14 @@ def _validate_episode(
         context,
         result,
     )
+    _validate_camera_index(
+        episode_dir,
+        steps,
+        step_by_id,
+        capture_count,
+        context,
+        result,
+    )
     states_by_step = _validate_objects(
         episode_dir / "objects.jsonl",
         objects,
@@ -342,6 +353,7 @@ def _validate_episode(
     _validate_events(
         episode_dir / "events.jsonl",
         events,
+        step_by_id,
         summary,
         context,
         result,
@@ -503,8 +515,13 @@ def _parse_manifest(
     ):
         return None
 
+    physics_hz = config.get("physics_hz")
     control_hz = config.get("control_hz")
+    camera_hz = config.get("camera_hz")
     model_hz = config.get("model_hz")
+    if physics_hz != 400 or camera_hz != 25:
+        result.fail(path, "V1 camera cadence requires physics_hz=400 and camera_hz=25")
+        return None
     horizons = config.get("future_horizons_steps")
     if control_hz != 50 or model_hz != 25:
         result.fail(path, "V1 dataset cadence requires control_hz=50 and model_hz=25")
@@ -538,6 +555,7 @@ def _parse_manifest(
         return None
 
     camera_resolutions: dict[str, tuple[int, int]] = {}
+    camera_roles: dict[str, str] = {}
     metadata = episode.get("metadata")
     cameras = metadata.get("cameras") if isinstance(metadata, Mapping) else None
     if cameras is not None:
@@ -550,16 +568,26 @@ def _parse_manifest(
                     if isinstance(specification, Mapping)
                     else None
                 )
+                role = (
+                    specification.get("role")
+                    if isinstance(specification, Mapping)
+                    else None
+                )
                 if (
                     not isinstance(camera_id, str)
                     or not camera_id
                     or not _is_sequence(resolution)
                     or len(resolution) != 2
                     or any(not _is_int(value) or value <= 0 for value in resolution)
+                    or role not in {"policy_observation", "observer_only"}
                 ):
-                    result.fail(path, "camera contracts require positive resolution")
+                    result.fail(
+                        path,
+                        "camera contracts require positive resolution and a valid role",
+                    )
                     continue
                 camera_resolutions[camera_id] = (resolution[0], resolution[1])
+                camera_roles[camera_id] = role
 
     chunk_sizes = {
         "m0": config.get("m0_chunk_size"),
@@ -585,7 +613,10 @@ def _parse_manifest(
         settled_linear_speed_mps=thresholds[0],
         settled_angular_speed_radps=thresholds[1],
         placement_dwell_s=thresholds[2],
+        physics_hz=physics_hz,
+        camera_hz=camera_hz,
         camera_resolutions=camera_resolutions,
+        camera_roles=camera_roles,
         chunk_sizes=chunk_sizes,
     )
 
@@ -734,6 +765,17 @@ def _validate_steps(
         previous_step = sim_step
         if not _is_number(sim_time) or sim_time < 0:
             result.fail(path, "sim_time_s must be finite and non-negative", line)
+        elif not math.isclose(
+            float(sim_time),
+            sim_step / context.physics_hz,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
+            result.fail(
+                path,
+                "sim_time_s must match the canonical physics clock",
+                line,
+            )
         elif previous_time is not None and sim_time <= previous_time:
             result.fail(path, "sim_time_s must increase strictly", line)
         else:
@@ -784,10 +826,14 @@ def _validate_steps(
                 if isinstance(frame, Mapping)
                 and isinstance(frame.get("camera_id"), str)
             ]
-            if set(frame_ids) != set(context.camera_resolutions):
+            if (
+                len(frames) != len(context.camera_resolutions)
+                or len(frame_ids) != len(frames)
+                or set(frame_ids) != set(context.camera_resolutions)
+            ):
                 result.fail(
                     path,
-                    "camera frame IDs do not match the manifest camera contract",
+                    "camera frame IDs must occur exactly once per manifest camera",
                     line,
                 )
         for frame in frames:
@@ -885,6 +931,222 @@ def _validate_camera_frame(
             f"{context.camera_resolutions[camera_id]}",
         )
     result.camera_frame_count += 1
+
+
+def _validate_camera_index(
+    episode_dir: Path,
+    steps: Sequence[Mapping[str, Any]],
+    step_by_id: Mapping[int, Mapping[str, Any]],
+    capture_count: int,
+    context: _EpisodeContext,
+    result: ValidationResult,
+) -> None:
+    """Validate the camera index as an exact, clocked mirror of step refs."""
+
+    path = episode_dir / "camera_frames.jsonl"
+    if not path.is_file():
+        if capture_count:
+            result.fail(path, "camera captures require a camera_frames.jsonl index")
+        return
+    rows = _read_jsonl(path, result)
+    if rows is None:
+        return
+    if not context.camera_resolutions:
+        if rows:
+            result.fail(
+                path,
+                "camera index is present without a manifest camera contract",
+            )
+        return
+
+    captured_steps = {
+        sim_step
+        for sim_step, step in step_by_id.items()
+        if _is_sequence(step.get("camera_frames"))
+        and bool(step["camera_frames"])
+    }
+    indexed_steps: set[int] = set()
+    indexed_ticks: list[int] = []
+    previous_step: int | None = None
+    previous_time: float | None = None
+    stride = context.physics_hz // context.camera_hz
+    period_s = 1.0 / context.camera_hz
+
+    for line, row in enumerate(rows, start=1):
+        frame_index = row.get("frame_index")
+        sim_step = row.get("sim_step")
+        capture_time = row.get("capture_time_s")
+        if not _is_int(frame_index) or frame_index != line - 1:
+            result.fail(
+                path,
+                "camera index frame_index must be contiguous from zero",
+                line,
+            )
+        if (
+            not _is_int(sim_step)
+            or sim_step < 0
+            or not _is_number(capture_time)
+            or capture_time < 0
+        ):
+            result.fail(
+                path,
+                "camera index sim_step/time must be finite and non-negative",
+                line,
+            )
+            continue
+        resolved_time = float(capture_time)
+        if sim_step in indexed_steps:
+            result.fail(path, "camera index references a step more than once", line)
+        indexed_steps.add(sim_step)
+        if not math.isclose(
+            resolved_time,
+            sim_step / context.physics_hz,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
+            result.fail(
+                path,
+                "camera index capture_time_s must match the physics clock",
+                line,
+            )
+        if previous_step is not None:
+            if sim_step - previous_step != stride:
+                result.fail(
+                    path,
+                    f"camera index cadence must be exactly {stride} physics steps",
+                    line,
+                )
+            if not math.isclose(
+                resolved_time - previous_time,
+                period_s,
+                rel_tol=0.0,
+                abs_tol=1.0e-6,
+            ):
+                result.fail(
+                    path,
+                    f"camera index cadence must be exactly {period_s:.2f}s",
+                    line,
+                )
+        previous_step = sim_step
+        previous_time = resolved_time
+
+        step = step_by_id.get(sim_step)
+        if step is None:
+            result.fail(path, "camera index row has no matching step", line)
+            continue
+        refs = step.get("camera_frames")
+        if not _is_sequence(refs) or not refs:
+            result.fail(
+                path,
+                "camera index row references a step without a capture",
+                line,
+            )
+            continue
+        if not _same_number(capture_time, step.get("sim_time_s")):
+            result.fail(
+                path,
+                "camera index capture_time_s does not match step sim_time_s",
+                line,
+            )
+        model_tick = step.get("model_tick")
+        if _is_int(model_tick):
+            indexed_ticks.append(model_tick)
+
+        refs_by_id = {
+            ref.get("camera_id"): ref
+            for ref in refs
+            if isinstance(ref, Mapping)
+            and isinstance(ref.get("camera_id"), str)
+        }
+        if len(refs) != len(context.camera_resolutions) or set(
+            refs_by_id
+        ) != set(context.camera_resolutions):
+            result.fail(
+                path,
+                "indexed step must contain exactly one reference per camera",
+                line,
+            )
+
+        entries = row.get("frames")
+        if not isinstance(entries, Mapping) or set(entries) != set(
+            context.camera_resolutions
+        ):
+            result.fail(
+                path,
+                "camera index frames must exactly match the manifest contract",
+                line,
+            )
+            continue
+        for camera_id in context.camera_resolutions:
+            entry = entries[camera_id]
+            ref = refs_by_id.get(camera_id)
+            if not isinstance(entry, Mapping) or not isinstance(ref, Mapping):
+                result.fail(path, f"camera index entry {camera_id!r} is invalid", line)
+                continue
+            if (
+                ref.get("frame_index") != frame_index
+                or not _same_number(ref.get("capture_time_s"), capture_time)
+                or entry.get("relative_path") != ref.get("relative_path")
+            ):
+                result.fail(
+                    path,
+                    f"camera index entry {camera_id!r} disagrees with step reference",
+                    line,
+                )
+            resolution = entry.get("resolution")
+            if (
+                not _is_sequence(resolution)
+                or len(resolution) != 2
+                or any(not _is_int(value) or value <= 0 for value in resolution)
+                or tuple(resolution) != context.camera_resolutions[camera_id]
+            ):
+                result.fail(
+                    path,
+                    f"camera index entry {camera_id!r} resolution "
+                    "disagrees with manifest",
+                    line,
+                )
+            if entry.get("role") != context.camera_roles[camera_id]:
+                result.fail(
+                    path,
+                    f"camera index entry {camera_id!r} role disagrees with manifest",
+                    line,
+                )
+
+    if len(rows) != capture_count or indexed_steps != captured_steps:
+        missing = sorted(captured_steps - indexed_steps)
+        extra = sorted(indexed_steps - captured_steps)
+        result.fail(
+            path,
+            "camera index and captured steps must have a one-to-one mapping; "
+            f"missing={missing}, extra={extra}",
+        )
+
+    if rows:
+        if len(indexed_ticks) != len(set(indexed_ticks)):
+            result.fail(path, "each model tick may have at most one camera capture")
+        tick_counts: dict[int, int] = {}
+        for step in steps:
+            model_tick = step.get("model_tick")
+            if _is_int(model_tick):
+                tick_counts[model_tick] = tick_counts.get(model_tick, 0) + 1
+        repeat_count = context.control_hz // context.model_hz
+        complete_ticks = {
+            tick for tick, count in tick_counts.items() if count == repeat_count
+        }
+        captured_ticks = set(indexed_ticks)
+        missing_ticks = sorted(complete_ticks - captured_ticks)
+        if missing_ticks:
+            result.fail(
+                path,
+                f"complete model ticks lack camera captures: {missing_ticks}",
+            )
+        extra_ticks = captured_ticks - complete_ticks
+        final_tick = max(tick_counts, default=-1)
+        if extra_ticks and not (
+            extra_ticks == {final_tick} and tick_counts.get(final_tick) == 1
+        ):
+            result.fail(path, "camera capture occurs on a non-final partial model tick")
 
 
 def _validate_objects(
@@ -1260,6 +1522,7 @@ def _validate_chunks(
 def _validate_events(
     path: Path,
     rows: Sequence[Mapping[str, Any]],
+    step_by_id: Mapping[int, Mapping[str, Any]],
     summary: Mapping[str, Any],
     context: _EpisodeContext,
     result: ValidationResult,
@@ -1284,6 +1547,19 @@ def _validate_events(
         sim_step = event.get("sim_step")
         if sim_step is not None and (not _is_int(sim_step) or sim_step < 0):
             result.fail(path, "event sim_step must be non-negative or null", line)
+        elif sim_step is not None and _is_number(time_s):
+            matching_step = step_by_id.get(sim_step)
+            expected_time = (
+                matching_step.get("sim_time_s")
+                if matching_step is not None
+                else sim_step / context.physics_hz
+            )
+            if not _same_number(time_s, expected_time):
+                result.fail(
+                    path,
+                    "event time_s does not match its sim_step clock",
+                    line,
+                )
         if not isinstance(event.get("payload", {}), Mapping):
             result.fail(path, "event payload must be an object", line)
         if kind == "episode_end":

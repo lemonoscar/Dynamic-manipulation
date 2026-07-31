@@ -123,25 +123,30 @@ def make_episode(
     objects = []
     sample_count = 30
     model_tick_count = sample_count // 2
-    for sim_step in range(sample_count):
-        tick = sim_step // 2
+    physics_steps_per_control = config.physics_hz // config.control_hz
+    for control_index in range(sample_count):
+        tick = control_index // 2
+        sim_step = (control_index + 1) * physics_steps_per_control
+        sim_time = (control_index + 1) / config.control_hz
         frames = (
             [
                 {
                     "camera_id": camera_id,
-                    "frame_index": 0,
-                    "capture_time_s": 0.0,
-                    "relative_path": f"cameras/{camera_id}/000000.png",
+                    "frame_index": tick,
+                    "capture_time_s": sim_time,
+                    "relative_path": (
+                        f"cameras/{camera_id}/{tick:06d}.png"
+                    ),
                 }
                 for camera_id in ("head_rgb", "wrist_rgb")
             ]
-            if sim_step == 0
+            if control_index % 2 == 1
             else []
         )
         steps.append(
             {
                 "sim_step": sim_step,
-                "sim_time_s": sim_step / config.control_hz,
+                "sim_time_s": sim_time,
                 "model_tick": tick,
                 "env_id": 0,
                 "robot_root_world": pose(),
@@ -157,10 +162,10 @@ def make_episode(
                 "phase": "place",
                 "selected_object_id": "target",
                 "left_contact_object_ids": (
-                    ["target"] if success and sim_step < 2 else []
+                    ["target"] if success and control_index < 2 else []
                 ),
                 "right_contact_object_ids": (
-                    ["target"] if success and sim_step < 2 else []
+                    ["target"] if success and control_index < 2 else []
                 ),
                 "action_chunk_id": None,
                 "action_index_in_chunk": None,
@@ -175,13 +180,13 @@ def make_episode(
             "pose_world": pose(0.5),
             "twist_world": twist(),
             "active": True,
-            "in_gripper": success and sim_step < 2,
-            "crossed_exit": not success and sim_step >= 2,
+            "in_gripper": success and control_index < 2,
+            "crossed_exit": not success and control_index >= 2,
         }
         objects.append(
             {
                 "sim_step": sim_step,
-                "sim_time_s": sim_step / config.control_hz,
+                "sim_time_s": sim_time,
                 "model_tick": tick,
                 "env_id": 0,
                 "state": state,
@@ -210,14 +215,14 @@ def make_episode(
                 ],
             }
         )
-    completion_time = 0.54 if success else None
+    completion_time = 0.56 if success else None
     if success:
         events = [
             {"kind": "episode_start", "time_s": 0.0, "payload": {}},
             {
                 "kind": "object_released",
                 "time_s": 0.04,
-                "sim_step": 2,
+                "sim_step": round(0.04 * config.physics_hz),
                 "object_instance_id": "target",
                 "goal_zone_id": "zone-a",
                 "payload": {},
@@ -225,15 +230,15 @@ def make_episode(
             {
                 "kind": "object_placed",
                 "time_s": completion_time,
-                "sim_step": 27,
+                "sim_step": round(completion_time * config.physics_hz),
                 "object_instance_id": "target",
                 "goal_zone_id": "zone-a",
                 "payload": {},
             },
             {
                 "kind": "episode_end",
-                "time_s": (sample_count - 1) / config.control_hz,
-                "sim_step": sample_count - 1,
+                "time_s": sample_count / config.control_hz,
+                "sim_step": sample_count * physics_steps_per_control,
                 "payload": {"success": True, "failure_reason": "none"},
             },
         ]
@@ -247,15 +252,15 @@ def make_episode(
             {"kind": "episode_start", "time_s": 0.0, "payload": {}},
             {
                 "kind": "target_missed",
-                "time_s": (sample_count - 1) / config.control_hz,
-                "sim_step": sample_count - 1,
+                "time_s": sample_count / config.control_hz,
+                "sim_step": sample_count * physics_steps_per_control,
                 "object_instance_id": "target",
                 "payload": {},
             },
             {
                 "kind": "episode_end",
-                "time_s": (sample_count - 1) / config.control_hz,
-                "sim_step": sample_count - 1,
+                "time_s": sample_count / config.control_hz,
+                "sim_step": sample_count * physics_steps_per_control,
                 "payload": {
                     "success": False,
                     "failure_reason": failure_reason,
@@ -270,7 +275,7 @@ def make_episode(
     metrics = {
         "sample_count": len(steps),
         "object_record_count": len(objects),
-        "duration_s": (sample_count - 1) / config.control_hz,
+        "duration_s": sample_count / config.control_hz,
         "completion_time_s": completion_time,
         "scored_object_count": 1,
         "completed_object_count": int(success),
@@ -304,24 +309,34 @@ def make_episode(
         path / "camera_frames.jsonl",
         [
             {
-                "frame_index": 0,
-                "sim_step": 0,
-                "capture_time_s": 0.0,
+                "frame_index": tick,
+                "sim_step": (tick + 1) * (
+                    config.physics_hz // config.model_hz
+                ),
+                "capture_time_s": (tick + 1) / config.model_hz,
                 "frames": {
                     camera_id: {
-                        "relative_path": f"cameras/{camera_id}/000000.png",
+                        "relative_path": (
+                            f"cameras/{camera_id}/{tick:06d}.png"
+                        ),
                         "quality": {
                             "dark_fraction": 0.0,
                             "laplacian_variance": 100.0,
                         },
+                        "resolution": [2, 2],
+                        "role": "policy_observation",
                     }
                     for camera_id in ("head_rgb", "wrist_rgb")
                 },
             }
+            for tick in range(model_tick_count)
         ],
     )
-    for camera_id in ("head_rgb", "wrist_rgb"):
-        dump_png(path / "cameras" / camera_id / "000000.png")
+    for tick in range(model_tick_count):
+        for camera_id in ("head_rgb", "wrist_rgb"):
+            dump_png(
+                path / "cameras" / camera_id / f"{tick:06d}.png"
+            )
     return path
 
 
@@ -496,7 +511,7 @@ def test_audit_cli_reuses_local_camera_quality_without_touching_raw_data(
     report = json.loads((episode / "quality_report.json").read_text())
     assert report["data_status"] == "clean"
     assert report["frame_stats_source"] == "camera_frames.jsonl"
-    assert report["metrics"]["frame_stats_count"] == 2
+    assert report["metrics"]["frame_stats_count"] == 30
     assert report["metrics"]["black_frame_count"] == 0
     assert report["metrics"]["blurred_frame_count"] == 0
     assert canonical_digests(episode) == before
@@ -558,6 +573,13 @@ def test_export_gate_requires_both_recorded_policy_cameras(
             if frame["camera_id"] != camera_id
         ]
     dump_jsonl(episode / "steps.jsonl", steps)
+    camera_index = [
+        json.loads(line)
+        for line in (episode / "camera_frames.jsonl").read_text().splitlines()
+    ]
+    for capture in camera_index:
+        del capture["frames"][camera_id]
+    dump_jsonl(episode / "camera_frames.jsonl", camera_index)
     clean = validate_v1_episode(episode)
     assert clean.ok, clean.errors
 
@@ -647,29 +669,44 @@ def _prepare_consumer_smoke_episode(episode: Path) -> None:
             0.0,
             1.0,
         ]
-    steps[0]["camera_frames"].append(
-        {
-            "camera_id": "overview_rgb",
-            "frame_index": 0,
-            "capture_time_s": 0.0,
-            "relative_path": "cameras/overview_rgb/000000.png",
-        }
-    )
+    for step in steps:
+        if step["camera_frames"]:
+            tick = step["model_tick"]
+            step["camera_frames"].append(
+                {
+                    "camera_id": "overview_rgb",
+                    "frame_index": tick,
+                    "capture_time_s": step["sim_time_s"],
+                    "relative_path": (
+                        f"cameras/overview_rgb/{tick:06d}.png"
+                    ),
+                }
+            )
     dump_jsonl(episode / "steps.jsonl", steps)
 
     camera_index = [
         json.loads(line)
         for line in (episode / "camera_frames.jsonl").read_text().splitlines()
     ]
-    camera_index[0]["frames"]["overview_rgb"] = {
-        "relative_path": "cameras/overview_rgb/000000.png",
-        "quality": {
-            "dark_fraction": 0.0,
-            "laplacian_variance": 100.0,
-        },
-    }
+    for capture in camera_index:
+        tick = capture["frame_index"]
+        capture["frames"]["overview_rgb"] = {
+            "relative_path": f"cameras/overview_rgb/{tick:06d}.png",
+            "quality": {
+                "dark_fraction": 0.0,
+                "laplacian_variance": 100.0,
+            },
+            "resolution": [2, 2],
+            "role": "observer_only",
+        }
     dump_jsonl(episode / "camera_frames.jsonl", camera_index)
-    dump_png(episode / "cameras" / "overview_rgb" / "000000.png")
+    for capture in camera_index:
+        dump_png(
+            episode
+            / "cameras"
+            / "overview_rgb"
+            / f"{capture['frame_index']:06d}.png"
+        )
 
 
 def test_export_bundle_is_consumable_by_m0_and_dynamicvla_loaders(

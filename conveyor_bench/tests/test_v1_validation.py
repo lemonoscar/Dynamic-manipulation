@@ -181,15 +181,18 @@ def _make_dataset(
     object_rows = []
     for index in range(sample_count):
         sim_step = (index + 1) * 8
-        sim_time = index / 50.0
+        sim_time = (index + 1) / 50.0
         camera_frames = []
-        if with_camera and index == 1:
+        if with_camera and index % 2 == 1:
+            frame_index = index // 2
             camera_frames = [
                 {
                     "camera_id": "head_rgb",
-                    "frame_index": 0,
+                    "frame_index": frame_index,
                     "capture_time_s": sim_time,
-                    "relative_path": "cameras/head_rgb/000000.png",
+                    "relative_path": (
+                        f"cameras/head_rgb/{frame_index:06d}.png"
+                    ),
                 }
             ]
         steps.append(
@@ -262,14 +265,14 @@ def _make_dataset(
             {
                 "kind": "object_released",
                 "time_s": 0.04,
-                "sim_step": 24,
+                "sim_step": 16,
                 "object_instance_id": "target",
                 "goal_zone_id": "zone-a",
                 "payload": {},
             },
             {
                 "kind": "object_placed",
-                "time_s": 0.54,
+                "time_s": 0.56,
                 "sim_step": 224,
                 "object_instance_id": "target",
                 "goal_zone_id": "zone-a",
@@ -277,7 +280,7 @@ def _make_dataset(
             },
             {
                 "kind": "episode_end",
-                "time_s": 0.58,
+                "time_s": 0.60,
                 "sim_step": 240,
                 "payload": {"success": True, "failure_reason": "none"},
             },
@@ -288,12 +291,12 @@ def _make_dataset(
             "ever_held": True,
             "released": True,
             "release_time_s": 0.04,
-            "dwell_start_s": 0.04,
-            "completion_time_s": 0.54,
+            "dwell_start_s": 0.06,
+            "completion_time_s": 0.56,
             "crossed_exit": False,
             "last_zone_ids": ["zone-a"],
             "last_settled": True,
-            "last_seen_time_s": 0.58,
+            "last_seen_time_s": 0.60,
         }
         completed = 1
     else:
@@ -304,14 +307,14 @@ def _make_dataset(
             {
                 "kind": "target_missed",
                 "time_s": 0.06,
-                "sim_step": 32,
+                "sim_step": 24,
                 "object_instance_id": "target",
                 "payload": {},
             },
             {
                 "kind": "episode_end",
                 "time_s": 0.06,
-                "sim_step": 32,
+                "sim_step": 24,
                 "payload": {
                     "success": False,
                     "failure_reason": failure_reason,
@@ -335,8 +338,8 @@ def _make_dataset(
     metrics = {
         "sample_count": sample_count,
         "object_record_count": len(object_rows),
-        "duration_s": (sample_count - 1) / 50.0,
-        "completion_time_s": 0.54 if success else None,
+        "duration_s": sample_count / 50.0,
+        "completion_time_s": 0.56 if success else None,
         "scored_object_count": 1,
         "completed_object_count": completed,
         "correct_sort_rate": float(completed),
@@ -364,7 +367,7 @@ def _make_dataset(
         "success": success,
         "failure_reason": reason,
         "metrics": metrics,
-        "camera_frames": 1 if with_camera else 0,
+        "camera_frames": sample_count // 2 if with_camera else 0,
         "wall_time_s": 1.0,
     }
     run_summary = {
@@ -386,6 +389,7 @@ def _make_dataset(
         "objects": episode_dir / "objects.jsonl",
         "events": episode_dir / "events.jsonl",
         "chunks": episode_dir / "action_chunks.jsonl",
+        "camera_index": episode_dir / "camera_frames.jsonl",
         "camera": episode_dir / "cameras" / "head_rgb" / "000000.png",
     }
     _write_json(paths["manifest"], manifest)
@@ -396,7 +400,38 @@ def _make_dataset(
     _write_jsonl(paths["chunks"], [])
     _write_json(paths["run_summary"], run_summary)
     if with_camera:
-        _write_png(paths["camera"], 2, 3)
+        captures = [
+            step for step in steps if step["camera_frames"]
+        ]
+        _write_jsonl(
+            paths["camera_index"],
+            [
+                {
+                    "frame_index": frame_index,
+                    "sim_step": step["sim_step"],
+                    "capture_time_s": step["sim_time_s"],
+                    "frames": {
+                        "head_rgb": {
+                            "relative_path": step["camera_frames"][0][
+                                "relative_path"
+                            ],
+                            "resolution": [2, 3],
+                            "role": "policy_observation",
+                        }
+                    },
+                }
+                for frame_index, step in enumerate(captures)
+            ],
+        )
+        for frame_index in range(len(captures)):
+            _write_png(
+                episode_dir
+                / "cameras"
+                / "head_rgb"
+                / f"{frame_index:06d}.png",
+                2,
+                3,
+            )
     return paths
 
 
@@ -443,6 +478,21 @@ def test_accepts_valid_success_from_summary_and_output_root(tmp_path) -> None:
     assert root_result.object_record_count == 60
     assert completed.returncode == 0, completed.stderr
     assert "1 run(s), 1 episode(s), 30 step(s)" in completed.stdout
+
+
+def test_rejects_event_time_that_disagrees_with_sim_step(tmp_path) -> None:
+    paths = _make_dataset(tmp_path, success=True)
+    events = _read_jsonl(paths["events"])
+    events[1]["time_s"] += 0.01
+    _write_jsonl(paths["events"], events)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any(
+        "event time_s does not match its sim_step clock" in error
+        for error in result.errors
+    )
 
 
 def test_rejects_cross_split_asset_even_when_active_metadata_matches(
@@ -686,7 +736,7 @@ def test_validates_camera_png_path_header_and_dimensions(
     paths = _make_dataset(tmp_path, success=False, with_camera=True)
     clean = validate_v1_dataset(tmp_path)
     assert clean.ok, clean.errors
-    assert clean.camera_frame_count == 1
+    assert clean.camera_frame_count == 2
 
     if damage == "missing":
         paths["camera"].unlink()
@@ -703,6 +753,77 @@ def test_validates_camera_png_path_header_and_dimensions(
 
     assert not result.ok
     assert any(message in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    (
+        ("index_time", "capture_time_s does not match step"),
+        ("reference_time", "disagrees with step reference"),
+        ("missing_row", "one-to-one mapping"),
+        ("index_without_capture", "step without a capture"),
+        ("frame_index", "disagrees with step reference"),
+        ("path", "disagrees with step reference"),
+        ("resolution", "resolution disagrees with manifest"),
+        ("role", "role disagrees with manifest"),
+    ),
+)
+def test_camera_index_must_exactly_mirror_steps_and_manifest(
+    tmp_path,
+    damage: str,
+    message: str,
+) -> None:
+    paths = _make_dataset(tmp_path, success=False, with_camera=True)
+    index = _read_jsonl(paths["camera_index"])
+    steps = _read_jsonl(paths["steps"])
+    if damage == "index_time":
+        for row in index:
+            row["capture_time_s"] += 0.001
+    elif damage == "reference_time":
+        steps[1]["camera_frames"][0]["capture_time_s"] += 0.001
+    elif damage == "missing_row":
+        index.pop()
+    elif damage == "index_without_capture":
+        steps[1]["camera_frames"] = []
+    elif damage == "frame_index":
+        index[0]["frame_index"] = 3
+    elif damage == "path":
+        index[0]["frames"]["head_rgb"]["relative_path"] = (
+            "cameras/head_rgb/other.png"
+        )
+    elif damage == "resolution":
+        index[0]["frames"]["head_rgb"]["resolution"] = [3, 2]
+    else:
+        index[0]["frames"]["head_rgb"]["role"] = "observer_only"
+    _write_jsonl(paths["camera_index"], index)
+    _write_jsonl(paths["steps"], steps)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any(message in error for error in result.errors), result.errors
+
+
+def test_camera_index_rejects_missing_25_hz_tick(tmp_path) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_camera=True)
+    index = _read_jsonl(paths["camera_index"])
+    index[1]["sim_step"] = index[2]["sim_step"]
+    index[1]["capture_time_s"] = index[2]["capture_time_s"]
+    _write_jsonl(paths["camera_index"], index)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any("exactly 16 physics steps" in error for error in result.errors)
+
+
+def test_camera_index_is_optional_when_steps_have_no_captures(tmp_path) -> None:
+    paths = _make_dataset(tmp_path, success=False, with_camera=False)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert result.ok, result.errors
+    assert not paths["camera_index"].exists()
 
 
 @pytest.mark.parametrize("damage", ("no_grasp", "wrong_object", "wrong_zone", "event"))

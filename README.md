@@ -10,6 +10,8 @@ Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓
 - V0：单目标、固定机身的动态传送带抓取基线。
 - V1：多物体动态分拣任务，支持 `fixed_base` 消融模式与
   `whole_body_policy` 移动操作模式。
+- V2：双目标连续分拣和强制持物移动的远端投放任务，提供 2 个场景、7 个允许
+  组合、严格事件/位移校验及 M0/DynamicVLA 上下文投影。
 - 统一的 400 Hz 物理、50 Hz 控制和 25 Hz 相机/模型时钟。
 - Go2-X5 的本地 USD、URDF、mesh 与移动策略资产。
 - episode 原子写入、严格校验、质量审计和相机时变门禁。
@@ -18,24 +20,33 @@ Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓
 > 本仓库包含基准框架和本地资产，不包含训练完成的 VLA 模型。Isaac Sim、
 > Isaac Lab、PyTorch、NumPy 和 OpenCV 等运行环境需要在宿主机上准备。
 
+> 许可证边界：whole-body 运行所需的本地 `policy.pt` 尚无已确认的权重专属
+> 再分发许可证。它可用于当前项目的本地研究与验收，但在公开分发该二进制前，
+> 必须取得授权或替换为许可明确的权重；审计记录见
+> `conveyor_bench/assets/policies/go2_x5_pct_dog_only/PROVENANCE.md`。
+
 ## 目录结构
 
 ```text
 Dynamic/
 ├── conveyor_bench/
 │   ├── assets/                 # 机器人、工位、物体、分拣盒与策略资产
-│   ├── configs/                # V0/V1 冻结配置
+│   ├── configs/                # V0/V1 冻结配置与 V2 suite 快照
 │   ├── scripts/                # 预检、仿真、采集、校验、审计与导出入口
 │   ├── src/conveyor_bench/     # 协议、控制、记录和 Isaac 运行时实现
 │   ├── tests/                  # 无需启动 Isaac Sim 的单元测试
 │   ├── BENCHMARK_V1_SPEC.md    # V1 冻结规范
+│   ├── BENCHMARK_V2_SPEC.md    # V2 场景、任务与评价规范
+│   ├── COLLECTION_V2_GUIDE.md  # V2 采集、校验和导出手册
 │   └── README.md               # 完整使用与采集说明
 ```
 
 详细的任务定义、物理门禁、数据格式和完整采集命令请阅读
 [ConveyorBench 使用说明](conveyor_bench/README.md)。V1 的冻结协议见
 [BENCHMARK_V1_SPEC.md](conveyor_bench/BENCHMARK_V1_SPEC.md)，采集与验收流程见
-[COLLECTION_GUIDE.md](conveyor_bench/COLLECTION_GUIDE.md)。
+[COLLECTION_GUIDE.md](conveyor_bench/COLLECTION_GUIDE.md)。V2 规范与采集入口见
+[BENCHMARK_V2_SPEC.md](conveyor_bench/BENCHMARK_V2_SPEC.md) 和
+[COLLECTION_V2_GUIDE.md](conveyor_bench/COLLECTION_V2_GUIDE.md)。
 
 ## 环境准备
 
@@ -56,6 +67,27 @@ PYTHONDONTWRITEBYTECODE=1 \
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 python -m pytest -p no:cacheprovider
 ```
+
+## V2 最小预检与运行示例
+
+不启动 Isaac 即可先解析双目标连续任务：
+
+```bash
+cd conveyor_bench
+python scripts/run_benchmark_v2.py \
+  --scene transverse_near_sort_v2 \
+  --task-family continuous_multi_target \
+  --robot-mode fixed_base \
+  --seed 0 \
+  --dry-run-task
+```
+
+冻结源码候选 `0a2fd7c…` 已完成 near fixed-base 双目标连续分拣，以及 remote
+whole-body 蓝/黄双向投放；连续持物位移分别为 `0.735903 m` 和 `0.778166 m`。
+本机 RTX 4060 上的 near/remote 三相机正例也已依次通过 strict validator、
+temporal camera gate 与 DynamicVLA/M0 双导出。尚未覆盖的语言条件、
+near whole-body、其余物体/速度/seed 矩阵仍需按 V2 手册小规模验收，不能直接
+外推为大规模采集结论。
 
 ## V1 最小运行示例
 

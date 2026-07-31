@@ -9,7 +9,7 @@ import math
 import os
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -282,12 +282,48 @@ class RuntimeOptionsV1:
 
 
 @dataclass(frozen=True)
+class _ResolvedTarget:
+    instance_id: str
+    asset: ObjectAsset
+    zone: ReceptacleAsset
+
+
+@dataclass(frozen=True)
 class _ResolvedTask:
     manifest: TaskManifest
     assets: tuple[ObjectAsset, ...]
-    target_asset: ObjectAsset
-    target_zone: ReceptacleAsset
+    targets: tuple[_ResolvedTarget, ...]
     spawn_y_by_id: dict[str, float]
+    current_target_index: int = 0
+    service_gated_spawn: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.targets:
+            raise ValueError("resolved task requires at least one target")
+        if not 0 <= self.current_target_index < len(self.targets):
+            raise ValueError("current_target_index is outside target sequence")
+
+    @property
+    def current_target(self) -> _ResolvedTarget:
+        return self.targets[self.current_target_index]
+
+    @property
+    def target_asset(self) -> ObjectAsset:
+        return self.current_target.asset
+
+    @property
+    def target_zone(self) -> ReceptacleAsset:
+        return self.current_target.zone
+
+    @property
+    def target_instance_id(self) -> str:
+        return self.current_target.instance_id
+
+    def select_target(self, instance_id: str) -> "_ResolvedTask":
+        for index, target in enumerate(self.targets):
+            if target.instance_id == instance_id:
+                return replace(self, current_target_index=index)
+        raise ValueError(f"unknown resolved target: {instance_id!r}")
 
 
 class ConveyorRuntimeV1:
@@ -351,17 +387,9 @@ class ConveyorRuntimeV1:
             )
         )
         try:
-            self.sim.set_camera_view(
-                eye=(-2.10, -1.60, 2.40),
-                target=(0.62, 0.0, 0.45),
-            )
-            scene_cfg = ConveyorSceneV1Cfg(
-                num_envs=1,
-                env_spacing=3.0,
-                replicate_physics=True,
-                clone_in_fabric=False,
-                lazy_sensor_update=True,
-            )
+            eye, target = self._viewer_camera_view()
+            self.sim.set_camera_view(eye=eye, target=target)
+            scene_cfg = self._make_scene_cfg()
             scene_cfg.robot = (
                 make_go2_x5_policy_cfg()
                 if options.robot_mode is RobotMode.WHOLE_BODY_POLICY
@@ -437,7 +465,7 @@ class ConveyorRuntimeV1:
         summary = {
             "run_id": run_id,
             "protocol_version": self.benchmark.protocol_version,
-            "task_type": TaskType.DYNAMIC_SORT.value,
+            "task_type": self._summary_task_type().value,
             "robot_mode": self.options.robot_mode.value,
             "requested_episodes": self.options.episodes,
             "successful_episodes": sum(
@@ -455,6 +483,48 @@ class ConveyorRuntimeV1:
         os.replace(temporary, path)
         summary["summary_path"] = str(path)
         return summary
+
+    def _make_scene_cfg(self) -> ConveyorSceneV1Cfg:
+        """Build the scene configuration while preserving the frozen V1 default."""
+
+        scene_cfg = ConveyorSceneV1Cfg(
+            num_envs=1,
+            env_spacing=3.0,
+            replicate_physics=True,
+            clone_in_fabric=False,
+            lazy_sensor_update=True,
+        )
+        return scene_cfg
+
+    def _viewer_camera_view(
+        self,
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        return (-2.10, -1.60, 2.40), (0.62, 0.0, 0.45)
+
+    def _asset_lock_path(self) -> Path:
+        return ASSET_LOCK_PATH
+
+    def _layout_id(self) -> str:
+        return LAYOUT_ID
+
+    def _camera_contract(self) -> dict[str, Any]:
+        return _camera_contract_v1()
+
+    def _guard_locomotion_command(
+        self, command: Sequence[float]
+    ) -> tuple[float, float, float]:
+        """Apply the frozen V1 forward-only locomotion envelope."""
+
+        return _guard_locomotion_command(command)
+
+    def _summary_task_type(self) -> TaskType:
+        return TaskType.DYNAMIC_SORT
+
+    def _extra_episode_metadata(
+        self, resolved: _ResolvedTask
+    ) -> dict[str, Any]:
+        del resolved
+        return {}
 
     def _resolve_entities(self) -> None:
         self.robot = self.scene["robot"]
@@ -584,6 +654,17 @@ class ConveyorRuntimeV1:
         episode_seed: int,
     ) -> dict[str, Any]:
         resolved = self._make_task(episode_seed)
+        coordinator = None
+        if len(resolved.targets) > 1:
+            from conveyor_bench.v2.coordinator import (
+                SequentialTargetCoordinator,
+            )
+
+            coordinator = SequentialTargetCoordinator(
+                tuple(target.instance_id for target in resolved.targets),
+                episode_start_time_s=0.0,
+                episode_timeout_s=self.options.max_duration_s,
+            )
         episode_id = (
             f"{run_id}-ep{episode_index:04d}-seed{episode_seed}-"
             f"{self.options.robot_mode.value}"
@@ -616,8 +697,10 @@ class ConveyorRuntimeV1:
                     "camera": self.benchmark.camera_hz,
                     "model": self.benchmark.model_hz,
                 },
-                "asset_lock": verify_asset_lock(),
-                "asset_lock_sha256": sha256_file(ASSET_LOCK_PATH),
+                "asset_lock": verify_asset_lock(self._asset_lock_path()),
+                "asset_lock_sha256": sha256_file(
+                    self._asset_lock_path()
+                ),
                 "source_tree": source_tree_fingerprint(),
                 "robot_urdf_sha256": sha256_file(GO2_X5_URDF),
                 "gripper_collision": self.gripper_collision_contract,
@@ -627,8 +710,8 @@ class ConveyorRuntimeV1:
                     is RobotMode.WHOLE_BODY_POLICY
                     else None
                 ),
-                "layout_id": LAYOUT_ID,
-                "cameras": _camera_contract_v1(),
+                "layout_id": self._layout_id(),
+                "cameras": self._camera_contract(),
                 "canonical_action": {
                     "layout": [
                         "base_vx_body_mps",
@@ -646,6 +729,7 @@ class ConveyorRuntimeV1:
                     "quaternion": "wxyz",
                     "units": "m-rad-s",
                 },
+                **self._extra_episode_metadata(resolved),
             },
         )
 
@@ -658,6 +742,8 @@ class ConveyorRuntimeV1:
         phase = "reset"
         previous_phase: str | None = None
         target_spawned = False
+        initial_spawn_assets: tuple[ObjectAsset, ...] = ()
+        placed_event_ids: set[str] = set()
         approach_stage = (
             "mobile_settle"
             if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
@@ -690,9 +776,16 @@ class ConveyorRuntimeV1:
             self._reset_episode(resolved)
             if self.options.robot_mode is RobotMode.FIXED_BASE:
                 self._preposition_fixed_arm()
-                self._spawn_task_objects(resolved)
-                target_spawned = True
-                oracle = self._make_oracle(resolved, sim_time_s=0.0)
+                if self._spawn_not_before_s(resolved) > 0.0:
+                    approach_stage = "sequential_rearm"
+                    stage_started_at = 0.0
+                else:
+                    initial_spawn_assets = (
+                        self._spawn_assets_for_current_target(resolved)
+                    )
+                    self._spawn_task_objects(resolved, initial_spawn_assets)
+                    target_spawned = True
+                    oracle = self._make_oracle(resolved, sim_time_s=0.0)
 
             recorder.record_event(
                 Event(
@@ -704,8 +797,24 @@ class ConveyorRuntimeV1:
                     },
                 )
             )
+            if coordinator is not None:
+                recorder.record_event(
+                    Event(
+                        kind=EventKind.TARGET_SELECTED,
+                        time_s=0.0,
+                        sim_step=self._physics_step_count,
+                        object_instance_id=resolved.target_instance_id,
+                        goal_zone_id=resolved.target_zone.zone_id,
+                        payload={"target_index": 0},
+                    )
+                )
             if target_spawned:
-                self._record_spawn_events(recorder, resolved, time_s=0.0)
+                self._record_spawn_events(
+                    recorder,
+                    resolved,
+                    time_s=0.0,
+                    assets=initial_spawn_assets,
+                )
             if self.options.save_camera_frames:
                 camera_writer = MultiCameraFrameWriter(
                     recorder.artifact_directory, _CAMERA_SPECS
@@ -725,26 +834,13 @@ class ConveyorRuntimeV1:
                 canonical_rotvec = (0.0, 0.0, 0.0)
                 selected_object_id: str | None = None
                 oracle_command = None
+                target_command_terminal = False
+                target_command_success = False
 
                 if oracle is None:
-                    phase = approach_stage
-                    (
-                        approach_stage,
-                        stage_started_at,
-                        base_command,
-                        ready_to_spawn,
-                    ) = self._mobile_preoracle_command(
-                        stage=approach_stage,
-                        stage_started_at=stage_started_at,
-                        sim_time_s=sim_time_s,
-                        root_x=state_before["root_pose"].xyz[0],
-                        root_planar_speed_mps=math.hypot(
-                            *state_before["root_twist"].linear_xyz[:2]
-                        ),
-                        robot_fallen=state_before["robot_fallen"],
-                    )
-                    phase = approach_stage
-                    if approach_stage == "arm_preposition":
+                    if approach_stage == "sequential_rearm":
+                        phase = approach_stage
+                        selected_object_id = resolved.target_instance_id
                         (
                             canonical_ee_delta,
                             canonical_rotvec,
@@ -752,14 +848,101 @@ class ConveyorRuntimeV1:
                         ) = self._command_pregrasp_joint_target(
                             state_before["tcp_base"]
                         )
+                        gripper_open = True
+                        arm_error = float(
+                            torch.max(
+                                torch.abs(
+                                    self.robot.data.joint_pos[
+                                        :, self.arm_joint_ids
+                                    ]
+                                    - torch.tensor(
+                                        [_PREGRASP_ARM],
+                                        dtype=torch.float32,
+                                        device=self.sim.device,
+                                    )
+                                )
+                            ).item()
+                        )
+                        ready_to_spawn = (
+                            arm_error < 0.080
+                            and sim_time_s - stage_started_at >= 0.30
+                            and sim_time_s
+                            >= self._spawn_not_before_s(resolved)
+                        )
+                        if (
+                            not ready_to_spawn
+                            and sim_time_s - stage_started_at
+                            >= _ARM_PREPOSITION_TIMEOUT_S
+                        ):
+                            raise _MobilePreconditionFailure(
+                                FailureReason.TIMEOUT,
+                                "sequential_rearm_timeout",
+                                "arm did not return to pregrasp before the "
+                                "next service-gated target",
+                            )
                     else:
-                        self._hold_arm_target()
-                    gripper_open = True
+                        phase = approach_stage
+                        (
+                            approach_stage,
+                            stage_started_at,
+                            base_command,
+                            ready_to_spawn,
+                        ) = self._mobile_preoracle_command(
+                            stage=approach_stage,
+                            stage_started_at=stage_started_at,
+                            sim_time_s=sim_time_s,
+                            root_x=state_before["root_pose"].xyz[0],
+                            root_planar_speed_mps=math.hypot(
+                                *state_before["root_twist"].linear_xyz[:2]
+                            ),
+                            robot_fallen=state_before["robot_fallen"],
+                        )
+                        phase = approach_stage
+                        if approach_stage == "arm_preposition":
+                            (
+                                canonical_ee_delta,
+                                canonical_rotvec,
+                                last_command_target_base,
+                            ) = self._command_pregrasp_joint_target(
+                                state_before["tcp_base"]
+                            )
+                        else:
+                            self._hold_arm_target()
+                        gripper_open = True
+                        ready_to_spawn = (
+                            ready_to_spawn
+                            and sim_time_s
+                            >= self._spawn_not_before_s(resolved)
+                        )
                     if ready_to_spawn:
-                        self._spawn_task_objects(resolved)
+                        if approach_stage == "sequential_rearm":
+                            # Start each service-gated subtask from the arm
+                            # branch that was physically reached during
+                            # re-arm.  Keeping the previous target's lateral
+                            # placement solution as the IK seed can select a
+                            # discontinuous branch on the next interception.
+                            measured_arm = self.robot.data.joint_pos[
+                                :, self.arm_joint_ids
+                            ]
+                            self._arm_ik_seed = tuple(
+                                float(value)
+                                for value in measured_arm[0]
+                                .detach()
+                                .cpu()
+                                .tolist()
+                            )
+                            self._last_ik_error_m = 0.0
+                            self._last_ik_iterations = 0
+                        spawn_assets = self._spawn_assets_for_current_target(
+                            resolved
+                        )
+                        self._spawn_task_objects(resolved, spawn_assets)
                         target_spawned = True
                         self._record_spawn_events(
-                            recorder, resolved, time_s=sim_time_s
+                            recorder,
+                            resolved,
+                            time_s=sim_time_s,
+                            assets=spawn_assets,
                         )
                         oracle = self._make_oracle(
                             resolved, sim_time_s=sim_time_s
@@ -824,7 +1007,12 @@ class ConveyorRuntimeV1:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase == "carry"
+                        and (
+                            phase == "carry"
+                            or self._mobile_continue_carry_before_place(
+                                resolved, phase
+                            )
+                        )
                         and not oracle_command.terminal
                     ):
                         (
@@ -855,7 +1043,7 @@ class ConveyorRuntimeV1:
                             if phase in {"retreat", "verify_place"}
                             else _MOBILE_PLACE_CARTESIAN_STEP_M
                             if phase == "preplace"
-                            else _MOBILE_PLACE_DESCEND_STEP_M
+                            else self._mobile_place_descend_step_m(resolved)
                             if phase == "place_descend"
                             else _MOBILE_PLACE_HOLD_STEP_M
                         )
@@ -894,7 +1082,7 @@ class ConveyorRuntimeV1:
                         )
                     # Commands below the policy's audited forward dead-zone
                     # are explicitly treated as stationary.
-                    base_command = _guard_locomotion_command(
+                    base_command = self._guard_locomotion_command(
                         requested_base_command
                     )
                     gripper_open = oracle_command.gripper_command > 0.5
@@ -951,7 +1139,7 @@ class ConveyorRuntimeV1:
                                     is RobotMode.WHOLE_BODY_POLICY
                                     and phase == "carry"
                                 )
-                                else _MOBILE_PLACE_DESCEND_STEP_M
+                                else self._mobile_place_descend_step_m(resolved)
                                 if (
                                     self.options.robot_mode
                                     is RobotMode.WHOLE_BODY_POLICY
@@ -997,8 +1185,13 @@ class ConveyorRuntimeV1:
                             ),
                         )
                     if oracle_command.terminal:
-                        terminal = True
-                        oracle_terminal_reason = oracle_command.failure_reason
+                        target_command_terminal = True
+                        target_command_success = oracle_command.success
+                        oracle_terminal_reason = (
+                            None
+                            if oracle_command.success
+                            else oracle_command.failure_reason
+                        )
 
                 self._apply_gripper(gripper_open)
                 applied_policy_action = self._apply_base_command(base_command)
@@ -1090,6 +1283,79 @@ class ConveyorRuntimeV1:
                 )
                 buffered_samples.append(sample)
 
+                if target_command_terminal and coordinator is not None:
+                    completed_target = resolved.current_target
+                    if target_command_success:
+                        recorder.record_event(
+                            Event(
+                                kind=EventKind.OBJECT_PLACED,
+                                time_s=sample_time_s,
+                                sim_step=self._physics_step_count,
+                                object_instance_id=(
+                                    completed_target.instance_id
+                                ),
+                                goal_zone_id=completed_target.zone.zone_id,
+                                payload={
+                                    "target_index": (
+                                        resolved.current_target_index
+                                    )
+                                },
+                            )
+                        )
+                        placed_event_ids.add(completed_target.instance_id)
+                        transition = coordinator.mark_success(
+                            completed_target.instance_id,
+                            sim_time_s=sample_time_s,
+                        )
+                        if transition.episode_terminal:
+                            terminal = True
+                        else:
+                            assert transition.next_target_id is not None
+                            resolved = resolved.select_target(
+                                transition.next_target_id
+                            )
+                            recorder.record_event(
+                                Event(
+                                    kind=EventKind.TARGET_SELECTED,
+                                    time_s=sample_time_s,
+                                    sim_step=self._physics_step_count,
+                                    object_instance_id=(
+                                        resolved.target_instance_id
+                                    ),
+                                    goal_zone_id=(
+                                        resolved.target_zone.zone_id
+                                    ),
+                                    payload={
+                                        "target_index": (
+                                            resolved.current_target_index
+                                        ),
+                                        "after_target_instance_id": (
+                                            completed_target.instance_id
+                                        ),
+                                    },
+                                )
+                            )
+                            oracle = None
+                            oracle_terminal_reason = None
+                            approach_stage = "sequential_rearm"
+                            stage_started_at = sample_time_s
+                            target_spawned = False
+                            self._held_instance_id = None
+                            self._ever_held_target = False
+                            self._gripper_open = True
+                            self._last_gripper_open = True
+                            previous_phase = phase
+                    else:
+                        failure = oracle_terminal_reason or "oracle_failure"
+                        coordinator.mark_failure(
+                            completed_target.instance_id,
+                            sim_time_s=sample_time_s,
+                            reason=failure,
+                        )
+                        terminal = True
+                elif target_command_terminal:
+                    terminal = True
+
                 if terminal:
                     break
 
@@ -1110,17 +1376,20 @@ class ConveyorRuntimeV1:
                     metrics=metrics,
                 )
             if evaluation.success:
-                recorder.record_event(
-                    Event(
-                        kind=EventKind.OBJECT_PLACED,
-                        time_s=recorder.online_metrics.snapshot()[
-                            "duration_s"
-                        ],
-                        sim_step=self._physics_step_count,
-                        object_instance_id=resolved.target_asset.object_id,
-                        goal_zone_id=resolved.target_zone.zone_id,
+                for target in resolved.targets:
+                    if target.instance_id in placed_event_ids:
+                        continue
+                    recorder.record_event(
+                        Event(
+                            kind=EventKind.OBJECT_PLACED,
+                            time_s=recorder.online_metrics.snapshot()[
+                                "duration_s"
+                            ],
+                            sim_step=self._physics_step_count,
+                            object_instance_id=target.instance_id,
+                            goal_zone_id=target.zone.zone_id,
+                        )
                     )
-                )
             episode_path, evaluation = recorder.finalize(evaluation)
         except Exception as error:
             if camera_writer is not None:
@@ -1297,8 +1566,13 @@ class ConveyorRuntimeV1:
         return _ResolvedTask(
             manifest=manifest,
             assets=assets,
-            target_asset=target,
-            target_zone=target_zone,
+            targets=(
+                _ResolvedTarget(
+                    instance_id=target.object_id,
+                    asset=target,
+                    zone=target_zone,
+                ),
+            ),
             spawn_y_by_id=spawn_y_by_id,
         )
 
@@ -1380,8 +1654,43 @@ class ConveyorRuntimeV1:
         self._arm_ik_seed = _PREGRASP_ARM
         self._physics_step_count = 0
 
-    def _spawn_task_objects(self, resolved: _ResolvedTask) -> None:
-        for asset in resolved.assets:
+    def _spawn_assets_for_current_target(
+        self, resolved: _ResolvedTask
+    ) -> tuple[ObjectAsset, ...]:
+        if resolved.service_gated_spawn:
+            return (resolved.target_asset,)
+        return resolved.assets
+
+    def _spawn_not_before_s(self, resolved: _ResolvedTask) -> float:
+        suite = resolved.manifest.metadata.get("benchmark_suite")
+        if not isinstance(suite, dict):
+            return 0.0
+        if resolved.service_gated_spawn:
+            gates = suite.get("service_gates", ())
+            for gate in gates if isinstance(gates, (tuple, list)) else ():
+                if (
+                    isinstance(gate, dict)
+                    and gate.get("target_instance_id")
+                    == resolved.target_instance_id
+                ):
+                    return float(gate.get("not_before_s", 0.0))
+            return 0.0
+        schedule = resolved.manifest.metadata.get("spawn_schedule", ())
+        return max(
+            (
+                float(entry.get("spawn_time_s", 0.0))
+                for entry in schedule
+                if isinstance(entry, dict)
+            ),
+            default=0.0,
+        )
+
+    def _spawn_task_objects(
+        self,
+        resolved: _ResolvedTask,
+        assets: Sequence[ObjectAsset] | None = None,
+    ) -> None:
+        for asset in assets or resolved.assets:
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
             root_state[:, :3] += self.scene.env_origins
@@ -1406,8 +1715,9 @@ class ConveyorRuntimeV1:
         resolved: _ResolvedTask,
         *,
         time_s: float,
+        assets: Sequence[ObjectAsset] | None = None,
     ) -> None:
-        for asset in resolved.assets:
+        for asset in assets or resolved.assets:
             recorder.record_event(
                 Event(
                     kind=EventKind.OBJECT_SPAWNED,
@@ -1489,7 +1799,7 @@ class ConveyorRuntimeV1:
                 # Lateral placement is deliberately rate-limited while the
                 # arm carries a part.  Both robot modes need the same timeout
                 # envelope to reach and settle over the side trays.
-                phase_timeout_s=15.0,
+                phase_timeout_s=self._oracle_phase_timeout_s(resolved),
                 episode_timeout_s=self.options.max_duration_s - sim_time_s,
                 mobile_select_base_command_body=(0.0, 0.0, 0.0),
                 mobile_carry_base_command_body=(0.0, 0.0, 0.0),
@@ -1503,6 +1813,10 @@ class ConveyorRuntimeV1:
         )
         oracle.reset(sim_time_s=sim_time_s)
         return oracle
+
+    def _oracle_phase_timeout_s(self, resolved: _ResolvedTask) -> float:
+        del resolved
+        return 15.0
 
     def _mobile_preoracle_command(
         self,
@@ -1643,28 +1957,11 @@ class ConveyorRuntimeV1:
         root_pose: Pose = state["root_pose"]
         root_twist: Twist = state["root_twist"]
         if self._mobile_carry_stage is None:
-            current_yaw = _yaw_from_wxyz(root_pose.wxyz)
-            turn_sign = math.copysign(
-                1.0,
-                resolved.target_zone.center_xyz_m[1]
-                - root_pose.xyz[1],
-            )
-            goal_yaw = _wrap_angle(
-                current_yaw + turn_sign * _MOBILE_CARRY_ARC_YAW_RAD
+            goal_yaw, goal_root_xy = self._plan_mobile_carry_goal(
+                resolved, root_pose
             )
             self._mobile_goal_yaw_rad = goal_yaw
-            # The checkpoint has no reliable in-place-yaw gait, but its
-            # minimum-forward-speed arc tracks both vx and wz accurately.
-            # Predict the short arc endpoint for diagnostics; placement only
-            # requires this bounded post-grasp motion, not exact base parking.
-            signed_rate = turn_sign * _MOBILE_TURN_RATE_RADPS
-            radius = _MOBILE_NAVIGATE_SPEED_MPS / signed_rate
-            self._mobile_goal_root_xy = (
-                root_pose.xyz[0]
-                + radius * (math.sin(goal_yaw) - math.sin(current_yaw)),
-                root_pose.xyz[1]
-                - radius * (math.cos(goal_yaw) - math.cos(current_yaw)),
-            )
+            self._mobile_goal_root_xy = goal_root_xy
             # Preserve the base-frame wrist attitude that established and
             # lifted the grasp. A hard-coded world quaternion produced a
             # roughly 0.8 rad IK jump during retraction, driving the arm down
@@ -1704,13 +2001,7 @@ class ConveyorRuntimeV1:
 
         stage = self._mobile_carry_stage
         elapsed = sim_time_s - self._mobile_carry_stage_started_s
-        stage_timeout_s = {
-            "retract": 6.0,
-            "turn": 5.0,
-            "navigate": 6.0,
-            "settle": 4.0,
-            "place": 15.0,
-        }[stage]
+        stage_timeout_s = self._mobile_carry_stage_timeout_s(stage)
         if elapsed > stage_timeout_s:
             raise _MobilePreconditionFailure(
                 FailureReason.TIMEOUT,
@@ -1754,15 +2045,18 @@ class ConveyorRuntimeV1:
         if stage == "turn":
             angular_speed = abs(root_twist.angular_xyz[2])
             if self._mobile_carry_dwell(
-                abs(yaw_error) <= 0.08 and angular_speed <= 0.12,
+                abs(yaw_error) <= 0.08
+                and angular_speed
+                <= self._mobile_turn_angular_speed_tolerance_radps(resolved),
                 sim_time_s,
                 0.30,
             ):
-                self._transition_mobile_carry("settle", sim_time_s)
+                next_stage = self._mobile_post_turn_stage(resolved)
+                self._transition_mobile_carry(next_stage, sim_time_s)
                 return (
                     compact_target,
                     (0.0, 0.0, 0.0),
-                    "carry_settle",
+                    f"carry_{next_stage}",
                 )
             yaw_command = (
                 0.0
@@ -1772,7 +2066,7 @@ class ConveyorRuntimeV1:
             forward_command = (
                 0.0
                 if abs(yaw_error) <= 0.06
-                else _MOBILE_NAVIGATE_SPEED_MPS
+                else self._mobile_turn_forward_speed_mps(resolved)
             )
             return (
                 compact_target,
@@ -1786,26 +2080,55 @@ class ConveyorRuntimeV1:
         )
         planar_speed = math.hypot(*root_twist.linear_xyz[:2])
         if stage == "navigate":
-            if position_error <= 0.045:
+            if position_error <= self._mobile_navigation_position_tolerance_m(
+                resolved
+            ):
                 self._transition_mobile_carry("settle", sim_time_s)
                 return (
                     compact_target,
                     (0.0, 0.0, 0.0),
                     "carry_settle",
                 )
-            yaw_command = max(-0.15, min(0.15, 0.8 * yaw_error))
+            navigation_yaw_error = self._mobile_navigation_yaw_error(
+                root_pose
+            )
+            yaw_command = self._mobile_navigation_yaw_command(
+                resolved, navigation_yaw_error
+            )
             forward_command = (
                 0.0
-                if abs(yaw_error) > 0.18
-                else _MOBILE_NAVIGATE_SPEED_MPS
+                if abs(navigation_yaw_error) > 0.18
+                else self._mobile_navigate_forward_speed_mps(
+                    resolved, root_pose
+                )
+            )
+            lateral_command = (
+                0.0
+                if abs(navigation_yaw_error) > 0.18
+                else self._mobile_navigate_lateral_speed_mps(
+                    resolved, root_pose
+                )
             )
             return (
                 compact_target,
-                (forward_command, 0.0, yaw_command),
+                (forward_command, lateral_command, yaw_command),
                 "carry_navigate",
             )
 
         if stage == "settle":
+            position_tolerance = self._mobile_settle_position_tolerance_m(
+                resolved
+            )
+            if (
+                position_tolerance is not None
+                and position_error > position_tolerance
+            ):
+                self._transition_mobile_carry("navigate", sim_time_s)
+                return (
+                    compact_target,
+                    (0.0, 0.0, 0.0),
+                    "carry_navigate",
+                )
             if abs(yaw_error) > 0.15:
                 self._transition_mobile_carry("turn", sim_time_s)
                 return (
@@ -1815,7 +2138,8 @@ class ConveyorRuntimeV1:
                 )
             if self._mobile_carry_dwell(
                 planar_speed <= 0.07
-                and abs(root_twist.angular_xyz[2]) <= 0.12,
+                and abs(root_twist.angular_xyz[2])
+                <= self._mobile_settle_angular_speed_tolerance_radps(resolved),
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
@@ -1833,6 +2157,129 @@ class ConveyorRuntimeV1:
             (0.0, 0.0, 0.0),
             "carry",
         )
+
+    def _plan_mobile_carry_goal(
+        self, resolved: _ResolvedTask, root_pose: Pose
+    ) -> tuple[float, tuple[float, float]]:
+        """Return the validated short-arc goal used by the V1 mobile task."""
+
+        current_yaw = _yaw_from_wxyz(root_pose.wxyz)
+        turn_sign = math.copysign(
+            1.0,
+            resolved.target_zone.center_xyz_m[1] - root_pose.xyz[1],
+        )
+        goal_yaw = _wrap_angle(
+            current_yaw + turn_sign * _MOBILE_CARRY_ARC_YAW_RAD
+        )
+        signed_rate = turn_sign * _MOBILE_TURN_RATE_RADPS
+        radius = _MOBILE_NAVIGATE_SPEED_MPS / signed_rate
+        goal_root_xy = (
+            root_pose.xyz[0]
+            + radius * (math.sin(goal_yaw) - math.sin(current_yaw)),
+            root_pose.xyz[1]
+            - radius * (math.cos(goal_yaw) - math.cos(current_yaw)),
+        )
+        return goal_yaw, goal_root_xy
+
+    def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:
+        del resolved
+        return "settle"
+
+    def _mobile_continue_carry_before_place(
+        self, resolved: _ResolvedTask, oracle_phase: str
+    ) -> bool:
+        del resolved, oracle_phase
+        return False
+
+    def _mobile_place_descend_step_m(self, resolved: _ResolvedTask) -> float:
+        del resolved
+        return _MOBILE_PLACE_DESCEND_STEP_M
+
+    def _object_crossed_task_exit(
+        self,
+        resolved: _ResolvedTask,
+        asset: ObjectAsset,
+        position_world: Sequence[float],
+        *,
+        active: bool,
+    ) -> bool:
+        return active and _crossed_exit(
+            position_world,
+            resolved.manifest.exit_plane_point_xyz,
+            resolved.manifest.transport_direction_xyz,
+        )
+
+    def _mobile_turn_forward_speed_mps(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return _MOBILE_NAVIGATE_SPEED_MPS
+
+    def _mobile_navigation_yaw_error(self, root_pose: Pose) -> float:
+        """Return the heading error used while translating.
+
+        V1 follows its audited constant-curvature arc and therefore keeps the
+        final carry yaw as the translation heading.  Remote V2 overrides this
+        hook with a closed-loop bearing to its explicit root goal.
+        """
+
+        assert self._mobile_goal_yaw_rad is not None
+        return _wrap_angle(
+            self._mobile_goal_yaw_rad - _yaw_from_wxyz(root_pose.wxyz)
+        )
+
+    def _mobile_navigate_forward_speed_mps(
+        self, resolved: _ResolvedTask, root_pose: Pose
+    ) -> float:
+        del resolved, root_pose
+        return _MOBILE_NAVIGATE_SPEED_MPS
+
+    def _mobile_navigate_lateral_speed_mps(
+        self, resolved: _ResolvedTask, root_pose: Pose
+    ) -> float:
+        del resolved, root_pose
+        return 0.0
+
+    def _mobile_navigation_yaw_command(
+        self,
+        resolved: _ResolvedTask,
+        yaw_error_rad: float,
+    ) -> float:
+        del resolved
+        return max(-0.15, min(0.15, 0.8 * yaw_error_rad))
+
+    def _mobile_turn_angular_speed_tolerance_radps(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return 0.12
+
+    def _mobile_settle_angular_speed_tolerance_radps(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return 0.12
+
+    def _mobile_navigation_position_tolerance_m(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return 0.045
+
+    def _mobile_settle_position_tolerance_m(
+        self, resolved: _ResolvedTask
+    ) -> float | None:
+        del resolved
+        return None
+
+    def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
+        return {
+            "retract": 6.0,
+            "turn": 5.0,
+            "navigate": 6.0,
+            "settle": 4.0,
+            "place": 15.0,
+        }[stage]
 
     def _mobile_place_target(
         self,
@@ -2380,13 +2827,11 @@ class ConveyorRuntimeV1:
                     in_gripper=(
                         self._held_instance_id == asset.object_id
                     ),
-                    crossed_exit=(
-                        active
-                        and _crossed_exit(
-                            position,
-                            resolved.manifest.exit_plane_point_xyz,
-                            resolved.manifest.transport_direction_xyz,
-                        )
+                    crossed_exit=self._object_crossed_task_exit(
+                        resolved,
+                        asset,
+                        position,
+                        active=active,
                     ),
                 )
             )
@@ -2588,8 +3033,17 @@ class ConveyorRuntimeV1:
                 "mobile_carry_stage": self._mobile_carry_stage,
                 "ik_position_error_m": self._last_ik_error_m,
                 "ik_iterations": self._last_ik_iterations,
+                **self._extra_step_metadata(resolved, state),
             },
         )
+
+    def _extra_step_metadata(
+        self,
+        resolved: _ResolvedTask,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        del resolved, state
+        return {}
 
     def _world_pose_to_root(self, pose_world: Pose) -> Pose:
         root_position = self.robot.data.root_pos_w[0]

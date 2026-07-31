@@ -15,6 +15,7 @@ from conveyor_bench.v1.exporters import (
     iter_dynamicvla_records,
     iter_m0_records,
     load_model_tick_steps,
+    validate_episode_for_export,
 )
 
 
@@ -46,7 +47,11 @@ def write_png(path: Path, width: int = 2, height: int = 2) -> None:
     )
 
 
-def make_episode(tmp_path, model_ticks: int = 30):
+def make_episode(
+    tmp_path,
+    model_ticks: int = 30,
+    partial_tail_camera_ids: tuple[str, ...] | None = None,
+):
     episode = tmp_path / "ep-export"
     episode.mkdir()
     config = BenchmarkConfig.v1()
@@ -110,26 +115,37 @@ def make_episode(tmp_path, model_ticks: int = 30):
     )
     rows = []
     object_rows = []
-    for sim_step in range(model_ticks * 2):
-        tick = sim_step // 2
-        control_substep = sim_step % 2
-        frames = (
-            [
-                {
-                    "camera_id": camera_id,
-                    "frame_index": tick,
-                    "capture_time_s": tick / config.model_hz,
-                    "relative_path": f"cameras/{camera_id}/{tick:06d}.png",
-                }
-                for camera_id in ("head_rgb", "wrist_rgb")
-            ]
-            if control_substep == 0
-            else []
+    sample_count = model_ticks * 2 + int(partial_tail_camera_ids is not None)
+    total_model_ticks = model_ticks + int(partial_tail_camera_ids is not None)
+    physics_steps_per_control = config.physics_hz // config.control_hz
+    camera_index_rows = []
+    for control_index in range(sample_count):
+        tick = control_index // 2
+        control_substep = control_index % 2
+        sim_step = (control_index + 1) * physics_steps_per_control
+        sim_time = (control_index + 1) / config.control_hz
+        camera_ids = (
+            partial_tail_camera_ids
+            if tick == model_ticks
+            else (
+                ("head_rgb", "wrist_rgb")
+                if control_substep == 1
+                else ()
+            )
         )
+        frames = [
+            {
+                "camera_id": camera_id,
+                "frame_index": tick,
+                "capture_time_s": sim_time,
+                "relative_path": f"cameras/{camera_id}/{tick:06d}.png",
+            }
+            for camera_id in camera_ids
+        ]
         rows.append(
             {
                 "sim_step": sim_step,
-                "sim_time_s": sim_step / config.control_hz,
+                "sim_time_s": sim_time,
                 "model_tick": tick,
                 "env_id": 0,
                 "robot_root_world": {
@@ -167,10 +183,10 @@ def make_episode(tmp_path, model_ticks: int = 30):
                 "phase": "track",
                 "selected_object_id": "target",
                 "left_contact_object_ids": (
-                    ["target"] if sim_step < 2 else []
+                    ["target"] if control_index < 2 else []
                 ),
                 "right_contact_object_ids": (
-                    ["target"] if sim_step < 2 else []
+                    ["target"] if control_index < 2 else []
                 ),
                 "action_chunk_id": None,
                 "action_index_in_chunk": None,
@@ -191,13 +207,13 @@ def make_episode(tmp_path, model_ticks: int = 30):
                 "angular_xyz": [0.0, 0.0, 0.0],
             },
             "active": True,
-            "in_gripper": sim_step < 2,
+            "in_gripper": control_index < 2,
             "crossed_exit": False,
         }
         object_rows.append(
             {
                 "sim_step": sim_step,
-                "sim_time_s": sim_step / config.control_hz,
+                "sim_time_s": sim_time,
                 "model_tick": tick,
                 "env_id": 0,
                 "state": state,
@@ -205,20 +221,20 @@ def make_episode(tmp_path, model_ticks: int = 30):
                     {
                         "instance_id": "target",
                         "horizon_steps": horizon,
-                        "valid": tick + horizon < model_ticks,
+                        "valid": tick + horizon < total_model_ticks,
                         "pose_world": (
                             state["pose_world"]
-                            if tick + horizon < model_ticks
+                            if tick + horizon < total_model_ticks
                             else None
                         ),
                         "twist_world": (
                             state["twist_world"]
-                            if tick + horizon < model_ticks
+                            if tick + horizon < total_model_ticks
                             else None
                         ),
                         "invalid_reason": (
                             None
-                            if tick + horizon < model_ticks
+                            if tick + horizon < total_model_ticks
                             else "episode_tail"
                         ),
                     }
@@ -226,13 +242,35 @@ def make_episode(tmp_path, model_ticks: int = 30):
                 ],
             }
         )
-    completion_time = 0.54
+        if camera_ids:
+            camera_index_rows.append(
+                {
+                    "frame_index": tick,
+                    "sim_step": sim_step,
+                    "capture_time_s": sim_time,
+                    "frames": {
+                        camera_id: {
+                            "relative_path": (
+                                f"cameras/{camera_id}/{tick:06d}.png"
+                            ),
+                            "resolution": [2, 2],
+                            "role": "policy_observation",
+                            "quality": {
+                                "dark_fraction": 0.0,
+                                "laplacian_variance": 100.0,
+                            },
+                        }
+                        for camera_id in camera_ids
+                    },
+                }
+            )
+    completion_time = 0.56
     events = [
         {"kind": "episode_start", "time_s": 0.0, "payload": {}},
         {
             "kind": "object_released",
             "time_s": 0.04,
-            "sim_step": 2,
+            "sim_step": round(0.04 * config.physics_hz),
             "object_instance_id": "target",
             "goal_zone_id": "zone-a",
             "payload": {},
@@ -240,22 +278,22 @@ def make_episode(tmp_path, model_ticks: int = 30):
         {
             "kind": "object_placed",
             "time_s": completion_time,
-            "sim_step": 27,
+            "sim_step": round(completion_time * config.physics_hz),
             "object_instance_id": "target",
             "goal_zone_id": "zone-a",
             "payload": {},
         },
         {
             "kind": "episode_end",
-            "time_s": (model_ticks * 2 - 1) / config.control_hz,
-            "sim_step": model_ticks * 2 - 1,
+            "time_s": sample_count / config.control_hz,
+            "sim_step": sample_count * physics_steps_per_control,
             "payload": {"success": True, "failure_reason": "none"},
         },
     ]
     metrics = {
         "sample_count": len(rows),
         "object_record_count": len(object_rows),
-        "duration_s": (len(rows) - 1) / config.control_hz,
+        "duration_s": len(rows) / config.control_hz,
         "completion_time_s": completion_time,
         "scored_object_count": 1,
         "completed_object_count": 1,
@@ -291,10 +329,16 @@ def make_episode(tmp_path, model_ticks: int = 30):
     write_jsonl(episode / "objects.jsonl", object_rows)
     write_jsonl(episode / "action_chunks.jsonl", [])
     write_jsonl(episode / "events.jsonl", events)
+    write_jsonl(episode / "camera_frames.jsonl", camera_index_rows)
     for tick in range(model_ticks):
         for camera_id in ("head_rgb", "wrist_rgb"):
             write_png(
                 episode / "cameras" / camera_id / f"{tick:06d}.png"
+            )
+    if partial_tail_camera_ids is not None:
+        for camera_id in partial_tail_camera_ids:
+            write_png(
+                episode / "cameras" / camera_id / f"{model_ticks:06d}.png"
             )
     return episode
 
@@ -309,8 +353,8 @@ def test_dynamicvla_projection_uses_model_ticks_history_and_future_offset(
     episode = make_episode(tmp_path)
     ticks = load_model_tick_steps(episode)
     assert len(ticks) == 30
-    assert ticks[0]["sim_step"] == 1
-    assert ticks[0]["_source_control_sim_steps"] == [0, 1]
+    assert ticks[0]["sim_step"] == 16
+    assert ticks[0]["_source_control_sim_steps"] == [8, 16]
     assert ticks[0]["camera_frames"][0]["frame_index"] == 0
 
     records = list(iter_dynamicvla_records(episode))
@@ -375,3 +419,98 @@ def test_m0_projection_right_pads_and_preserves_canonical_source(tmp_path) -> No
         export_m0_episode(episode, episode / "steps.jsonl")
     with pytest.raises(FileExistsError):
         export_m0_episode(episode, m0_path)
+
+
+def test_export_gate_rejects_policy_camera_dropout_on_a_complete_tick(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path)
+    rows = read_jsonl(episode / "steps.jsonl")
+    for row in rows:
+        if row["model_tick"] == 2:
+            row["camera_frames"] = []
+        elif row["model_tick"] > 2:
+            for frame in row["camera_frames"]:
+                frame["frame_index"] -= 1
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(
+        ExportError,
+        match=r"model_tick 2 is complete.*head_rgb.*wrist_rgb",
+    ):
+        validate_episode_for_export(episode)
+
+
+def test_iterators_drop_unframed_partial_tail_but_keep_it_for_chunks(
+    tmp_path,
+) -> None:
+    episode = make_episode(
+        tmp_path,
+        model_ticks=30,
+        partial_tail_camera_ids=(),
+    )
+    ticks = load_model_tick_steps(episode)
+    assert len(ticks) == 31
+    assert ticks[-1]["_source_control_sim_steps"] == [488]
+
+    dynamic = list(iter_dynamicvla_records(episode))
+    m0 = list(iter_m0_records(episode))
+
+    assert [record["model_tick"] for record in dynamic][-1] == 29
+    assert [record["model_tick"] for record in m0][-1] == 29
+    assert len(dynamic) == len(m0) == 30
+    # Tick 30 remains in by_tick: it supplies tick 25's +5 future label and
+    # the second canonical/action element of the final emitted chunks.
+    assert dynamic[25]["action_valid_mask"][0] is True
+    assert dynamic[-1]["canonical_valid_mask"][:2] == (True, True)
+    assert m0[-1]["action_valid_mask"][:2] == (True, True)
+
+    dynamic_summary = export_dynamicvla_episode(
+        episode,
+        episode / "exports" / "dynamicvla-partial-tail.jsonl",
+    )
+    m0_summary = export_m0_episode(
+        episode,
+        episode / "exports" / "m0-partial-tail.jsonl",
+    )
+    assert dynamic_summary.record_count == 30
+    assert m0_summary.record_count == 30
+
+
+def test_iterators_keep_partial_tail_with_complete_policy_pair(tmp_path) -> None:
+    episode = make_episode(
+        tmp_path,
+        model_ticks=4,
+        partial_tail_camera_ids=("head_rgb", "wrist_rgb"),
+    )
+
+    dynamic = list(iter_dynamicvla_records(episode))
+    m0 = list(iter_m0_records(episode))
+
+    assert [record["model_tick"] for record in dynamic] == list(range(5))
+    assert [record["model_tick"] for record in m0] == list(range(5))
+    assert [
+        frame["camera_id"]
+        for frame in dynamic[-1]["history"][-1]["camera_frames"]
+    ] == ["head_rgb", "wrist_rgb"]
+    assert [
+        frame["camera_id"] for frame in m0[-1]["policy_camera_frames"]
+    ] == ["head_rgb", "wrist_rgb"]
+
+
+@pytest.mark.parametrize(
+    "iterator",
+    (iter_dynamicvla_records, iter_m0_records),
+)
+def test_iterators_reject_half_observed_partial_tail(tmp_path, iterator) -> None:
+    episode = make_episode(
+        tmp_path,
+        model_ticks=4,
+        partial_tail_camera_ids=("head_rgb",),
+    )
+
+    with pytest.raises(
+        ExportError,
+        match=r"final partial model_tick 4.*head_rgb.*wrist_rgb",
+    ):
+        list(iterator(episode))

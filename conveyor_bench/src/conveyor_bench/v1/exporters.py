@@ -21,6 +21,9 @@ from .validation import validate_v1_episode
 
 EXPORT_SCHEMA_VERSION = "conveyor-bench-v1-export-1"
 _REQUIRED_POLICY_CAMERA_IDS = frozenset({"head_rgb", "wrist_rgb"})
+_CONTROL_STEPS_PER_MODEL_TICK = (
+    BenchmarkConfig.v1().control_hz // BenchmarkConfig.v1().model_hz
+)
 _CANONICAL_FILENAMES = {
     "manifest.json",
     "summary.json",
@@ -150,6 +153,10 @@ def validate_episode_for_export(
     if not ticks:
         raise ExportError("episode contains no valid canonical records")
 
+    # Report training-observation dropout directly even when the same missing
+    # tick would also make the canonical camera index incomplete.
+    _validate_training_camera_coverage(episode_path, ticks)
+
     validation = validate_v1_episode(episode_path)
     if not validation.ok:
         details = "; ".join(validation.errors[:5])
@@ -159,8 +166,6 @@ def validate_episode_for_export(
             "strict canonical validation failed; episode data corruption "
             f"prevents export: {details}"
         )
-    _validate_training_camera_coverage(episode_path, ticks)
-
     report = audit_episode(episode_path)
     if report.data_corrupted:
         issue_codes = sorted({issue.code for issue in report.issues})
@@ -184,7 +189,7 @@ def _validate_training_camera_coverage(
     episode_path: Path,
     ticks: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Require both frozen policy views to be declared and actually recorded."""
+    """Require the frozen policy pair at every complete model tick."""
 
     manifest = _read_json(episode_path / "manifest.json")
     episode = _mapping(manifest.get("episode"), "manifest.episode")
@@ -203,28 +208,74 @@ def _validate_training_camera_coverage(
         )
     }
     missing_contracts = sorted(_REQUIRED_POLICY_CAMERA_IDS - declared)
-
-    recorded: set[str] = set()
-    for tick in ticks:
-        for frame in _select_camera_frames(tick, None):
-            camera_id = frame.get("camera_id")
-            if isinstance(camera_id, str):
-                recorded.add(camera_id)
-    missing_frames = sorted(_REQUIRED_POLICY_CAMERA_IDS - recorded)
-    if missing_contracts or missing_frames:
+    unexpected_contracts = sorted(declared - _REQUIRED_POLICY_CAMERA_IDS)
+    if missing_contracts or unexpected_contracts:
         problems: list[str] = []
         if missing_contracts:
             problems.append(
                 "missing policy camera contract(s): "
                 + ", ".join(missing_contracts)
             )
-        if missing_frames:
+        if unexpected_contracts:
             problems.append(
-                "no recorded frame(s) for: " + ", ".join(missing_frames)
+                "unexpected policy camera contract(s): "
+                + ", ".join(unexpected_contracts)
             )
         raise ExportError(
             "episode is not training-export eligible; " + "; ".join(problems)
         )
+    _training_source_ticks(ticks)
+
+
+def _training_source_ticks(
+    ticks: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], ...]:
+    """Validate policy-frame cadence and omit only an unframed partial tail."""
+
+    selected: list[Mapping[str, Any]] = []
+    required = tuple(sorted(_REQUIRED_POLICY_CAMERA_IDS))
+    for index, tick in enumerate(ticks):
+        model_tick = _integer(tick.get("model_tick"), "model_tick")
+        source_steps = tick.get("_source_control_sim_steps")
+        if (
+            isinstance(source_steps, (str, bytes))
+            or not isinstance(source_steps, Sequence)
+        ):
+            raise ExportError("_source_control_sim_steps must be a sequence")
+        control_step_count = len(source_steps)
+        is_complete = control_step_count == _CONTROL_STEPS_PER_MODEL_TICK
+        is_partial_tail = (
+            control_step_count == 1 and index == len(ticks) - 1
+        )
+        if not is_complete and not is_partial_tail:
+            raise ExportError(
+                f"model_tick {model_tick} has {control_step_count} control "
+                "samples; only complete ticks or one final single-sample "
+                "partial tick are exportable"
+            )
+
+        policy_frames = _select_camera_frames(tick, required)
+        recorded = tuple(
+            sorted(
+                _mapping(frame, "camera frame").get("camera_id")
+                for frame in policy_frames
+            )
+        )
+        has_policy_pair = recorded == required
+        if is_complete and not has_policy_pair:
+            raise ExportError(
+                f"model_tick {model_tick} is complete but policy camera "
+                f"frames must be exactly {required}; recorded {recorded}"
+            )
+        if is_partial_tail and recorded and not has_policy_pair:
+            raise ExportError(
+                f"final partial model_tick {model_tick} must contain either "
+                f"no policy camera frames or exactly {required}; recorded "
+                f"{recorded}"
+            )
+        if is_complete or has_policy_pair:
+            selected.append(tick)
+    return tuple(selected)
 
 
 def _camera_frames_for_tick(
@@ -495,7 +546,7 @@ def iter_dynamicvla_records(
     zero10 = (0.0,) * 10
     zero3 = (0.0,) * 3
 
-    for source in ticks:
+    for source in _training_source_ticks(ticks):
         source_tick = _integer(source.get("model_tick"), "model_tick")
         history_steps = [
             by_tick.get(source_tick + offset)
@@ -589,7 +640,7 @@ def iter_m0_records(
     zero10 = (0.0,) * 10
     zero3 = (0.0,) * 3
 
-    for source in ticks:
+    for source in _training_source_ticks(ticks):
         source_tick = _integer(source.get("model_tick"), "model_tick")
         arm_chunk: list[tuple[float, ...]] = []
         padded_chunk: list[tuple[float, ...]] = []

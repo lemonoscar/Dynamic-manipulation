@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -16,6 +17,10 @@ EXPECTED_CAMERA_ROLES = {
     "wrist_rgb": "policy_observation",
     "overview_rgb": "observer_only",
 }
+_PHYSICS_HZ = 400
+_CAMERA_HZ = 25
+_CAPTURE_STEP_STRIDE = _PHYSICS_HZ // _CAMERA_HZ
+_CAPTURE_PERIOD_S = 1.0 / _CAMERA_HZ
 
 
 class CameraGateError(ValueError):
@@ -184,10 +189,29 @@ def _load_frames(episode: Path) -> list[_Frame]:
         capture_time = _number(row.get("capture_time_s"), "capture_time_s")
         if index != expected_index:
             raise CameraGateError("frame indices must be contiguous from zero")
-        if sim_step <= previous_step or capture_time <= previous_time:
+        if not math.isclose(
+            capture_time,
+            sim_step / _PHYSICS_HZ,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
             raise CameraGateError(
-                "camera time and sim_step must be strictly increasing"
+                "camera index capture time must match the physics clock"
             )
+        if expected_index > 0:
+            if sim_step - previous_step != _CAPTURE_STEP_STRIDE:
+                raise CameraGateError(
+                    "camera index cadence must be exactly 16 physics steps"
+                )
+            if not math.isclose(
+                capture_time - previous_time,
+                _CAPTURE_PERIOD_S,
+                rel_tol=0.0,
+                abs_tol=1.0e-6,
+            ):
+                raise CameraGateError(
+                    "camera index cadence must be exactly 0.04s"
+                )
         previous_step, previous_time = sim_step, capture_time
         raw_entries = row.get("frames")
         if not isinstance(raw_entries, Mapping):
@@ -235,6 +259,7 @@ def _validate_step_references(
         if sim_step in by_step:
             raise CameraGateError(f"duplicate step sim_step: {sim_step}")
         by_step[sim_step] = step
+    frames_by_step = {frame.sim_step: frame for frame in frames}
     for frame in frames:
         step = by_step.get(frame.sim_step)
         if step is None:
@@ -246,25 +271,53 @@ def _validate_step_references(
             raw_refs, (str, bytes)
         ):
             raise CameraGateError("step camera_frames must be a list")
+        step_time = _number(step.get("sim_time_s"), "step sim_time_s")
+        if not math.isclose(
+            frame.capture_time_s,
+            step_time,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
+            raise CameraGateError(
+                f"camera frame {frame.index} capture time does not match step"
+            )
         refs = {
             value.get("camera_id"): value
             for value in raw_refs
             if isinstance(value, Mapping)
             and isinstance(value.get("camera_id"), str)
         }
-        if set(refs) != set(EXPECTED_CAMERA_ROLES):
+        if (
+            len(raw_refs) != len(EXPECTED_CAMERA_ROLES)
+            or len(refs) != len(raw_refs)
+            or set(refs) != set(EXPECTED_CAMERA_ROLES)
+        ):
             raise CameraGateError(
-                f"step {frame.sim_step} must reference all cameras"
+                f"step {frame.sim_step} must reference every camera exactly once"
             )
         for camera_id, (_, relative, _, _) in frame.entries.items():
             ref = refs[camera_id]
             if (
                 ref.get("frame_index") != frame.index
+                or not _same_number(
+                    ref.get("capture_time_s"), frame.capture_time_s
+                )
                 or ref.get("relative_path") != relative
             ):
                 raise CameraGateError(
                     f"step {frame.sim_step} camera reference mismatch"
                 )
+    for sim_step, step in by_step.items():
+        raw_refs = step.get("camera_frames")
+        if not isinstance(raw_refs, Sequence) or isinstance(
+            raw_refs, (str, bytes)
+        ):
+            raise CameraGateError("step camera_frames must be a list")
+        indexed = sim_step in frames_by_step
+        if bool(raw_refs) != indexed:
+            raise CameraGateError(
+                f"step {sim_step} capture must have exactly one camera index row"
+            )
 
 
 def _physical_motion(
@@ -532,3 +585,17 @@ def _number(value: Any, name: str) -> float:
     ):
         raise CameraGateError(f"{name} must be finite and non-negative")
     return float(value)
+
+
+def _same_number(left: Any, right: float) -> bool:
+    return (
+        isinstance(left, (int, float))
+        and not isinstance(left, bool)
+        and np.isfinite(left)
+        and math.isclose(
+            float(left),
+            right,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        )
+    )

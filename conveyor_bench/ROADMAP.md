@@ -1,9 +1,56 @@
 # 从 V0 到毕业设计 Benchmark
 
 本项目仍遵循“先跑通可信闭环，再扩大数据规模”的路线。V0 固定机身单目标
-流水线完整保留；当前主线已经推进到 V1 的可采集框架。V1 不是训练模型，也
-不是大规模轨迹集，其接口冻结见 `BENCHMARK_V1_SPEC.md` 和
+流水线完整保留，V1 已成为冻结的可采集基线，当前增量转入 V2 suite。V1 不是
+训练模型，也不是大规模轨迹集，其接口冻结见 `BENCHMARK_V1_SPEC.md` 和
 `configs/v1.json`。
+
+## 当前增量：ConveyorBench V2 suite
+
+V2 不修改 V1 canonical episode 协议，而是在其上增加面向新 VLA 策略的场景
+与任务上下文。规范、采集手册和机器快照分别为 `BENCHMARK_V2_SPEC.md`、
+`COLLECTION_V2_GUIDE.md` 与 `configs/v2.json`。
+
+当前已经落地的 V2 结构包括：
+
+- `transverse_near_sort_v2` 与 `mobile_remote_delivery_v2` 两个场景；
+- 7 个显式允许的 scene/task/mode 组合，未列组合启动前 fail closed；
+- 近端 fixed-base 双目标 `continuous_multi_target`，采用 service-gated 顺序
+  生成和共享 episode 时间预算；
+- 远端蓝/黄投放台、无障碍持物导航走廊和 `>=0.65 m` loaded displacement
+  成功门槛；
+- 保持 head/wrist 为策略观测、overview 为 observer-only 的三相机契约，remote
+  第三视角拉远以覆盖完整路线；
+- 8 类 V1 本地程序化零件、机器人、移动策略与远端新增资产的独立 V2 asset
+  lock；
+- 在 V1 strict canonical validation 之上的 V2 目标顺序/持物距离验证；
+- 在 V1 M0/DynamicVLA 投影之上的 scene、目标序列与当前子任务监督字段；
+- 不启动 Isaac 即可重建的 V2 场景 SVG 与纯 Python 回归测试。
+
+冻结源码候选 `0a2fd7c…` 已完成真实 Isaac CPU PhysX 的 near fixed-base 双目标
+continuous：seed 0、`0.06 m/s`、45 s 上限，两个目标分别在 `13.98 s` 与
+`26.16 s` 稳定放置，最终 2/2 成功；1327 个 control sample 和 2654 个 object
+row 通过 V2 strict validator。
+
+remote whole-body 已完成蓝/黄双方向单目标：黄色 seed 0 为 1201 个 sample、
+`24.02 s`、`0.778166 m` loaded displacement；蓝色 seed 2 为 1542 个 sample、
+`30.84 s`、`0.735903 m`。两者均通过 V2 strict validator。远端托盘标定为
+`(-0.16, ±1.20, 0.46)`，投放和真实四足携物走廊均已物理可达。
+
+本机 RTX 4060 还完成 near fixed single 与 remote whole-body 的三相机正例：
+分别记录 294/600 个同步 tick、882/1800 张 PNG，均通过 strict validator、
+temporal camera gate 和 DynamicVLA/M0 双导出。早期默认 ground 的远程 USD
+依赖已由 V2 本地程序化地面替代。near whole-body、near continuous 相机、语言
+条件及其余物体/seed/速度矩阵仍未通过，不能把当前少量正例外推为 V2 全矩阵
+成功。
+
+V2 下一步只做以下递进工作：
+
+1. 跑通 near whole-body、语言条件及尚未覆盖的任务组合；
+2. 若 continuous 进入视觉训练主矩阵，为 near continuous 增补一条三相机正例；
+3. 用几十条以内、不重叠 seed 覆盖 train/val/unseen、蓝/黄目的地和三个冻结
+   带速档，统计失败模式；
+4. 只有回归稳定后才冻结正式采集清单和数据规模。
 
 ## 已落地：V0 单目标流水线
 
