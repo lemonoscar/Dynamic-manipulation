@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "protocol_version": "conveyor-bench-v1",
+  "layout_id": "transverse_dynamic_sort_station_v1",
+  "delivery": {
+    "artifact_type": "data_collection_and_simulation_framework",
+    "ready_for_collection_after_gates": true,
+    "trained_vla_model_included": false,
+    "end_to_end_gate_result_frozen_in_this_file": false
+  },
+  "self_containment": {
+    "project_root": "Dynamic/conveyor_bench",
+    "network_required_at_runtime": false,
+    "external_project_files_required_at_runtime": false,
+    "runtime_downloads_allowed": false,
+    "asset_lock": "assets/asset_lock.json",
+    "host_environment_prerequisites": [
+      "Python 3.11",
+      "Isaac Sim",
+      "Isaac Lab",
+      "PyTorch",
+      "NumPy",
+      "OpenCV"
+    ]
+  },
+  "scene": {
+    "workcell_manifest": "assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json",
+    "robot_asset": "assets/robots/go2_x5/go2_x5.usd",
+    "locomotion_policy": "assets/policies/go2_x5_pct_dog_only/policy.pt",
+    "belt_center_xyz_m": [
+      0.7,
+      0.0,
+      0.47
+    ],
+    "belt_size_xyz_m": [
+      0.42,
+      1.2,
+      0.06
+    ],
+    "belt_top_z_m": 0.5,
+    "object_lane_x_m": 0.65,
+    "object_spawn_y_m": 0.48,
+    "object_intercept_y_m": 0.0,
+    "exit_plane_point_xyz_m": [
+      0.65,
+      -0.57,
+      0.5
+    ],
+    "transport_direction_xyz": [
+      0.0,
+      -1.0,
+      0.0
+    ],
+    "world_motion": "+Y_to_-Y",
+    "robot_centric_visual_motion": "left_to_right",
+    "contact_model": "PhysxSurfaceVelocityAPI"
+  },
+  "objects": {
+    "registry": "assets/objects/registry.json",
+    "count": 8,
+    "seen_object_ids": [
+      "part_red_block",
+      "part_blue_bar",
+      "part_yellow_bushing",
+      "part_green_shaft",
+      "part_silver_hex",
+      "part_orange_flange"
+    ],
+    "unseen_object_ids": [
+      "part_purple_bracket",
+      "part_cyan_gear"
+    ],
+    "curriculum": {
+      "train_object_ids": [
+        "part_red_block",
+        "part_blue_bar",
+        "part_yellow_bushing",
+        "part_green_shaft"
+      ],
+      "val_object_ids": [
+        "part_silver_hex",
+        "part_orange_flange"
+      ],
+      "unseen_object_ids": [
+        "part_purple_bracket",
+        "part_cyan_gear"
+      ]
+    }
+  },
+  "task": {
+    "task_type": "dynamic_sort",
+    "active_object_count_default": 3,
+    "scored_target_count": 1,
+    "sorting_zone_ids": [
+      "sort_bin_blue",
+      "sort_bin_yellow"
+    ],
+    "receptacle_manifest": "assets/receptacles/ASSET_MANIFEST.json",
+    "default_belt_speed_mps": 0.06,
+    "max_duration_s": 20.0,
+    "failure_is_retained_as_valid_benchmark_data": true
+  },
+  "robot_modes": {
+    "accepted": [
+      "fixed_base",
+      "whole_body_policy"
+    ],
+    "fixed_base": {
+      "base_twist_must_be_zero": true
+    },
+    "whole_body_policy": {
+      "policy_contract": "assets/policies/go2_x5_pct_dog_only/contract.json",
+      "policy_hz": 50,
+      "kinematic_root_teleportation": false
+    }
+  },
+  "rates_hz": {
+    "physics": 400,
+    "control": 50,
+    "camera": 25,
+    "model": 25
+  },
+  "canonical_action": {
+    "dimension": 10,
+    "layout": [
+      "base_vx_body_mps",
+      "base_vy_body_mps",
+      "base_wz_body_radps",
+      "tcp_dx_base_m",
+      "tcp_dy_base_m",
+      "tcp_dz_base_m",
+      "tcp_drx_base_rad",
+      "tcp_dry_base_rad",
+      "tcp_drz_base_rad",
+      "gripper"
+    ],
+    "base_frame": "body",
+    "tcp_delta_frame": "robot_root/base",
+    "rotation_representation": "rotation_vector",
+    "gripper_range": [
+      -1.0,
+      1.0
+    ],
+    "gripper_semantics": {
+      "open": 1.0,
+      "close": -1.0
+    }
+  },
+  "cameras": {
+    "capture_format": "lossless_png",
+    "frame_index": "camera_frames.jsonl",
+    "requires_fabric_transform_propagation": true,
+    "offline_gate": "scripts/check_v1_camera_gate.py",
+    "head_rgb": {
+      "resolution": [
+        224,
+        224
+      ],
+      "fps": 25,
+      "role": "policy_observation"
+    },
+    "wrist_rgb": {
+      "resolution": [
+        224,
+        224
+      ],
+      "fps": 25,
+      "role": "policy_observation"
+    },
+    "overview_rgb": {
+      "resolution": [
+        480,
+        320
+      ],
+      "fps": 25,
+      "role": "observer_only"
+    }
+  },
+  "labels": {
+    "history_offsets_model_ticks": [
+      -2,
+      0
+    ],
+    "future_object_horizons_model_ticks": [
+      0,
+      2,
+      5,
+      10,
+      20
+    ],
+    "dynamicvla_future_ee_offset_model_ticks": 5
+  },
+  "evaluation": {
+    "settled_linear_speed_mps": 0.02,
+    "settled_angular_speed_radps": 0.1,
+    "placement_dwell_s": 0.5
+  },
+  "recording": {
+    "atomic_episode_publication": true,
+    "retain_failed_episodes": true,
+    "required_episode_files": [
+      "manifest.json",
+      "steps.jsonl",
+      "objects.jsonl",
+      "action_chunks.jsonl",
+      "events.jsonl",
+      "summary.json"
+    ],
+    "camera_episode_files": [
+      "camera_frames.jsonl",
+      "cameras/head_rgb/*.png",
+      "cameras/wrist_rgb/*.png",
+      "cameras/overview_rgb/*.png"
+    ]
+  },
+  "exports": {
+    "canonical_source_is_immutable": true,
+    "model_rate_hz": 25,
+    "dynamicvla": {
+      "output": "exports/dynamicvla.jsonl",
+      "chunk_size": 20,
+      "state_frame": "robot_root/base",
+      "delta_action_frame": "robot_root/base",
+      "base_action_frame": "body",
+      "preserves_canonical_action10": true
+    },
+    "m0": {
+      "output": "exports/m0.jsonl",
+      "chunk_size": 16,
+      "state_frame": "world",
+      "arm_action_frame": "world",
+      "right_padded_action_dimension": 14,
+      "left_arm_padding": "seven_zeros",
+      "base_action_frame": "body",
+      "preserves_canonical_action10": true
+    }
+  },
+  "cli_defaults": {
+    "robot_mode": "fixed_base",
+    "episodes": 1,
+    "seed": 0,
+    "belt_speed_mps": 0.06,
+    "max_duration_s": 20.0,
+    "active_objects": 3,
+    "target_asset": "part_red_block",
+    "split": "train",
+    "task_family": null,
+    "instruction_language": "en_zh",
+    "destination": null,
+    "device": "cpu",
+    "enable_cameras": false,
+    "save_camera_frames": false,
+    "require_all_success": false,
+    "output_dir": "outputs/v1_smoke"
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "schema_version": 2,
+  "protocol_version": "conveyor-bench-v0",
+  "layout_id": "transverse_y_negative_low_v2",
+  "scope": {
+    "environment_count": 1,
+    "fixed_base": true,
+    "target_count": 1,
+    "privileged_oracle": true
+  },
+  "rates_hz": {
+    "physics": 200,
+    "control": 50,
+    "camera": 25
+  },
+  "tasks": {
+    "c0": {
+      "task_type": "c0_static_pick",
+      "belt_speed_mps": 0.0,
+      "static_belt_tolerance_mps": 0.01,
+      "uses_exit_failure": false
+    },
+    "c1": {
+      "task_type": "c1_dynamic_pick",
+      "default_belt_speed_mps": 0.08,
+      "minimum_dynamic_speed_mps": 0.02,
+      "direction_world_axis": "-Y",
+      "transport_direction_xyz": [0.0, -1.0, 0.0],
+      "uses_exit_failure": true
+    }
+  },
+  "evaluation": {
+    "lift_height_m": 0.05,
+    "hold_time_s": 1.0,
+    "secure_sample_requires": [
+      "gripper_closed",
+      "left_contact",
+      "right_contact",
+      "target_in_gripper",
+      "lift_height"
+    ],
+    "failure_precedence": [
+      "robot_fallen",
+      "forbidden_collision",
+      "wrong_object",
+      "target_missed",
+      "timeout",
+      "dropped",
+      "grasp_not_secured"
+    ]
+  },
+  "scene": {
+    "robot_asset": "assets/robots/go2_x5/go2_x5.urdf",
+    "target_object_id": "target-red-cuboid",
+    "robot_forward_xyz": [1.0, 0.0, 0.0],
+    "robot_left_xyz": [0.0, 1.0, 0.0],
+    "belt_center_xyz_m": [0.7, 0.0, 0.47],
+    "belt_size_xyz_m": [0.42, 1.2, 0.06],
+    "belt_top_z_m": 0.5,
+    "object_spawn_xyz_m": [0.7, 0.48, 0.542],
+    "intercept_xyz_m": [0.7, 0.0, 0.542],
+    "exit_plane_point_xyz_m": [0.7, -0.57, 0.5],
+    "lane_axis_xyz": [1.0, 0.0, 0.0],
+    "lane_jitter_m": 0.025
+  },
+  "cameras": {
+    "enabled_for_formal_collection": true,
+    "names": [
+      "head_rgb",
+      "wrist_rgb",
+      "overview_rgb"
+    ],
+    "roles": {
+      "head_rgb": "policy_observation",
+      "wrist_rgb": "policy_observation",
+      "overview_rgb": "observer_only"
+    },
+    "width": 224,
+    "height": 224,
+    "format": "mp4"
+  },
+  "recording": {
+    "steps_format": "jsonl",
+    "events_format": "jsonl",
+    "atomic_episode_publication": true,
+    "retain_failed_episodes": true,
+    "operational_failure_reasons": [
+      "aborted",
+      "invalid_task_configuration",
+      "no_samples",
+      "recorder_error",
+      "runtime_error"
+    ],
+    "required_episode_files": [
+      "manifest.json",
+      "steps.jsonl",
+      "events.jsonl",
+      "summary.json"
+    ],
+    "camera_episode_files": [
+      "head_rgb.mp4",
+      "wrist_rgb.mp4",
+      "overview_rgb.mp4",
+      "camera_frames.jsonl"
+    ]
+  },
+  "cli_defaults": {
+    "episodes": 1,
+    "seed": 0,
+    "belt_speed_mps": 0.08,
+    "max_duration_s": 15.0,
+    "device": "cpu",
+    "save_video": true,
+    "enable_cameras": false,
+    "video_requires_enable_cameras": true,
+    "require_all_success": false,
+    "output_dir": "outputs/smoke"
+  }
+}

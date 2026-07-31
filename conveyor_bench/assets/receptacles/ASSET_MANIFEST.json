@@ -1,0 +1,38 @@
+{
+  "schema_version": "conveyor-bench-receptacles-v1",
+  "units": "m-kg-s",
+  "license": "CC0-1.0",
+  "provenance": "Original procedural receptacles authored inside ConveyorBench.",
+  "receptacles": [
+    {
+      "zone_id": "sort_bin_blue",
+      "display_name": "blue sorting tray",
+      "color_rgb": [0.10, 0.32, 0.86],
+      "center_xyz_m": [0.34, 0.43, 0.40],
+      "goal_half_extents_xyz_m": [0.105, 0.125, 0.075],
+      "floor_top_z_m": 0.345,
+      "wall_height_m": 0.10,
+      "settle_dwell_s": 0.50
+    },
+    {
+      "zone_id": "sort_bin_yellow",
+      "display_name": "yellow sorting tray",
+      "color_rgb": [0.93, 0.69, 0.08],
+      "center_xyz_m": [0.34, -0.43, 0.40],
+      "goal_half_extents_xyz_m": [0.105, 0.125, 0.075],
+      "floor_top_z_m": 0.345,
+      "wall_height_m": 0.10,
+      "settle_dwell_s": 0.50
+    },
+    {
+      "zone_id": "reject_catch",
+      "display_name": "downstream reject catch tray",
+      "color_rgb": [0.52, 0.54, 0.57],
+      "center_xyz_m": [0.70, -0.75, 0.40],
+      "goal_half_extents_xyz_m": [0.20, 0.12, 0.10],
+      "floor_top_z_m": 0.34,
+      "wall_height_m": 0.12,
+      "settle_dwell_s": 0.50
+    }
+  ]
+}

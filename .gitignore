@@ -1,0 +1,55 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging and virtual environments
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.python-version
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Isaac Sim / Isaac Lab generated state
+_isaac_cache/
+isaac_cache/
+kit/cache/
+kit/logs/
+
+# Generated benchmark datasets, recordings, exports, and reports
+outputs/
+conveyor_bench/outputs/
+
+# Local project-planning document (do not publish)
+/毕业设计计划.pdf

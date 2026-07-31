@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "name": "go2_x5_pct_dog_only_model_26000",
+  "policy": {
+    "file": "policy.pt",
+    "format": "torchscript",
+    "sha256": "f02e6467472e90671a28d97cd6dc02ed7fdeb59d2ece18e082f254314558d383",
+    "size_bytes": 1209746,
+    "input_dimension": 260,
+    "output_dimension": 12,
+    "network_widths": [
+      260,
+      512,
+      256,
+      128,
+      12
+    ],
+    "activation": "elu",
+    "observation_normalizer": "identity",
+    "exported_from_checkpoint": "model_26000.pt",
+    "checkpoint_sha256": "b46813c2daf17354c6344766816528cb04200f0fb996b53d5f3eb12302b49d51"
+  },
+  "timing": {
+    "physics_hz": 400,
+    "policy_hz": 50,
+    "physics_dt_seconds": 0.0025,
+    "policy_dt_seconds": 0.02,
+    "decimation": 8
+  },
+  "observation": {
+    "dimension": 260,
+    "processing_order": "clip_then_scale",
+    "deterministic_evaluation": true,
+    "slices": {
+      "base_linear_velocity": {
+        "start": 0,
+        "stop": 3,
+        "frame": "body",
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 2.0
+      },
+      "base_angular_velocity": {
+        "start": 3,
+        "stop": 6,
+        "frame": "body",
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 0.25
+      },
+      "projected_gravity": {
+        "start": 6,
+        "stop": 9,
+        "frame": "body",
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 1.0
+      },
+      "base_velocity_command": {
+        "start": 9,
+        "stop": 12,
+        "order": [
+          "linear_x_mps",
+          "linear_y_mps",
+          "angular_z_radps"
+        ],
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 1.0
+      },
+      "relative_joint_position": {
+        "start": 12,
+        "stop": 30,
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 1.0
+      },
+      "joint_velocity": {
+        "start": 30,
+        "stop": 48,
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 0.05
+      },
+      "last_action_padded": {
+        "start": 48,
+        "stop": 66,
+        "source_dimension": 12,
+        "trailing_zero_padding": 6,
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 1.0
+      },
+      "height_scan": {
+        "start": 66,
+        "stop": 253,
+        "dimension": 187,
+        "clip": [
+          -1.0,
+          1.0
+        ],
+        "scale": 1.0,
+        "flat_benchmark_value": -0.2,
+        "flat_benchmark_mode": "constant_direct_flat_approximation",
+        "flat_benchmark_source": "checkpoint-matched ManagerBased flat reset observation; not a live RayCaster"
+      },
+      "arm_joint_command": {
+        "start": 253,
+        "stop": 259,
+        "mode": "absolute_position_target",
+        "clip": [
+          -100.0,
+          100.0
+        ],
+        "scale": 1.0
+      },
+      "gripper_command": {
+        "start": 259,
+        "stop": 260,
+        "clip": [
+          -1.0,
+          1.0
+        ],
+        "scale": 1.0,
+        "training_value": 0.0
+      }
+    }
+  },
+  "joints": {
+    "state_order": [
+      "FR_hip_joint",
+      "FR_thigh_joint",
+      "FR_calf_joint",
+      "FL_hip_joint",
+      "FL_thigh_joint",
+      "FL_calf_joint",
+      "RR_hip_joint",
+      "RR_thigh_joint",
+      "RR_calf_joint",
+      "RL_hip_joint",
+      "RL_thigh_joint",
+      "RL_calf_joint",
+      "arm_joint1",
+      "arm_joint2",
+      "arm_joint3",
+      "arm_joint4",
+      "arm_joint5",
+      "arm_joint6"
+    ],
+    "action_order": [
+      "FR_hip_joint",
+      "FR_thigh_joint",
+      "FR_calf_joint",
+      "FL_hip_joint",
+      "FL_thigh_joint",
+      "FL_calf_joint",
+      "RR_hip_joint",
+      "RR_thigh_joint",
+      "RR_calf_joint",
+      "RL_hip_joint",
+      "RL_thigh_joint",
+      "RL_calf_joint"
+    ]
+  },
+  "default_pose": {
+    "root_height_m": 0.3,
+    "leg": [
+      0.1,
+      0.8,
+      -1.5,
+      -0.1,
+      0.8,
+      -1.5,
+      0.1,
+      1.0,
+      -1.5,
+      -0.1,
+      1.0,
+      -1.5
+    ],
+    "arm": [
+      0.0,
+      0.3,
+      0.5,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "control": {
+    "leg_position_target_formula": "default_leg_position + action_scale * warmup_scale * policy_action",
+    "action_scale": 0.25,
+    "warmup_scale_range": [
+      0.0,
+      1.0
+    ],
+    "policy_owns": "12 leg joints only",
+    "arm_owner": "benchmark VLA or IK controller",
+    "gripper_owner": "benchmark gripper controller",
+    "leg_actuators": {
+      "hip_and_thigh": {
+        "effort_limit_nm": 35.278,
+        "velocity_limit_radps": 30.0,
+        "stiffness": 40.0,
+        "damping": 1.0,
+        "saturation_effort_nm": 35.278
+      },
+      "calf": {
+        "effort_limit_nm": 44.4,
+        "velocity_limit_radps": 30.0,
+        "stiffness": 40.0,
+        "damping": 1.0,
+        "saturation_effort_nm": 44.4
+      }
+    }
+  },
+  "command_limits": {
+    "training_envelope": {
+      "linear_x_mps": [
+        -0.55,
+        0.55
+      ],
+      "linear_y_mps": [
+        -0.25,
+        0.25
+      ],
+      "angular_z_radps": [
+        -0.6,
+        0.6
+      ]
+    },
+    "benchmark_v1_guardrail": {
+      "linear_x_mps": [
+        0.0,
+        0.3
+      ],
+      "linear_y_mps": [
+        0.0,
+        0.0
+      ],
+      "angular_z_radps": [
+        -0.35,
+        0.35
+      ],
+      "minimum_nonzero_forward_mps": 0.16,
+      "reason": "flat-ground audit found a low-speed forward dead zone and severe lateral under-response"
+    },
+    "empirically_passed_positive_commands": [
+      [
+        0.16,
+        0.0,
+        0.35
+      ],
+      [
+        0.2,
+        0.0,
+        0.0
+      ],
+      [
+        0.2,
+        0.0,
+        0.3
+      ],
+      [
+        0.22,
+        0.0,
+        0.0
+      ],
+      [
+        0.3,
+        0.0,
+        0.35
+      ],
+      [
+        0.0,
+        0.0,
+        0.35
+      ]
+    ]
+  },
+  "provenance": {
+    "training_repository": "Go2-X5-lab",
+    "training_repository_commit": "4c6213f524f38088309b523cc79e167d98c92c1e",
+    "training_artifact": "logs/rsl_rl/go2_x5_dog_only_rough/2026-05-12_08-16-24/exported/policy.pt",
+    "reference_repository": "arm-vla-grasp-sim",
+    "reference_repository_commit": "b0f4f39ddf7ce2a94ad5c174e48da0ec31f6534a",
+    "reference_profile": "checkpoints/go2_x5/pct_multifloor",
+    "source_code_license_headers": [
+      "Apache-2.0",
+      "BSD-3-Clause"
+    ],
+    "repository_root_license_found": false,
+    "weight_specific_license_found": false,
+    "redistribution_status": "not asserted; review before external redistribution"
+  }
+}

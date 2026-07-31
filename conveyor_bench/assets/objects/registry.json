@@ -1,0 +1,379 @@
+{
+  "schema_version": "conveyor-bench-object-registry-v1",
+  "units": "m-kg-s",
+  "objects": [
+    {
+      "object_id": "part_red_block",
+      "display_name": "red inspection block",
+      "category": "block",
+      "attributes": {
+        "color": "red",
+        "material": "painted_aluminum",
+        "shape": "compact cuboid"
+      },
+      "language_aliases": {
+        "en": ["red block", "small red cuboid", "red inspection block"],
+        "zh": ["红色方块", "小红色长方体", "红色检验块"]
+      },
+      "geometry": {
+        "kind": "box",
+        "size_xyz": [0.048, 0.048, 0.064]
+      },
+      "physics": {
+        "mass_kg": 0.080,
+        "static_friction": 1.15,
+        "dynamic_friction": 0.95,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_parallel_y",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [0.0, 0.0, 0.004],
+          "required_opening_m": 0.056
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-red-block-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_blue_bar",
+      "display_name": "blue spacer bar",
+      "category": "bar",
+      "attributes": {
+        "color": "blue",
+        "material": "anodized_aluminum",
+        "shape": "long cuboid"
+      },
+      "language_aliases": {
+        "en": ["blue bar", "long blue part", "blue spacer"],
+        "zh": ["蓝色长条", "蓝色长零件", "蓝色垫块"]
+      },
+      "geometry": {
+        "kind": "box",
+        "size_xyz": [0.036, 0.082, 0.034]
+      },
+      "physics": {
+        "mass_kg": 0.070,
+        "static_friction": 1.10,
+        "dynamic_friction": 0.90,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_parallel_x",
+          "approach_axis": "-z",
+          "finger_closing_axis": "x",
+          "tcp_offset_xyz": [0.0, 0.0, 0.003],
+          "required_opening_m": 0.046
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-blue-bar-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_yellow_bushing",
+      "display_name": "yellow cylindrical bushing",
+      "category": "bushing",
+      "attributes": {
+        "color": "yellow",
+        "material": "polymer",
+        "shape": "short cylinder"
+      },
+      "language_aliases": {
+        "en": ["yellow bushing", "yellow cylinder", "short yellow round part"],
+        "zh": ["黄色衬套", "黄色圆柱", "黄色短圆件"]
+      },
+      "geometry": {
+        "kind": "cylinder",
+        "radius_m": 0.027,
+        "height_m": 0.046,
+        "axis": "z",
+        "sides": 32
+      },
+      "physics": {
+        "mass_kg": 0.060,
+        "static_friction": 1.20,
+        "dynamic_friction": 1.00,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_diameter",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [0.0, 0.0, 0.003],
+          "required_opening_m": 0.062
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-yellow-bushing-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_green_shaft",
+      "display_name": "green horizontal shaft",
+      "category": "shaft",
+      "attributes": {
+        "color": "green",
+        "material": "painted_steel",
+        "shape": "slender cylinder"
+      },
+      "language_aliases": {
+        "en": ["green shaft", "green rod", "thin green cylinder"],
+        "zh": ["绿色轴", "绿色细杆", "绿色细圆柱"]
+      },
+      "geometry": {
+        "kind": "cylinder",
+        "radius_m": 0.016,
+        "height_m": 0.090,
+        "axis": "y",
+        "sides": 32
+      },
+      "physics": {
+        "mass_kg": 0.085,
+        "static_friction": 1.15,
+        "dynamic_friction": 0.95,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_cross_shaft",
+          "approach_axis": "-z",
+          "finger_closing_axis": "x",
+          "tcp_offset_xyz": [0.0, 0.0, 0.004],
+          "required_opening_m": 0.040
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-green-shaft-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_silver_hex",
+      "display_name": "silver hexagonal blank",
+      "category": "hex_blank",
+      "attributes": {
+        "color": "silver",
+        "material": "machined_steel",
+        "shape": "hexagonal prism"
+      },
+      "language_aliases": {
+        "en": ["silver hex part", "hexagonal blank", "silver nut-shaped part"],
+        "zh": ["银色六角件", "六角坯料", "银色螺母形零件"]
+      },
+      "geometry": {
+        "kind": "cylinder",
+        "radius_m": 0.034,
+        "height_m": 0.028,
+        "axis": "z",
+        "sides": 6
+      },
+      "physics": {
+        "mass_kg": 0.100,
+        "static_friction": 1.05,
+        "dynamic_friction": 0.85,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_across_flats",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [0.0, 0.0, 0.003],
+          "required_opening_m": 0.066
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-silver-hex-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_orange_flange",
+      "display_name": "orange stepped flange",
+      "category": "flange",
+      "attributes": {
+        "color": "orange",
+        "material": "painted_aluminum",
+        "shape": "stepped cylinder"
+      },
+      "language_aliases": {
+        "en": ["orange flange", "orange spool part", "stepped orange cylinder"],
+        "zh": ["橙色法兰", "橙色线轴形零件", "橙色阶梯圆柱"]
+      },
+      "geometry": {
+        "kind": "compound",
+        "parts": [
+          {
+            "shape": "cylinder",
+            "name": "hub",
+            "radius_m": 0.021,
+            "height_m": 0.056,
+            "axis": "z",
+            "sides": 32,
+            "offset_xyz": [0.0, 0.0, 0.0]
+          },
+          {
+            "shape": "cylinder",
+            "name": "lower_rim",
+            "radius_m": 0.035,
+            "height_m": 0.012,
+            "axis": "z",
+            "sides": 32,
+            "offset_xyz": [0.0, 0.0, -0.022]
+          },
+          {
+            "shape": "cylinder",
+            "name": "upper_rim",
+            "radius_m": 0.035,
+            "height_m": 0.012,
+            "axis": "z",
+            "sides": 32,
+            "offset_xyz": [0.0, 0.0, 0.022]
+          }
+        ]
+      },
+      "physics": {
+        "mass_kg": 0.095,
+        "static_friction": 1.10,
+        "dynamic_friction": 0.90,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_hub",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [0.0, 0.0, 0.004],
+          "required_opening_m": 0.050
+        }
+      ],
+      "split": "seen",
+      "real_twin_id": "printable-orange-flange-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural compound geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_purple_bracket",
+      "display_name": "purple L bracket",
+      "category": "bracket",
+      "attributes": {
+        "color": "purple",
+        "material": "painted_steel",
+        "shape": "L bracket"
+      },
+      "language_aliases": {
+        "en": ["purple bracket", "purple L-shaped part", "upright purple bracket"],
+        "zh": ["紫色支架", "紫色L形零件", "紫色直角支架"]
+      },
+      "geometry": {
+        "kind": "compound",
+        "parts": [
+          {
+            "shape": "box",
+            "name": "foot",
+            "size_xyz": [0.066, 0.040, 0.018],
+            "offset_xyz": [0.0, 0.0, -0.021]
+          },
+          {
+            "shape": "box",
+            "name": "upright",
+            "size_xyz": [0.018, 0.040, 0.062],
+            "offset_xyz": [-0.024, 0.0, 0.001]
+          }
+        ]
+      },
+      "physics": {
+        "mass_kg": 0.075,
+        "static_friction": 1.20,
+        "dynamic_friction": 1.00,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "upright_plate",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [-0.024, 0.0, 0.006],
+          "required_opening_m": 0.050
+        }
+      ],
+      "split": "unseen",
+      "real_twin_id": "printable-purple-bracket-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural compound geometry authored inside ConveyorBench."
+    },
+    {
+      "object_id": "part_cyan_gear",
+      "display_name": "cyan gear proxy",
+      "category": "gear",
+      "attributes": {
+        "color": "cyan",
+        "material": "polymer",
+        "shape": "toothed disk proxy"
+      },
+      "language_aliases": {
+        "en": ["cyan gear", "blue-green gear", "cyan toothed disk"],
+        "zh": ["青色齿轮", "蓝绿色齿轮", "青色齿盘"]
+      },
+      "geometry": {
+        "kind": "compound",
+        "parts": [
+          {
+            "shape": "cylinder",
+            "name": "toothed_disk_proxy",
+            "radius_m": 0.039,
+            "height_m": 0.020,
+            "axis": "z",
+            "sides": 12,
+            "offset_xyz": [0.0, 0.0, 0.0]
+          },
+          {
+            "shape": "cylinder",
+            "name": "hub",
+            "radius_m": 0.018,
+            "height_m": 0.034,
+            "axis": "z",
+            "sides": 32,
+            "offset_xyz": [0.0, 0.0, 0.0]
+          }
+        ]
+      },
+      "physics": {
+        "mass_kg": 0.070,
+        "static_friction": 1.25,
+        "dynamic_friction": 1.00,
+        "restitution": 0.0
+      },
+      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "grasp_affordances": [
+        {
+          "id": "top_hub",
+          "approach_axis": "-z",
+          "finger_closing_axis": "y",
+          "tcp_offset_xyz": [0.0, 0.0, 0.004],
+          "required_opening_m": 0.048
+        }
+      ],
+      "split": "unseen",
+      "real_twin_id": "printable-cyan-gear-v1",
+      "license": "CC0-1.0",
+      "provenance": "Original procedural compound geometry authored inside ConveyorBench."
+    }
+  ]
+}

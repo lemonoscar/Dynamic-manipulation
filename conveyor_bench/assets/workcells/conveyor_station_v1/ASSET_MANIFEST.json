@@ -1,0 +1,40 @@
+{
+  "asset_id": "conveyor_station_v1",
+  "schema_version": "conveyor-bench-procedural-workcell-v1",
+  "units": "m-kg-s",
+  "license": "CC0-1.0",
+  "provenance": "Original procedural workcell authored inside ConveyorBench.",
+  "runtime_dependency": "none",
+  "design": {
+    "transport_axis_world": [0.0, -1.0, 0.0],
+    "belt_top_z_m": 0.50,
+    "belt_center_xyz_m": [0.70, 0.0, 0.47],
+    "belt_size_xyz_m": [0.42, 1.20, 0.06],
+    "contact_model": "hidden/simple cuboid collider with PhysxSurfaceVelocityAPI",
+    "visual_model": "collision-free belt skin, seam markers and synchronized rollers"
+  },
+  "components": [
+    "transport_surface",
+    "visual_belt_skin",
+    "drive_roller",
+    "idler_roller",
+    "side_frame_left",
+    "side_frame_right",
+    "four_support_legs",
+    "cross_braces",
+    "motor_and_guard",
+    "far_safety_rail",
+    "upstream_photoeye",
+    "downstream_photoeye",
+    "emergency_stop",
+    "exit_marker",
+    "catch_tray"
+  ],
+  "collision_roles": {
+    "transport_surface": "surface_velocity_contact",
+    "frame_and_legs": "static_environment",
+    "near_robot_rail": "omitted_for_arm_clearance",
+    "catch_tray": "post_exit_only",
+    "visual_belt_skin_and_rollers": "visual_only"
+  }
+}
