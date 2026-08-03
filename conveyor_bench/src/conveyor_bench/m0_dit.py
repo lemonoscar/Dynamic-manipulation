@@ -336,7 +336,10 @@ class M0DiTActionHead(nn.Module):
         self.position_embedding = nn.Embedding(config.max_seq_len, config.input_embedding_dim)
         nn.init.normal_(self.future_tokens.weight, mean=0.0, std=0.02)
         nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
-        self.beta_dist = Beta(config.noise_beta_alpha, config.noise_beta_beta)
+        self.beta_dist = Beta(
+            torch.tensor(config.noise_beta_alpha, device="cpu"),
+            torch.tensor(config.noise_beta_beta, device="cpu"),
+        )
 
     def forward(
         self,

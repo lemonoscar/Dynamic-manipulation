@@ -95,6 +95,13 @@ def test_state_dict_exactly_matches_official_action_checkpoint_keys() -> None:
     assert len(model.state_dict()) == 248
 
 
+def test_action_structure_can_be_audited_on_meta_device() -> None:
+    with torch.device("meta"):
+        model = M0DiTActionHead(_tiny_config())
+
+    assert all(value.device.type == "meta" for value in model.state_dict().values())
+
+
 def test_tiny_loss_is_finite_and_backpropagates() -> None:
     torch.manual_seed(0)
     config = _tiny_config()
