@@ -1,0 +1,75 @@
+{
+  "schema_version": "conveyor-bench-m3-training-smoke-1",
+  "date": "2026-08-04",
+  "code_commit": "b284825233edc01b12316687c9146de91458f7a7",
+  "remote_host": "4xH20",
+  "remote_gpu": {
+    "physical_index": 3,
+    "uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458"
+  },
+  "accepted_initial_checkpoint": {
+    "name": "m1-multiphase-balanced-step1200-20260803-1925",
+    "action_model_sha256": "2f6c10a55f857cab198daa1886be0d8b2df5fbb7f93d3e8c648df3f3bd795024"
+  },
+  "training_mix": {
+    "remote_root": "/diff/wallx_workspace/dzb/dynamic-m0-mobile-runs-20260803/datasets/m3-static-dynamic-mix-20260804",
+    "records": 2492,
+    "static_records": 1428,
+    "dynamic_records": 1064,
+    "source_record_counts": [
+      478,
+      487,
+      463,
+      532,
+      532
+    ],
+    "source_export_sha256": [
+      "c83b96db8fc74cae13214987465f6eb8ef1229cb1bea13f1989ade02fb4420cc",
+      "9bc76aeb2cace9e85b29085c226344b3f2e398d2d4ebf5ba9d9551223a8bc58f",
+      "3018bd1d7bc34fe320ccd45d3d5454ebc0f523ad3b8576629cfb625d92360414",
+      "0d3f9d54f5a12d2ccaa05bfad2c0e227041193f20502d74a2e8cb1476d6193d6",
+      "0d3f9d54f5a12d2ccaa05bfad2c0e227041193f20502d74a2e8cb1476d6193d6"
+    ],
+    "state_statistics": {
+      "split": "train",
+      "count": 2492,
+      "source_set_sha256": "fe368b6022764c9264ef2f61005daac1302079a6984d6f8a884027b21efde3f3",
+      "remote_file_sha256": "8b60ff22bb2179f606290e8870c5dd6ff3c3297dad0fdfffcf1e6ae32fbf43eb"
+    }
+  },
+  "step100_smoke": {
+    "run_id": "m3-five-root-smoke-gpu3-step100-20260804-a1",
+    "ok": true,
+    "max_steps": 100,
+    "dataset_records": 2492,
+    "world_size": 1,
+    "visible_devices": "3",
+    "attention_implementation": "sdpa",
+    "final_loss": 0.006694437004625797,
+    "final_gradient_norm": 0.8801717758178711,
+    "peak_allocated_mib_rank0": 11862.15,
+    "action_model_sha256": "f54da828a038ab16efc5a7cf4ef1b92097ef9efbcbf0b07e9dbd0c59d6e2ca0d",
+    "training_report_sha256": "4bd29b3818839b24868643ff95bca2fbf4102d6da6cf9288317ac7c8d50673ff",
+    "state_statistics_sha256": "8b60ff22bb2179f606290e8870c5dd6ff3c3297dad0fdfffcf1e6ae32fbf43eb",
+    "wrapper_exit_file": {
+      "value": "0n",
+      "accepted_as_exit_proof": false,
+      "note": "The training report and complete event are valid; the first tmux wrapper escaped its newline incorrectly."
+    }
+  },
+  "exit_proof_smoke": {
+    "run_id": "m3-five-root-smoke-gpu3-step2-20260804-a2",
+    "ok": true,
+    "max_steps": 2,
+    "exit_file_hex": "30 0a",
+    "action_model_sha256": "abc4441d442caf8ece8aa3e3fd00b9345c29051f8579d1661b11787a68338bb1",
+    "training_report_sha256": "45ad5b09d255e6ee61b29a6a8a9993476f059d4fc4d5edbb918b7595063fbb44"
+  },
+  "result": {
+    "training_pipeline_runnable": true,
+    "gpu_isolation_verified": true,
+    "gpu_zero_one_starvla_unchanged": true,
+    "gpu_two_m1_service_unchanged": true,
+    "gpu_three_released_after_training": true
+  }
+}

@@ -372,8 +372,49 @@ strict validator 和 quality 通过，其三路图像仍被 camera gate 判为�
 
 ## 6. 放量边界
 
-下一步只做少量、不重叠 seed 的回归集，覆盖 train/val/unseen、两个分拣盘、
-fixed/whole-body 和少量冻结速度档。只有全部回归 episode 完成 strict
-validator、quality audit、temporal camera gate 和双 profile 导出，并确认无
-`.inprogress` 残留后，才设计大规模采集。不得把上述 smoke/debug 目录直接
-并入正式训练集。
+正式第一批动态训练矩阵已经冻结为 4 个 train 目标 × 2 个分拣盘 × 2 种语言 ×
+每格 8 个 seed，共 128 条。不要用裸 shell 循环放量；统一使用
+`collect_v1_train_matrix.py`，它会从 canonical manifest/summary 重建恢复状态，
+拒绝重复或冲突 seed、可见 orphan episode 和并发写入，并在每条 episode 后依次
+执行 strict validator、quality audit、temporal camera gate 与三个 profile 导出。
+
+先查看不会启动 Isaac 的冻结命令：
+
+```bash
+python scripts/collect_v1_train_matrix.py \
+  --phase pilot \
+  --output-root /NEW/DATASET/v1-dynamic-train-128 \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL \
+  --dry-run
+```
+
+实际执行必须先通过远端 Compatibility Checker，并从其 `[gpu.foundation]` 表确认
+`VALIDATED_KIT_ORDINAL` 对应获准使用的物理 GPU UUID。`CUDA_VISIBLE_DEVICES` 不
+能替代这个 Vulkan/Kit 核对。pilot 每格只采 base seed，共 16 条，并且必须 16/16
+物理成功且四层门禁全部通过：
+
+```bash
+python scripts/collect_v1_train_matrix.py \
+  --phase pilot \
+  --output-root /NEW/DATASET/v1-dynamic-train-128 \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL
+```
+
+只有 runner 自己判定 pilot barrier 通过，才可在同一个 output root 启动 bulk；
+bulk 只补每格剩余的 `base+1 ... base+7`，共 112 条：
+
+```bash
+python scripts/collect_v1_train_matrix.py \
+  --phase bulk \
+  --output-root /NEW/DATASET/v1-dynamic-train-128 \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL
+```
+
+中断后重复同一命令只补 canonical 中缺失的连续 seed 范围。若上次硬崩留下可见
+orphan、重复语义 seed、合同冲突或陈旧 `.matrix.lock`，runner 会停止，
+要求人工审计，绝不自动覆盖。`matrix_report.json` 是原子更新的总账；
+`successful_episode_roots.txt` 只列出物理成功且完整门禁通过的训练候选。bulk 的
+普通任务失败会保留为 benchmark 负例并标为 training-ineligible；runtime error、
+数据损坏、相机或导出失败都会立即停止后续放量。
+
+不得把 smoke/debug 目录直接并入正式训练集，也不得绕过 16-cell pilot barrier。

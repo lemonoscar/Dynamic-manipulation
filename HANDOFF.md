@@ -116,16 +116,19 @@ ssh 4xH20 tmux list-sessions
   - static 1103：`3018bd1d7bc34fe320ccd45d3d5454ebc0f523ad3b8576629cfb625d92360414`
   - dynamic release：`0d3f9d54f5a12d2ccaa05bfad2c0e227041193f20502d74a2e8cb1476d6193d6`
 
-完整 `conveyor_bench/tests` 为 382/382 green；关键定向测试另行复核 107/107，五条
+完整 `conveyor_bench/tests` 为 393/393 green；关键定向测试另行复核 107/107，五条
 静态 canonical episode 均再次通过 strict validator。`git diff --check` 通过。
 全套测试中的 localhost server/client 用例需要允许只在本机打开临时 HTTP 端口。
 
-## 下一次训练与采集门禁
+## 训练已通过；采集仍需通过硬件门禁
 
 最终小混合为 2492 records：静态 1428（57.3%），动态 release 532 加一次完整等权
-replay 532（42.7%）。state statistics 的 `count=2492`、`split=train`，训练从已接受
-M1 初始化，不使用 M2。先在 GPU3 单卡跑 100-step 真实 pipeline smoke，验收模型、
-统计与 training report 哈希后再增加训练步数。
+replay 532（42.7%）。state statistics 的 `count=2492`、`split=train`。GPU3 单卡
+100-step 真实 pipeline smoke 已从 accepted M1 成功完成，最终 loss 与 gradient norm
+有限，模型、统计和 report 哈希均已复核；GPU0/1 StarVLA 与 GPU2 M1 service 未受
+影响。首次 tmux wrapper 把退出文件误写为字面量 `0n`，因此另跑 2-step exit-proof，
+其退出文件字节为 `30 0a`。完整机器证据见
+`conveyor_bench/docs/m3_training_pipeline_smoke_20260804.json`。
 
 远端新的隔离 Isaac 环境位于
 `/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804`。轻量 Isaac Sim 5.1
@@ -136,3 +139,6 @@ compatibility 包已安装，但首次 Kit 启动要求用户明确接受 NVIDIA
 首批动态生产矩阵为 4 个 train 目标 × 2 个分拣盘 × 2 种语言 × 每格 8 回合，共
 128 回合。先采每格 1 条的 16-cell pilot，全部通过 strict、quality、camera gate 后
 再启动剩余 112 条；失败回合保留作 benchmark 证据，但训练集只接收未辅助成功回合。
+生产入口是 `conveyor_bench/scripts/collect_v1_train_matrix.py`；它冻结 seed 矩阵、
+采用单一写锁，从 canonical 数据恢复，拒绝重复/orphan/inprogress，并原子维护
+`matrix_report.json` 与训练候选清单。bulk 启动前会重新跑完 16 条 pilot 的四层门禁。
