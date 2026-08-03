@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Diagnostic only: execute the shadow teacher carry-retract "
-            "canonical action through the same Cartesian IK path as M0."
+            "physical action through the same Cartesian IK path as M0."
         ),
     )
     parser.add_argument("--episodes", type=int, default=1)

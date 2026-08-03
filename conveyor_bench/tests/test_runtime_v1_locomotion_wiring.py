@@ -285,11 +285,11 @@ def test_m0_carry_teacher_uses_the_cartesian_policy_executor() -> None:
     )
     assert "phase == 'carry_retract'" in episode_source
     assert (
-        "self._apply_m0_mobile_action(shadow_teacher_action10, "
+        "self._apply_m0_mobile_action(shadow_teacher_physical_action10, "
         "state_before)"
     ) in episode_source
     assert "diagnostic_teacher_via_m0_executor" in episode_source
-    assert "shadow_oracle_canonical10" in episode_source
+    assert "shadow_oracle_projected_m0_physical10" in episode_source
     assert "'direct_joint_target_write': False" in episode_source
     assert (
         "m0_carry_retract_teacher_executor: bool = False" in v2_source

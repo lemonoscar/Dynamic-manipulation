@@ -887,7 +887,9 @@ class ConveyorRuntimeV1:
                     ),
                     "scope": "diagnostic_only",
                     "phase": "carry_retract",
-                    "action_source": "shadow_oracle_canonical10",
+                    "action_source": (
+                        "shadow_oracle_projected_m0_physical10"
+                    ),
                     "actuation_path": "m0_cartesian_ik_executor",
                     "direct_joint_target_write": False,
                 },
@@ -1040,7 +1042,9 @@ class ConveyorRuntimeV1:
                 m0_staging_assist_metadata: dict[str, Any] | None = None
                 m0_staging_handoff_metadata: dict[str, Any] | None = None
                 m0_teacher_executor_metadata: dict[str, Any] | None = None
-                shadow_teacher_action10: tuple[float, ...] | None = None
+                shadow_teacher_physical_action10: (
+                    tuple[float, ...] | None
+                ) = None
                 shadow_arm_target = (
                     self._arm_target.clone()
                     if self._m0_client is not None
@@ -1418,7 +1422,7 @@ class ConveyorRuntimeV1:
                     self.options.m0_carry_retract_teacher_executor
                     and phase == "carry_retract"
                 ):
-                    shadow_teacher_action10 = tuple(
+                    shadow_teacher_physical_action10 = tuple(
                         float(value)
                         for value in (
                             *base_command,
@@ -1518,7 +1522,7 @@ class ConveyorRuntimeV1:
                             },
                             "execution_prefix": m0_execution_prefix,
                         }
-                    elif shadow_teacher_action10 is not None:
+                    elif shadow_teacher_physical_action10 is not None:
                         model_action = None
                         model_action_index = None
                         if (
@@ -1538,7 +1542,7 @@ class ConveyorRuntimeV1:
                             gripper_open,
                             teacher_workspace_guard,
                         ) = self._apply_m0_mobile_action(
-                            shadow_teacher_action10,
+                            shadow_teacher_physical_action10,
                             state_before,
                         )
                         assert teacher_workspace_guard is None
@@ -1548,11 +1552,13 @@ class ConveyorRuntimeV1:
                             "assisted": True,
                             "scope": "diagnostic_only",
                             "phase": "carry_retract",
-                            "action_source": "shadow_oracle_canonical10",
+                            "action_source": (
+                                "shadow_oracle_projected_m0_physical10"
+                            ),
                             "actuation_path": "m0_cartesian_ik_executor",
                             "direct_joint_target_write": False,
-                            "teacher_action10": list(
-                                shadow_teacher_action10
+                            "teacher_physical_action10": list(
+                                shadow_teacher_physical_action10
                             ),
                             "m0_action_applied": False,
                         }
@@ -2335,7 +2341,9 @@ class ConveyorRuntimeV1:
                     ),
                     "scope": "diagnostic_only",
                     "phase": "carry_retract",
-                    "action_source": "shadow_oracle_canonical10",
+                    "action_source": (
+                        "shadow_oracle_projected_m0_physical10"
+                    ),
                     "actuation_path": "m0_cartesian_ik_executor",
                     "direct_joint_target_write": False,
                     "control_steps": m0_teacher_executor_steps,

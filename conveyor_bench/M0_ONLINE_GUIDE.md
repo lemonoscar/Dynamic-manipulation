@@ -171,8 +171,9 @@ python scripts/run_m0_closed_loop.py \
   --device cpu
 ```
 
-该开关只在 `carry_retract` 使用 shadow oracle 已生成的 canonical10 动作，但丢弃
-专家的直接 joint target，并通过与 M0 相同的 Cartesian IK 执行器落地。现有
+该开关只在 `carry_retract` 将 shadow oracle 动作投影成 M0 physical10（夹爪为
+`0/1`）后执行，但丢弃专家的直接 joint target，并通过与 M0 相同的 Cartesian
+IK 执行器落地。现有
 `0.060 rad` joint error、`0.35 rad/s`、`0.30 s` dwell 和 `6 s` timeout 均不
 改变。若该诊断也失败，才有证据说明 Cartesian action 与 joint gate 合同可能
 不可实现；若通过，则应先补 carry 数据。它显式使用 privileged teacher action，
