@@ -75,3 +75,18 @@ def test_publish_state_statistics_copies_exact_deployment_input(tmp_path) -> Non
 
     assert (output / "state_statistics.json").read_bytes() == source.read_bytes()
     assert digest == "386a7dbdc927cbf76d42f11a7f376fddefbeeb3fe2cb473cf972ce54ae108642"
+
+
+def test_initial_action_checkpoint_restores_exact_tensor_mapping(tmp_path) -> None:
+    source_model = _tiny_action_model()
+    checkpoint = tmp_path / "action.safetensors"
+    TRAIN.save_file(source_model.state_dict(), checkpoint)
+    target_model = _tiny_action_model()
+    for parameter in target_model.parameters():
+        parameter.data.zero_()
+
+    digest = TRAIN._load_initial_action_checkpoint(target_model, checkpoint)
+
+    assert len(digest) == 64
+    for key, value in source_model.state_dict().items():
+        assert torch.equal(target_model.state_dict()[key], value)

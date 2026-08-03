@@ -19,7 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 import torch  # noqa: E402
 import torch.distributed as dist  # noqa: E402
-from safetensors.torch import save_file  # noqa: E402
+from safetensors.torch import load_file, save_file  # noqa: E402
 from torch.nn.parallel import DistributedDataParallel  # noqa: E402
 from torch.utils.data import ConcatDataset, DataLoader, DistributedSampler  # noqa: E402
 
@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--model-root", type=Path)
+    parser.add_argument(
+        "--initial-action-checkpoint",
+        type=Path,
+        help="Continue action-head adaptation from a strict safetensors checkpoint.",
+    )
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--batch-size-per-device", type=int)
     parser.add_argument("--gradient-accumulation-steps", type=int)
@@ -238,6 +243,35 @@ def _publish_state_statistics(source: Path, output: Path) -> str:
     return digest
 
 
+def _load_initial_action_checkpoint(
+    action_model: M0DiTActionHead,
+    source: Path,
+) -> str:
+    path = source.expanduser().resolve()
+    if not path.is_file():
+        raise M0MobileError(f"initial action checkpoint does not exist: {path}")
+    tensors = load_file(path, device="cpu")
+    expected = action_model.state_dict()
+    if set(tensors) != set(expected):
+        raise M0MobileError("initial action checkpoint keys do not match the action model")
+    bad_shapes = [
+        key
+        for key, value in tensors.items()
+        if value.shape != expected[key].shape
+    ]
+    if bad_shapes:
+        raise M0MobileError(
+            "initial action checkpoint shapes do not match: "
+            + ", ".join(sorted(bad_shapes))
+        )
+    action_model.load_state_dict(tensors, strict=True)
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     device, rank, local_rank, world_size = _distributed_device()
@@ -300,6 +334,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         transfer = transfer_robocasa_policy_weights(
             policy, _checkpoint_path(config, root)
+        )
+        initial_action_sha256 = (
+            _load_initial_action_checkpoint(
+                policy.action_model, args.initial_action_checkpoint
+            )
+            if args.initial_action_checkpoint is not None
+            else None
         )
         policy.freeze_qwen()
         policy.qwen_vl_interface.to(device)
@@ -413,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                 "state_statistics_sha256": statistics_sha256,
                 "state_statistics_relative_path": "state_statistics.json",
                 "action_model_sha256": action_sha256,
+                "initial_action_model_sha256": initial_action_sha256,
             }
             (output / "training_report.json").write_text(
                 json.dumps(report, indent=2, sort_keys=True) + "\n",
