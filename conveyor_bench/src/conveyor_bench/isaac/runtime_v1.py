@@ -159,6 +159,12 @@ _MOBILE_PLACE_DESCEND_STEP_M = 0.003
 _MOBILE_PLACE_HOLD_STEP_M = 0.003
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
+_M0_SERVICE_PREPOSITION_PHASES = frozenset(
+    {"arm_preposition", "sequential_rearm"}
+)
+_M0_SERVICE_HOLD_PHASES = frozenset(
+    {"mobile_settle", "mobile_stabilize"}
+)
 _CAMERA_SPECS = (
     CameraSpec("head_rgb", 224, 224, "policy_observation"),
     CameraSpec("wrist_rgb", 224, 224, "policy_observation"),
@@ -814,7 +820,12 @@ class ConveyorRuntimeV1:
         m0_next_sequence = 0
         m0_inference_ms: list[float] = []
         m0_round_trip_ms: list[float] = []
-        m0_applied_actions = 0
+        m0_consumed_actions = 0
+        m0_full_action_steps = 0
+        m0_base_only_action_steps = 0
+        m0_service_preposition_steps = 0
+        m0_service_hold_steps = 0
+        m0_terminal_hold_steps = 0
         m0_safe_hold_steps = 0
         m0_trace_stream = (
             (recorder.artifact_directory / "m0_online_trace.jsonl").open(
@@ -1022,6 +1033,14 @@ class ConveyorRuntimeV1:
                             resolved, sim_time_s=sim_time_s
                         )
                         phase = "settle"
+                        if self._m0_client is not None:
+                            # Never apply a chunk inferred from an image in
+                            # which the service-gated object was still absent.
+                            m0_chunk = ()
+                            m0_chunk_sequence = None
+                            m0_chunk_server_ms = None
+                            m0_chunk_round_trip_ms = None
+                            m0_action_index = 0
                 else:
                     observation = self._oracle_observation(
                         resolved, state_before, sim_time_s
@@ -1269,34 +1288,22 @@ class ConveyorRuntimeV1:
 
                 if self._m0_client is not None:
                     assert shadow_arm_target is not None
-                    # The oracle above remains the task-state evaluator.  Its
-                    # candidate actuation is discarded before physics so the
-                    # online policy is the sole high-level controller.
-                    self._arm_target = shadow_arm_target
-                    self._arm_ik_seed = shadow_arm_ik_seed
-                    self._last_ik_error_m = shadow_ik_error
-                    self._last_ik_iterations = shadow_ik_iterations
-                    if m0_chunk and m0_action_index < 2:
-                        model_action = m0_chunk[m0_action_index]
-                        (
-                            base_command,
-                            canonical_ee_delta,
-                            canonical_rotvec,
-                            last_command_target_base,
-                            gripper_open,
-                        ) = self._apply_m0_mobile_action(
-                            model_action, state_before
-                        )
-                        m0_step_metadata = {
-                            "sequence_id": m0_chunk_sequence,
-                            "action_index_control": m0_action_index,
-                            "physical_action10": model_action,
-                            "server_inference_ms": m0_chunk_server_ms,
-                            "round_trip_ms": m0_chunk_round_trip_ms,
-                        }
-                        m0_action_index += 1
-                        m0_applied_actions += 1
-                    else:
+                    scripted_preposition = (
+                        oracle is None
+                        and phase in _M0_SERVICE_PREPOSITION_PHASES
+                    )
+                    scripted_hold = (
+                        oracle is None and phase in _M0_SERVICE_HOLD_PHASES
+                    )
+                    if not scripted_preposition:
+                        # The oracle remains a shadow task evaluator.  Its
+                        # candidate actuation is discarded before physics;
+                        # only the service-gated M0 preposition below is kept.
+                        self._arm_target = shadow_arm_target
+                        self._arm_ik_seed = shadow_arm_ik_seed
+                        self._last_ik_error_m = shadow_ik_error
+                        self._last_ik_iterations = shadow_ik_iterations
+                    if target_command_terminal:
                         base_command = (0.0, 0.0, 0.0)
                         canonical_ee_delta = (0.0, 0.0, 0.0)
                         canonical_rotvec = (0.0, 0.0, 0.0)
@@ -1304,10 +1311,139 @@ class ConveyorRuntimeV1:
                             "tcp_base"
                         ].xyz
                         self._hold_arm_target()
-                        # At reset and subtask boundaries an absent or stale
-                        # chunk always means a stationary, open safe hold.
-                        gripper_open = True
-                        m0_safe_hold_steps += 1
+                        gripper_open = self._gripper_open
+                        m0_terminal_hold_steps += 1
+                        m0_step_metadata = {
+                            "sequence_id": m0_chunk_sequence,
+                            "action_index_control": None,
+                            "policy_proposed_action10": None,
+                            "server_inference_ms": m0_chunk_server_ms,
+                            "round_trip_ms": m0_chunk_round_trip_ms,
+                            "control_layer": "terminal_hold",
+                            "dimension_sources": {
+                                "base": "service",
+                                "arm": "service",
+                                "gripper": "service",
+                            },
+                        }
+                    elif m0_chunk and m0_action_index < 2:
+                        model_action = m0_chunk[m0_action_index]
+                        if scripted_preposition:
+                            base_command = (0.0, 0.0, 0.0)
+                            gripper_open = True
+                            control_layer = "service_preposition"
+                            dimension_sources = {
+                                "base": "service",
+                                "arm": "service",
+                                "gripper": "service",
+                            }
+                            m0_service_preposition_steps += 1
+                        elif scripted_hold:
+                            base_command = (0.0, 0.0, 0.0)
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = True
+                            control_layer = "service_hold"
+                            dimension_sources = {
+                                "base": "service",
+                                "arm": "service",
+                                "gripper": "service",
+                            }
+                            m0_service_hold_steps += 1
+                        elif phase == "mobile_approach":
+                            from conveyor_bench.m0_online import (
+                                quantize_go2_forward_intent,
+                            )
+
+                            base_command = self._guard_locomotion_command(
+                                quantize_go2_forward_intent(model_action[:3])
+                            )
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = True
+                            control_layer = "m0_base_only"
+                            dimension_sources = {
+                                "base": "m0",
+                                "arm": "service",
+                                "gripper": "service",
+                            }
+                            m0_base_only_action_steps += 1
+                        else:
+                            (
+                                base_command,
+                                canonical_ee_delta,
+                                canonical_rotvec,
+                                last_command_target_base,
+                                gripper_open,
+                            ) = self._apply_m0_mobile_action(
+                                model_action,
+                                state_before,
+                            )
+                            control_layer = "m0_full"
+                            dimension_sources = {
+                                "base": "m0",
+                                "arm": "m0",
+                                "gripper": "m0",
+                            }
+                            m0_full_action_steps += 1
+                        m0_step_metadata = {
+                            "sequence_id": m0_chunk_sequence,
+                            "action_index_control": m0_action_index,
+                            "policy_proposed_action10": model_action,
+                            "server_inference_ms": m0_chunk_server_ms,
+                            "round_trip_ms": m0_chunk_round_trip_ms,
+                            "control_layer": control_layer,
+                            "dimension_sources": dimension_sources,
+                        }
+                        m0_action_index += 1
+                        m0_consumed_actions += 1
+                    else:
+                        base_command = (0.0, 0.0, 0.0)
+                        if scripted_preposition:
+                            gripper_open = True
+                            control_layer = "service_preposition"
+                            m0_service_preposition_steps += 1
+                        elif scripted_hold:
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = True
+                            control_layer = "service_hold"
+                            m0_service_hold_steps += 1
+                        else:
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = self._gripper_open
+                            control_layer = "safe_hold"
+                            m0_safe_hold_steps += 1
+                        m0_step_metadata = {
+                            "sequence_id": m0_chunk_sequence,
+                            "action_index_control": None,
+                            "policy_proposed_action10": None,
+                            "server_inference_ms": m0_chunk_server_ms,
+                            "round_trip_ms": m0_chunk_round_trip_ms,
+                            "control_layer": control_layer,
+                            "dimension_sources": {
+                                "base": "service",
+                                "arm": "service",
+                                "gripper": "service",
+                            },
+                        }
 
                 self._apply_gripper(gripper_open)
                 applied_policy_action = self._apply_base_command(base_command)
@@ -1447,6 +1583,10 @@ class ConveyorRuntimeV1:
                         1.0 if gripper_open else -1.0,
                     )
                 )
+                if m0_step_metadata is not None:
+                    m0_step_metadata["applied_canonical_action10"] = list(
+                        action.values
+                    )
                 sample = self._make_sample(
                     resolved=resolved,
                     state=state_after,
@@ -1529,6 +1669,8 @@ class ConveyorRuntimeV1:
                             if self._m0_client is not None:
                                 m0_chunk = ()
                                 m0_chunk_sequence = None
+                                m0_chunk_server_ms = None
+                                m0_chunk_round_trip_ms = None
                                 m0_action_index = 0
                     else:
                         failure = oracle_terminal_reason or "oracle_failure"
@@ -1631,7 +1773,17 @@ class ConveyorRuntimeV1:
         if self._m0_client is not None:
             report["m0_online"] = {
                 "request_count": len(m0_inference_ms),
-                "applied_action_count": m0_applied_actions,
+                "consumed_action_count": m0_consumed_actions,
+                "applied_action_count": (
+                    m0_full_action_steps + m0_base_only_action_steps
+                ),
+                "full_action_control_steps": m0_full_action_steps,
+                "base_only_action_control_steps": m0_base_only_action_steps,
+                "service_preposition_control_steps": (
+                    m0_service_preposition_steps
+                ),
+                "service_hold_control_steps": m0_service_hold_steps,
+                "terminal_hold_control_steps": m0_terminal_hold_steps,
                 "safe_hold_control_steps": m0_safe_hold_steps,
                 "server_inference_ms": _latency_summary(m0_inference_ms),
                 "round_trip_ms": _latency_summary(m0_round_trip_ms),

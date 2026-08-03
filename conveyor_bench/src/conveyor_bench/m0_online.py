@@ -292,6 +292,28 @@ def project_action_chunk(
     return tuple(projected_rows), tuple(physical_rows)
 
 
+def quantize_go2_forward_intent(
+    command: Sequence[float],
+    *,
+    activation_mps: float = 0.08,
+    audited_minimum_mps: float = 0.16,
+) -> tuple[float, float, float]:
+    """Map a clear M0 forward intent onto the tested Go2 speed primitive."""
+
+    vx, _vy, wz = _finite_vector(command, 3, "Go2 base command")
+    activation = _finite_number(activation_mps, "activation_mps")
+    minimum = _finite_number(audited_minimum_mps, "audited_minimum_mps")
+    if not 0.0 < activation < minimum:
+        raise M0OnlineError(
+            "forward intent activation must be below the audited minimum"
+        )
+    if 0.0 < vx < activation:
+        vx = 0.0
+    elif activation <= vx < minimum:
+        vx = minimum
+    return vx, 0.0, wz
+
+
 def load_state_statistics(path: str | Path) -> Mapping[str, Any]:
     source = Path(path).expanduser().resolve()
     try:
@@ -398,19 +420,28 @@ class M0OnlineClient:
         response = self._request("GET", "/health")
         health = _exact_object(
             response,
-            {"schema_version", "status", "profile", "state_dim", "action_horizon", "action_dim"},
+            {
+                "schema_version",
+                "status",
+                "profile",
+                "state_dim",
+                "action_horizon",
+                "action_dim",
+                "model",
+            },
             "health response",
         )
-        if health != {
+        expected = {
             "schema_version": ONLINE_SCHEMA_VERSION,
             "status": "ready",
             "profile": PROFILE,
             "state_dim": STATE_DIM,
             "action_horizon": ACTION_HORIZON,
             "action_dim": ACTION_DIM,
-        }:
+        }
+        if any(health[key] != value for key, value in expected.items()):
             raise M0OnlineError("health response does not match the M0-Mobile contract")
-        return health
+        return {**expected, "model": _model_identity(health["model"])}
 
     def infer(
         self,
@@ -526,7 +557,7 @@ class M0OnlineClient:
         return value
 
 
-def health_payload() -> dict[str, Any]:
+def health_payload(model: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": ONLINE_SCHEMA_VERSION,
         "status": "ready",
@@ -534,7 +565,39 @@ def health_payload() -> dict[str, Any]:
         "state_dim": STATE_DIM,
         "action_horizon": ACTION_HORIZON,
         "action_dim": ACTION_DIM,
+        "model": _model_identity(model),
     }
+
+
+def _model_identity(value: Any) -> dict[str, Any]:
+    identity = _exact_object(
+        value,
+        {
+            "action_model_sha256",
+            "state_statistics_sha256",
+            "training_report_sha256",
+            "training_steps",
+            "dataset_records",
+        },
+        "model identity",
+    )
+    for key in (
+        "action_model_sha256",
+        "state_statistics_sha256",
+        "training_report_sha256",
+    ):
+        digest = identity[key]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise M0OnlineError(f"model identity {key} must be a lowercase SHA-256")
+    for key in ("training_steps", "dataset_records"):
+        count = identity[key]
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise M0OnlineError(f"model identity {key} must be a positive integer")
+    return dict(identity)
 
 
 def _exact_object(value: Any, keys: set[str], name: str) -> Mapping[str, Any]:
@@ -606,5 +669,6 @@ __all__ = [
     "make_infer_response",
     "parse_infer_request",
     "project_action_chunk",
+    "quantize_go2_forward_intent",
     "validate_normalized_action_chunk",
 ]

@@ -22,6 +22,7 @@ from conveyor_bench.m0_online import (
     make_infer_response,
     parse_infer_request,
     project_action_chunk,
+    quantize_go2_forward_intent,
 )
 
 
@@ -31,6 +32,14 @@ SPEC = importlib.util.spec_from_file_location("serve_m0_mobile", SERVER_SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 SERVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SERVER)
+
+MODEL_IDENTITY = {
+    "action_model_sha256": "a" * 64,
+    "state_statistics_sha256": "b" * 64,
+    "training_report_sha256": "c" * 64,
+    "training_steps": 10,
+    "dataset_records": 3,
+}
 
 
 def _normalizer() -> M0MobileNormalizer:
@@ -120,9 +129,21 @@ def test_action_projection_clamps_hard_zeros_and_binarizes_gripper() -> None:
         project_action_chunk(bad, _normalizer())
 
 
+def test_go2_forward_intent_uses_only_the_audited_speed_primitive() -> None:
+    assert quantize_go2_forward_intent((0.079, 0.2, 0.1)) == pytest.approx(
+        (0.0, 0.0, 0.1)
+    )
+    assert quantize_go2_forward_intent((0.12, -0.2, 0.1)) == pytest.approx(
+        (0.16, 0.0, 0.1)
+    )
+    assert quantize_go2_forward_intent((0.2, 0.0, 0.1)) == pytest.approx(
+        (0.2, 0.0, 0.1)
+    )
+
+
 class _FakeService:
     def health(self):
-        return health_payload()
+        return health_payload(MODEL_IDENTITY)
 
     def infer(self, request):
         return make_infer_response(request, [[2.0] * 10] * 16, 12.5)
@@ -140,6 +161,7 @@ def test_localhost_server_and_client_round_trip() -> None:
             normalizer=_normalizer(),
         )
         assert client.health()["status"] == "ready"
+        assert client.health()["model"] == MODEL_IDENTITY
         result = client.infer(
             np.zeros((6, 8, 4), dtype=np.uint8),
             _jpeg(),
@@ -199,6 +221,9 @@ def test_server_pins_action_and_state_artifacts_to_training_report(
     )
 
     assert verified["training_steps"] == 10
+    assert verified["training_report_sha256"] == hashlib.sha256(
+        report.read_bytes()
+    ).hexdigest()
     action.write_bytes(b"tampered")
     with pytest.raises(M0OnlineError, match="action checkpoint SHA-256"):
         SERVER._verify_training_artifacts(action, statistics, report)

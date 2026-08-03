@@ -43,15 +43,17 @@ class M0PolicyService:
         action_mask: tuple[bool, ...],
         image_size: tuple[int, int],
         torch: Any,
+        model_identity: Mapping[str, Any],
     ) -> None:
         self.policy = policy
         self.normalizer = normalizer
         self.action_mask = action_mask
         self.image_size = image_size
         self.torch = torch
+        self.model_identity = dict(model_identity)
 
     def health(self) -> Mapping[str, Any]:
-        return health_payload()
+        return health_payload(self.model_identity)
 
     def infer(self, request: M0InferRequest) -> Mapping[str, Any]:
         started = time.perf_counter()
@@ -206,6 +208,7 @@ def _verify_training_artifacts(
     return {
         "action_model_sha256": action_sha256,
         "state_statistics_sha256": statistics_sha256,
+        "training_report_sha256": _sha256(report_path),
         "training_steps": report.get("max_steps"),
         "dataset_records": report.get("dataset_records"),
     }
@@ -260,13 +263,6 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
     policy.qwen_vl_interface.to(device)
     policy.action_model.to(device)
     policy.eval()
-    service = M0PolicyService(
-        policy,
-        normalizer,
-        tuple(config["data"]["action_dimension_mask"]),
-        tuple(config["data"]["image_size"]),
-        torch,
-    )
     report = {
         "loaded_qwen_tensors": transfer.loaded_qwen_tensors,
         "loaded_official_action_tensors": transfer.loaded_action_tensors,
@@ -275,6 +271,23 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
         "device": str(device),
         **artifact_report,
     }
+    service = M0PolicyService(
+        policy,
+        normalizer,
+        tuple(config["data"]["action_dimension_mask"]),
+        tuple(config["data"]["image_size"]),
+        torch,
+        {
+            key: artifact_report[key]
+            for key in (
+                "action_model_sha256",
+                "state_statistics_sha256",
+                "training_report_sha256",
+                "training_steps",
+                "dataset_records",
+            )
+        },
+    )
     return service, report
 
 
