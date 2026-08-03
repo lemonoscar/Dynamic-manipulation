@@ -18,6 +18,7 @@ from conveyor_bench.m0_online import (
     M0OnlineError,
     build_live_state28,
     encode_rgb_jpeg,
+    guard_pregrasp_tcp_target,
     health_payload,
     make_infer_response,
     parse_infer_request,
@@ -139,6 +140,20 @@ def test_go2_forward_intent_uses_only_the_audited_speed_primitive() -> None:
     assert quantize_go2_forward_intent((0.2, 0.0, 0.1)) == pytest.approx(
         (0.2, 0.0, 0.1)
     )
+
+
+def test_pregrasp_workspace_guard_only_clamps_audited_drift_directions() -> None:
+    inside, inside_axes = guard_pregrasp_tcp_target((0.60, -0.04, 0.27))
+    assert inside == pytest.approx((0.60, -0.04, 0.27))
+    assert inside_axes == ()
+
+    guarded, axes = guard_pregrasp_tcp_target((0.70, -0.10, 0.20))
+    assert guarded == pytest.approx((0.622, -0.060, 0.250))
+    assert axes == ("x", "y", "z")
+
+    unbounded, unbounded_axes = guard_pregrasp_tcp_target((-1.0, 1.0, 1.0))
+    assert unbounded == pytest.approx((-1.0, 1.0, 1.0))
+    assert unbounded_axes == ()
 
 
 class _FakeService:

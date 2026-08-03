@@ -23,6 +23,10 @@ import isaaclab.sim as sim_utils
 from isaaclab.scene import InteractiveScene
 from isaaclab.utils.math import quat_apply, quat_inv, quat_mul
 
+from conveyor_bench.m0_online import (
+    PREGRASP_WORKSPACE_LIMITS_BASE,
+    guard_pregrasp_tcp_target,
+)
 from conveyor_bench.v1.assets import (
     ASSET_LOCK_PATH,
     ObjectAsset,
@@ -215,6 +219,7 @@ class RuntimeOptionsV1:
     m0_policy_seed: int = 20260803
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
+    m0_pregrasp_workspace_guard: bool = False
 
     def __post_init__(self) -> None:
         if self.episodes <= 0:
@@ -264,6 +269,8 @@ class RuntimeOptionsV1:
             raise ValueError(
                 "m0_transition_actions_per_replan must be within [1, 16]"
             )
+        if not isinstance(self.m0_pregrasp_workspace_guard, bool):
+            raise TypeError("m0_pregrasp_workspace_guard must be a bool")
         if self.robot_mode not in {
             RobotMode.FIXED_BASE,
             RobotMode.WHOLE_BODY_POLICY,
@@ -336,6 +343,10 @@ class RuntimeOptionsV1:
                 raise ValueError("online M0 requires m0_state_statistics")
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
+            )
+        elif self.m0_pregrasp_workspace_guard:
+            raise ValueError(
+                "m0_pregrasp_workspace_guard requires online M0"
             )
 
 
@@ -805,6 +816,20 @@ class ConveyorRuntimeV1:
                     else "privileged_oracle"
                 ),
                 "m0_online_contract": self._m0_health,
+                "m0_pregrasp_workspace_guard": {
+                    "enabled": self.options.m0_pregrasp_workspace_guard,
+                    "scope": "diagnostic_only",
+                    "phase": "pregrasp",
+                    "frame": "robot_base",
+                    "bounds": {
+                        axis: {"min": limits[0], "max": limits[1]}
+                        for axis, limits in zip(
+                            "xyz",
+                            PREGRASP_WORKSPACE_LIMITS_BASE,
+                            strict=True,
+                        )
+                    },
+                },
                 **self._extra_episode_metadata(resolved),
             },
         )
@@ -850,6 +875,11 @@ class ConveyorRuntimeV1:
         m0_service_hold_steps = 0
         m0_terminal_hold_steps = 0
         m0_safe_hold_steps = 0
+        m0_workspace_guard_evaluated_steps = 0
+        m0_workspace_guard_active_steps = 0
+        m0_workspace_guard_axis_counts = {axis: 0 for axis in "xyz"}
+        m0_workspace_guard_correction_norms: list[float] = []
+        m0_workspace_guard_tracking_error_norms: list[float] = []
         m0_trace_stream = (
             (recorder.artifact_directory / "m0_online_trace.jsonl").open(
                 "x", encoding="utf-8"
@@ -936,6 +966,7 @@ class ConveyorRuntimeV1:
                 target_command_terminal = False
                 target_command_success = False
                 m0_step_metadata: dict[str, Any] | None = None
+                m0_workspace_guard_metadata: dict[str, Any] | None = None
                 shadow_arm_target = (
                     self._arm_target.clone()
                     if self._m0_client is not None
@@ -1415,19 +1446,48 @@ class ConveyorRuntimeV1:
                                 canonical_rotvec,
                                 last_command_target_base,
                                 gripper_open,
+                                m0_workspace_guard_metadata,
                             ) = self._apply_m0_mobile_action(
                                 model_action,
                                 state_before,
+                                guard_pregrasp_workspace=(
+                                    self.options.m0_pregrasp_workspace_guard
+                                    and phase == "pregrasp"
+                                ),
                             )
-                            control_layer = "m0_full"
+                            control_layer = (
+                                "m0_full_with_workspace_guard"
+                                if m0_workspace_guard_metadata is not None
+                                else "m0_full"
+                            )
                             dimension_sources = {
                                 "base": "m0",
-                                "arm": "m0",
+                                "arm": (
+                                    "m0+fixed_workspace_guard"
+                                    if m0_workspace_guard_metadata is not None
+                                    else "m0"
+                                ),
                                 "gripper": "m0",
                             }
                             m0_full_action_steps += 1
                             if phase in _M0_TRANSITION_CHUNK_PHASES:
                                 m0_transition_action_steps += 1
+                            if m0_workspace_guard_metadata is not None:
+                                m0_workspace_guard_evaluated_steps += 1
+                                correction_norm = float(
+                                    m0_workspace_guard_metadata[
+                                        "correction_norm_m"
+                                    ]
+                                )
+                                m0_workspace_guard_correction_norms.append(
+                                    correction_norm
+                                )
+                                if m0_workspace_guard_metadata["active"]:
+                                    m0_workspace_guard_active_steps += 1
+                                for axis in m0_workspace_guard_metadata[
+                                    "clipped_axes"
+                                ]:
+                                    m0_workspace_guard_axis_counts[axis] += 1
                         m0_step_metadata = {
                             "sequence_id": m0_chunk_sequence,
                             "action_index_control": m0_action_index,
@@ -1438,6 +1498,10 @@ class ConveyorRuntimeV1:
                             "dimension_sources": dimension_sources,
                             "execution_prefix": m0_execution_prefix,
                         }
+                        if m0_workspace_guard_metadata is not None:
+                            m0_step_metadata["workspace_guard"] = (
+                                m0_workspace_guard_metadata
+                            )
                         m0_action_index += 1
                         m0_consumed_actions += 1
                     else:
@@ -1489,6 +1553,41 @@ class ConveyorRuntimeV1:
 
                 sample_time_s = (control_index + 1) * self.control_dt
                 state_after = self._read_state(resolved)
+                if (
+                    m0_step_metadata is not None
+                    and "workspace_guard" in m0_step_metadata
+                ):
+                    guard_metadata = m0_step_metadata["workspace_guard"]
+                    realized_position = tuple(
+                        float(value) for value in state_after["tcp_base"].xyz
+                    )
+                    applied_target = tuple(
+                        float(value)
+                        for value in guard_metadata[
+                            "applied_tcp_target_xyz"
+                        ]
+                    )
+                    tracking_error = tuple(
+                        realized - target
+                        for realized, target in zip(
+                            realized_position, applied_target, strict=True
+                        )
+                    )
+                    tracking_error_norm = float(
+                        np.linalg.norm(tracking_error)
+                    )
+                    guard_metadata["realized_tcp_after_xyz"] = list(
+                        realized_position
+                    )
+                    guard_metadata["realized_tracking_error_xyz"] = list(
+                        tracking_error
+                    )
+                    guard_metadata["realized_tracking_error_norm_m"] = (
+                        tracking_error_norm
+                    )
+                    m0_workspace_guard_tracking_error_norms.append(
+                        tracking_error_norm
+                    )
                 camera_frames = ()
                 if (
                     camera_writer is not None
@@ -1841,6 +1940,41 @@ class ConveyorRuntimeV1:
                 "transition_chunk_phases": sorted(
                     _M0_TRANSITION_CHUNK_PHASES
                 ),
+                "pregrasp_workspace_guard": {
+                    "enabled": self.options.m0_pregrasp_workspace_guard,
+                    "scope": "diagnostic_only",
+                    "phase": "pregrasp",
+                    "frame": "robot_base",
+                    "bounds": {
+                        axis: {"min": limits[0], "max": limits[1]}
+                        for axis, limits in zip(
+                            "xyz",
+                            PREGRASP_WORKSPACE_LIMITS_BASE,
+                            strict=True,
+                        )
+                    },
+                    "evaluated_control_steps": (
+                        m0_workspace_guard_evaluated_steps
+                    ),
+                    "intervention_control_steps": (
+                        m0_workspace_guard_active_steps
+                    ),
+                    "intervention_rate": (
+                        m0_workspace_guard_active_steps
+                        / m0_workspace_guard_evaluated_steps
+                        if m0_workspace_guard_evaluated_steps
+                        else 0.0
+                    ),
+                    "clipped_axis_control_steps": (
+                        m0_workspace_guard_axis_counts
+                    ),
+                    "correction_norm_m": _latency_summary(
+                        m0_workspace_guard_correction_norms
+                    ),
+                    "realized_tracking_error_norm_m": _latency_summary(
+                        m0_workspace_guard_tracking_error_norms
+                    ),
+                },
             }
         return report
 
@@ -3071,12 +3205,15 @@ class ConveyorRuntimeV1:
         self,
         action: Sequence[float],
         state: dict[str, Any],
+        *,
+        guard_pregrasp_workspace: bool = False,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
         tuple[float, float, float],
         tuple[float, float, float],
         bool,
+        dict[str, Any] | None,
     ]:
         """Project one physical M0 action through existing robot guards."""
 
@@ -3089,8 +3226,47 @@ class ConveyorRuntimeV1:
         current_tcp: Pose = state["tcp_base"]
         translation = np.asarray(values[3:6], dtype=np.float64)
         rotation = np.asarray(values[6:9], dtype=np.float64)
+        proposed_position = tuple(
+            float(current + delta)
+            for current, delta in zip(
+                current_tcp.xyz, translation, strict=True
+            )
+        )
+        workspace_guard = None
+        guarded_position = proposed_position
+        if guard_pregrasp_workspace:
+            guarded_position, clipped_axes = guard_pregrasp_tcp_target(
+                proposed_position
+            )
+            correction = tuple(
+                guarded - proposed
+                for guarded, proposed in zip(
+                    guarded_position, proposed_position, strict=True
+                )
+            )
+            workspace_guard = {
+                "enabled": True,
+                "active": bool(clipped_axes),
+                "phase": "pregrasp",
+                "frame": "robot_base",
+                "bounds": {
+                    axis: {"min": limits[0], "max": limits[1]}
+                    for axis, limits in zip(
+                        "xyz", PREGRASP_WORKSPACE_LIMITS_BASE, strict=True
+                    )
+                },
+                "current_tcp_before_xyz": list(current_tcp.xyz),
+                "policy_proposed_tcp_target_xyz": list(proposed_position),
+                "guarded_tcp_target_xyz": list(guarded_position),
+                "correction_xyz": list(correction),
+                "correction_norm_m": float(np.linalg.norm(correction)),
+                "clipped_axes": list(clipped_axes),
+            }
+        guarded_delta = np.asarray(guarded_position) - np.asarray(
+            current_tcp.xyz
+        )
         if (
-            float(np.linalg.norm(translation)) < 1.0e-10
+            float(np.linalg.norm(guarded_delta)) < 1.0e-10
             and float(np.linalg.norm(rotation)) < 1.0e-10
         ):
             self._hold_arm_target()
@@ -3099,12 +3275,7 @@ class ConveyorRuntimeV1:
             target_position = current_tcp.xyz
         else:
             target = Pose(
-                tuple(
-                    float(current + delta)
-                    for current, delta in zip(
-                        current_tcp.xyz, translation, strict=True
-                    )
-                ),
+                guarded_position,
                 _apply_rotation_vector(current_tcp.wxyz, rotation),
             )
             ee_delta, rotvec, target_position = (
@@ -3114,12 +3285,17 @@ class ConveyorRuntimeV1:
                     max_translation_m=0.025,
                 )
             )
+        if workspace_guard is not None:
+            workspace_guard["applied_tcp_target_xyz"] = list(
+                target_position
+            )
         return (
             base_command,
             ee_delta,
             rotvec,
             target_position,
             values[9] >= 0.5,
+            workspace_guard,
         )
 
     def _slew_arm_target(

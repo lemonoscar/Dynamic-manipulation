@@ -97,6 +97,32 @@ python scripts/run_m0_closed_loop.py \
   --device cpu
 ```
 
+若 guard-off 回合一直停在 `pregrasp`，可在完全相同的模型、seed、速度和时长下
+增加一次诊断性 A/B：
+
+```bash
+python scripts/run_m0_closed_loop.py \
+  --endpoint http://127.0.0.1:18765 \
+  --state-statistics EXPERIMENT_ROOT/state_statistics.json \
+  --actions-per-replan 2 \
+  --transition-actions-per-replan 12 \
+  --pregrasp-workspace-guard \
+  --episodes 1 \
+  --seed 0 \
+  --belt-speed 0.06 \
+  --max-duration 30 \
+  --output-dir outputs/gate/m0_online_pregrasp_guard_seed0 \
+  --headless \
+  --device cpu
+```
+
+该开关默认关闭，仅在 `pregrasp` 使用 robot-base frame 的固定单边边界
+`x<=0.622 m`、`y>=-0.060 m`、`z>=0.250 m`。它不读取物体状态或 oracle TCP，
+也不修改底盘、旋转、夹爪、下降和闭爪。manifest、每步 metadata 和 run summary
+会记录 proposed/guarded/applied/realized TCP、裁剪轴、修正量及跟踪误差。
+guard-on 只用于区分预抓取漂移与下游抓取能力，即使成功也必须标为
+`assisted diagnostic`，不能混入正式训练集或计作 policy-only 成功。
+
 ## 2026-08-03 验收结果
 
 本次使用 1,183 条有效训练记录、1,200 步补充训练的 action model：

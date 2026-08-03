@@ -67,6 +67,7 @@ class RuntimeOptionsV2:
     m0_policy_seed: int = 20260803
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
+    m0_pregrasp_workspace_guard: bool = False
 
     def __post_init__(self) -> None:
         try:
@@ -199,6 +200,8 @@ class RuntimeOptionsV2:
             raise ValueError(
                 "m0_transition_actions_per_replan must be within [1, 16]"
             )
+        if not isinstance(self.m0_pregrasp_workspace_guard, bool):
+            raise TypeError("m0_pregrasp_workspace_guard must be a bool")
         if self.m0_policy_endpoint is not None:
             if not isinstance(self.m0_policy_endpoint, str):
                 raise TypeError("m0_policy_endpoint must be a string")
@@ -214,6 +217,10 @@ class RuntimeOptionsV2:
                 raise ValueError("online M0 requires m0_state_statistics")
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
+            )
+        elif self.m0_pregrasp_workspace_guard:
+            raise ValueError(
+                "m0_pregrasp_workspace_guard requires online M0"
             )
 
 

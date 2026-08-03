@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=12,
         help="Longer prefix used only across grasp transition phases.",
     )
+    parser.add_argument(
+        "--pregrasp-workspace-guard",
+        action="store_true",
+        help="Enable the fixed, diagnostic X5 pregrasp workspace guard.",
+    )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--belt-speed", type=float, default=0.06)
@@ -101,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
                 m0_actions_per_replan=args.actions_per_replan,
                 m0_transition_actions_per_replan=(
                     args.transition_actions_per_replan
+                ),
+                m0_pregrasp_workspace_guard=(
+                    args.pregrasp_workspace_guard
                 ),
             )
         )

@@ -33,6 +33,11 @@ CAMERA_IDS = ("head_rgb", "wrist_rgb")
 STATE_DIM = 28
 ACTION_HORIZON = 16
 ACTION_DIM = 10
+PREGRASP_WORKSPACE_LIMITS_BASE = (
+    (None, 0.622),
+    (-0.060, None),
+    (0.250, None),
+)
 MAX_JPEG_BYTES = 4 * 1024 * 1024
 MAX_REQUEST_BYTES = 9 * 1024 * 1024
 MAX_RESPONSE_BYTES = 128 * 1024
@@ -129,6 +134,25 @@ def build_live_state28(
         rotation_vector,
         gripper_fraction,
     )
+
+
+def guard_pregrasp_tcp_target(
+    position_base: Sequence[float],
+) -> tuple[tuple[float, float, float], tuple[str, ...]]:
+    """Clamp one diagnostic pregrasp target to the audited X5 workspace."""
+
+    target = list(_finite_vector(position_base, 3, "pregrasp TCP target"))
+    clipped: list[str] = []
+    for index, (axis, limits) in enumerate(
+        zip("xyz", PREGRASP_WORKSPACE_LIMITS_BASE, strict=True)
+    ):
+        low, high = limits
+        guarded = max(low, target[index]) if low is not None else target[index]
+        guarded = min(high, guarded) if high is not None else guarded
+        if guarded != target[index]:
+            target[index] = guarded
+            clipped.append(axis)
+    return (target[0], target[1], target[2]), tuple(clipped)
 
 
 def encode_rgb_jpeg(image: Any, *, quality: int = 85) -> bytes:
@@ -659,12 +683,14 @@ __all__ = [
     "M0OnlineClient",
     "M0OnlineError",
     "ONLINE_SCHEMA_VERSION",
+    "PREGRASP_WORKSPACE_LIMITS_BASE",
     "STATE_DIM",
     "build_live_state28",
     "build_state28",
     "decode_rgb_jpeg",
     "encode_rgb_jpeg",
     "health_payload",
+    "guard_pregrasp_tcp_target",
     "load_state_statistics",
     "make_infer_response",
     "parse_infer_request",

@@ -14,6 +14,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PATH = (
     PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "runtime_v1.py"
 )
+RUNTIME_V2_PATH = (
+    PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "runtime_v2.py"
+)
+RUN_M0_PATH = PROJECT_ROOT / "scripts" / "run_m0_closed_loop.py"
 
 
 def _runtime_tree() -> ast.Module:
@@ -153,6 +157,33 @@ def test_runtime_consumes_split_local_tasking_contract() -> None:
         make_task_source
     )
     assert "InstructionLanguage.ENGLISH" in make_task_source
+
+
+def test_m0_pregrasp_workspace_guard_is_explicit_and_diagnostic_only() -> None:
+    tree = _runtime_tree()
+    options = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "RuntimeOptionsV1"
+    )
+    options_source = ast.unparse(options)
+    episode_source = ast.unparse(_method(tree, "_run_episode"))
+    apply_source = ast.unparse(_method(tree, "_apply_m0_mobile_action"))
+    v2_source = RUNTIME_V2_PATH.read_text(encoding="utf-8")
+    cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
+
+    assert "m0_pregrasp_workspace_guard: bool = False" in options_source
+    assert "requires online M0" in options_source
+    assert "self.options.m0_pregrasp_workspace_guard and phase == 'pregrasp'" in (
+        episode_source
+    )
+    assert "guard_pregrasp_workspace: bool=False" in apply_source
+    assert "m0_full_with_workspace_guard" in episode_source
+    assert "diagnostic_only" in episode_source
+    assert "m0_pregrasp_workspace_guard: bool = False" in v2_source
+    assert '"--pregrasp-workspace-guard"' in cli_source
+    assert "action=\"store_true\"" in cli_source
 
 
 def test_forbidden_belt_intrusion_is_spatially_scoped() -> None:
