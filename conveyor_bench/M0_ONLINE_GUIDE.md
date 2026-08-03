@@ -145,11 +145,38 @@ python scripts/run_m0_closed_loop.py \
 该模式在 `pregrasp` 将底盘命令置零、保持夹爪打开，并把 TCP 引导到由场景
 注册表计算出的固定 world-frame 工位。固定目标本身不读取实时物体状态，也不
 复用 shadow oracle 的 TCP 目标；但辅助的启停与交接明确使用 shadow oracle
-的阶段判定，因此仍属于 privileged diagnostic。交接到 `track` 时会丢弃未实际执行的旧 pregrasp action chunk，
-再从当前观测重新推理。原始 M0 action、实际控制来源、固定目标、world-frame
-位置/姿态误差和交接丢弃数都会被记录。该模式比 workspace guard 更强，结果
-只能用于定位故障，绝不能计作 policy-only 成功或写入正式训练集。两个诊断
-开关互斥，且都默认关闭。
+的阶段判定，因此仍属于 privileged diagnostic。交接到 `track` 时会丢弃未实际
+执行的旧 pregrasp action chunk，再从当前观测重新推理。原始 M0 action、实际
+控制来源、固定目标、world-frame 位置/姿态误差和交接丢弃数都会被记录。该
+模式比 workspace guard 更强，结果只能用于定位故障，绝不能计作 policy-only
+成功或写入正式训练集。两个诊断开关互斥，且都默认关闭。
+
+当 assisted staging 已经完成抓取、但 `carry_retract` 未通过 compact joint gate
+时，可再做一次 executor 可实现性诊断：
+
+```bash
+python scripts/run_m0_closed_loop.py \
+  --endpoint http://127.0.0.1:18765 \
+  --state-statistics EXPERIMENT_ROOT/state_statistics.json \
+  --actions-per-replan 2 \
+  --transition-actions-per-replan 12 \
+  --pregrasp-staging-assist \
+  --carry-retract-teacher-executor \
+  --episodes 1 \
+  --seed 0 \
+  --belt-speed 0.06 \
+  --max-duration 30 \
+  --output-dir outputs/gate/m0_online_teacher_executor_seed0 \
+  --headless \
+  --device cpu
+```
+
+该开关只在 `carry_retract` 使用 shadow oracle 已生成的 canonical10 动作，但丢弃
+专家的直接 joint target，并通过与 M0 相同的 Cartesian IK 执行器落地。现有
+`0.060 rad` joint error、`0.35 rad/s`、`0.30 s` dwell 和 `6 s` timeout 均不
+改变。若该诊断也失败，才有证据说明 Cartesian action 与 joint gate 合同可能
+不可实现；若通过，则应先补 carry 数据。它显式使用 privileged teacher action，
+因此整个回合仍不能计作 policy-only 成功或进入训练集。
 
 ## 2026-08-03 验收结果
 
@@ -181,6 +208,23 @@ canonical 记录与判定”的在线链路已跑通，但当前 checkpoint 尚�
 M0 policy 数据采集的门槛。现阶段可以继续采集 oracle 成功示教；不能把该模型
 生成的失败轨迹混入成功训练集。
 
-下一轮最小验收矩阵是：增加多个预抓取扰动和接触时序的成功示教，重新通过
-3/3 离线边界门禁，再对至少 5 个 seed 和一个不同高度物体运行 guard-off
-闭环。只有抓取、持有、投放均由策略真实完成后，才扩大采集规模。
+随后运行的静态 world-frame staging assist 诊断把失败边界推进到了抓取之后。
+TCP 在物体窗口前连续 `0.5 s` 的最大位置误差为 `9.94 mm`、最大姿态误差为
+`0.0238 rad`；`8.34 s` 进入 `track`，交接后 `0.04 s` 开始执行新的 M0 动作，
+`0.44 s` 闭爪、`0.50 s` 双指接触并 held、`0.56 s` 进入 lift。辅助在
+`track/descend/close/lift` 中没有继续生效，因此可确认当前 checkpoint 已具备
+从合格 staging 状态完成动态下探、闭爪和抬升的能力。
+
+该回合仍不是任务成功：物体在整个 `carry_retract` 阶段保持夹持且机器人稳定，
+但 6 秒后触发 `mobile_carry_retract_timeout`。M0 把 compact TCP 误差从
+`174.4 mm` 降到最小 `30.2 mm`，而 compact joint gate 的最佳最大关节误差仍为
+`0.298 rad`，没有达到 `0.060 rad`。完整机器可读结论位于
+`docs/m0_assisted_staging_seed0_20260803.json`。
+
+因此下一轮补足分成两个互不混淆的目标：先增加带初始 TCP/root 扰动的成功
+pregrasp 恢复示教，使 guard-off 能稳定到达 staging；再提高成功示教中
+`lift→carry_retract→carry_turn` 窗口的采样权重。当前 1,183 条训练记录只包含
+一次完整成功轨迹，已有 booster 主要重复 approach 与 grasp transition。补训后
+先复跑 seed 0 guard-off，并单独检查 Cartesian action 与 joint-space compact gate
+是否仍不一致；在有数据证据前不放宽 gate。通过后再扩到至少 5 个 seed 和一个
+不同高度物体。只有抓取、持有、搬运和投放均由策略完成后，才扩大采集规模。

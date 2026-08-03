@@ -262,6 +262,41 @@ def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
     assert pose.wxyz == pytest.approx((-1.0, 0.0, 0.0, 0.0))
 
 
+def test_m0_carry_teacher_uses_the_cartesian_policy_executor() -> None:
+    tree = _runtime_tree()
+    options = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "RuntimeOptionsV1"
+    )
+    options_source = ast.unparse(options)
+    episode_source = ast.unparse(_method(tree, "_run_episode"))
+    v2_source = RUNTIME_V2_PATH.read_text(encoding="utf-8")
+    cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
+
+    assert (
+        "m0_carry_retract_teacher_executor: bool = False"
+        in options_source
+    )
+    assert (
+        "m0_carry_retract_teacher_executor requires online M0"
+        in options_source
+    )
+    assert "phase == 'carry_retract'" in episode_source
+    assert (
+        "self._apply_m0_mobile_action(shadow_teacher_action10, "
+        "state_before)"
+    ) in episode_source
+    assert "diagnostic_teacher_via_m0_executor" in episode_source
+    assert "shadow_oracle_canonical10" in episode_source
+    assert "'direct_joint_target_write': False" in episode_source
+    assert (
+        "m0_carry_retract_teacher_executor: bool = False" in v2_source
+    )
+    assert '"--carry-retract-teacher-executor"' in cli_source
+
+
 def test_forbidden_belt_intrusion_is_spatially_scoped() -> None:
     tree = _runtime_tree()
     helper = next(

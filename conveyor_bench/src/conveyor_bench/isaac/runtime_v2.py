@@ -69,6 +69,7 @@ class RuntimeOptionsV2:
     m0_transition_actions_per_replan: int = 12
     m0_pregrasp_workspace_guard: bool = False
     m0_pregrasp_staging_assist: bool = False
+    m0_carry_retract_teacher_executor: bool = False
 
     def __post_init__(self) -> None:
         try:
@@ -205,6 +206,10 @@ class RuntimeOptionsV2:
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
         if not isinstance(self.m0_pregrasp_staging_assist, bool):
             raise TypeError("m0_pregrasp_staging_assist must be a bool")
+        if not isinstance(self.m0_carry_retract_teacher_executor, bool):
+            raise TypeError(
+                "m0_carry_retract_teacher_executor must be a bool"
+            )
         if (
             self.m0_pregrasp_workspace_guard
             and self.m0_pregrasp_staging_assist
@@ -236,6 +241,10 @@ class RuntimeOptionsV2:
         elif self.m0_pregrasp_staging_assist:
             raise ValueError(
                 "m0_pregrasp_staging_assist requires online M0"
+            )
+        elif self.m0_carry_retract_teacher_executor:
+            raise ValueError(
+                "m0_carry_retract_teacher_executor requires online M0"
             )
 
 

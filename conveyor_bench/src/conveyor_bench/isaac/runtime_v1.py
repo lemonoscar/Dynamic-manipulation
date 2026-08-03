@@ -222,6 +222,7 @@ class RuntimeOptionsV1:
     m0_transition_actions_per_replan: int = 12
     m0_pregrasp_workspace_guard: bool = False
     m0_pregrasp_staging_assist: bool = False
+    m0_carry_retract_teacher_executor: bool = False
 
     def __post_init__(self) -> None:
         if self.episodes <= 0:
@@ -275,6 +276,10 @@ class RuntimeOptionsV1:
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
         if not isinstance(self.m0_pregrasp_staging_assist, bool):
             raise TypeError("m0_pregrasp_staging_assist must be a bool")
+        if not isinstance(self.m0_carry_retract_teacher_executor, bool):
+            raise TypeError(
+                "m0_carry_retract_teacher_executor must be a bool"
+            )
         if (
             self.m0_pregrasp_workspace_guard
             and self.m0_pregrasp_staging_assist
@@ -363,6 +368,10 @@ class RuntimeOptionsV1:
         elif self.m0_pregrasp_staging_assist:
             raise ValueError(
                 "m0_pregrasp_staging_assist requires online M0"
+            )
+        elif self.m0_carry_retract_teacher_executor:
+            raise ValueError(
+                "m0_carry_retract_teacher_executor requires online M0"
             )
 
 
@@ -869,6 +878,19 @@ class ConveyorRuntimeV1:
                     "activation_uses_shadow_oracle_phase": True,
                     "handoff_uses_shadow_oracle_phase": True,
                 },
+                "m0_carry_retract_teacher_executor": {
+                    "enabled": (
+                        self.options.m0_carry_retract_teacher_executor
+                    ),
+                    "assisted": (
+                        self.options.m0_carry_retract_teacher_executor
+                    ),
+                    "scope": "diagnostic_only",
+                    "phase": "carry_retract",
+                    "action_source": "shadow_oracle_canonical10",
+                    "actuation_path": "m0_cartesian_ik_executor",
+                    "direct_joint_target_write": False,
+                },
                 **self._extra_episode_metadata(resolved),
             },
         )
@@ -919,6 +941,8 @@ class ConveyorRuntimeV1:
         m0_staging_assist_prevented_transition_actions = 0
         m0_staging_assist_tracking_error_norms: list[float] = []
         m0_staging_assist_orientation_error_rads: list[float] = []
+        m0_teacher_executor_steps = 0
+        m0_teacher_executor_replaced_action_steps = 0
         m0_terminal_hold_steps = 0
         m0_safe_hold_steps = 0
         m0_workspace_guard_evaluated_steps = 0
@@ -1015,6 +1039,8 @@ class ConveyorRuntimeV1:
                 m0_workspace_guard_metadata: dict[str, Any] | None = None
                 m0_staging_assist_metadata: dict[str, Any] | None = None
                 m0_staging_handoff_metadata: dict[str, Any] | None = None
+                m0_teacher_executor_metadata: dict[str, Any] | None = None
+                shadow_teacher_action10: tuple[float, ...] | None = None
                 shadow_arm_target = (
                     self._arm_target.clone()
                     if self._m0_client is not None
@@ -1389,6 +1415,20 @@ class ConveyorRuntimeV1:
                         )
 
                 if (
+                    self.options.m0_carry_retract_teacher_executor
+                    and phase == "carry_retract"
+                ):
+                    shadow_teacher_action10 = tuple(
+                        float(value)
+                        for value in (
+                            *base_command,
+                            *canonical_ee_delta,
+                            *canonical_rotvec,
+                            1.0 if gripper_open else 0.0,
+                        )
+                    )
+
+                if (
                     self._m0_client is not None
                     and self.options.m0_pregrasp_staging_assist
                     and previous_phase == "pregrasp"
@@ -1477,6 +1517,64 @@ class ConveyorRuntimeV1:
                                 "gripper": "service",
                             },
                             "execution_prefix": m0_execution_prefix,
+                        }
+                    elif shadow_teacher_action10 is not None:
+                        model_action = None
+                        model_action_index = None
+                        if (
+                            m0_chunk
+                            and m0_action_index < m0_execution_prefix
+                        ):
+                            model_action = m0_chunk[m0_action_index]
+                            model_action_index = m0_action_index
+                            m0_action_index += 1
+                            m0_consumed_actions += 1
+                            m0_teacher_executor_replaced_action_steps += 1
+                        (
+                            base_command,
+                            canonical_ee_delta,
+                            canonical_rotvec,
+                            last_command_target_base,
+                            gripper_open,
+                            teacher_workspace_guard,
+                        ) = self._apply_m0_mobile_action(
+                            shadow_teacher_action10,
+                            state_before,
+                        )
+                        assert teacher_workspace_guard is None
+                        m0_teacher_executor_steps += 1
+                        m0_teacher_executor_metadata = {
+                            "enabled": True,
+                            "assisted": True,
+                            "scope": "diagnostic_only",
+                            "phase": "carry_retract",
+                            "action_source": "shadow_oracle_canonical10",
+                            "actuation_path": "m0_cartesian_ik_executor",
+                            "direct_joint_target_write": False,
+                            "teacher_action10": list(
+                                shadow_teacher_action10
+                            ),
+                            "m0_action_applied": False,
+                        }
+                        m0_step_metadata = {
+                            "sequence_id": m0_chunk_sequence,
+                            "action_index_control": model_action_index,
+                            "policy_proposed_action10": model_action,
+                            "policy_proposed_action_applied": False,
+                            "server_inference_ms": m0_chunk_server_ms,
+                            "round_trip_ms": m0_chunk_round_trip_ms,
+                            "control_layer": (
+                                "diagnostic_teacher_via_m0_executor"
+                            ),
+                            "dimension_sources": {
+                                "base": "shadow_oracle_canonical_action",
+                                "arm": "shadow_oracle_canonical_action",
+                                "gripper": "shadow_oracle_canonical_action",
+                            },
+                            "execution_prefix": m0_execution_prefix,
+                            "carry_retract_teacher_executor": (
+                                m0_teacher_executor_metadata
+                            ),
                         }
                     elif (
                         m0_chunk
@@ -2142,6 +2240,9 @@ class ConveyorRuntimeV1:
                 "service_staging_assist_control_steps": (
                     m0_staging_assist_steps
                 ),
+                "service_teacher_executor_control_steps": (
+                    m0_teacher_executor_steps
+                ),
                 "terminal_hold_control_steps": m0_terminal_hold_steps,
                 "safe_hold_control_steps": m0_safe_hold_steps,
                 "server_inference_ms": _latency_summary(m0_inference_ms),
@@ -2223,6 +2324,23 @@ class ConveyorRuntimeV1:
                     ),
                     "realized_orientation_error_rad": _latency_summary(
                         m0_staging_assist_orientation_error_rads
+                    ),
+                },
+                "carry_retract_teacher_executor": {
+                    "enabled": (
+                        self.options.m0_carry_retract_teacher_executor
+                    ),
+                    "assisted": (
+                        self.options.m0_carry_retract_teacher_executor
+                    ),
+                    "scope": "diagnostic_only",
+                    "phase": "carry_retract",
+                    "action_source": "shadow_oracle_canonical10",
+                    "actuation_path": "m0_cartesian_ik_executor",
+                    "direct_joint_target_write": False,
+                    "control_steps": m0_teacher_executor_steps,
+                    "replaced_model_action_steps": (
+                        m0_teacher_executor_replaced_action_steps
                     ),
                 },
             }

@@ -51,6 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
             "station before handing control back to M0."
         ),
     )
+    parser.add_argument(
+        "--carry-retract-teacher-executor",
+        action="store_true",
+        help=(
+            "Diagnostic only: execute the shadow teacher carry-retract "
+            "canonical action through the same Cartesian IK path as M0."
+        ),
+    )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--belt-speed", type=float, default=0.06)
@@ -121,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 m0_pregrasp_staging_assist=(
                     args.pregrasp_staging_assist
+                ),
+                m0_carry_retract_teacher_executor=(
+                    args.carry_retract_teacher_executor
                 ),
             )
         )
