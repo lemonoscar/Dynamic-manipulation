@@ -29,6 +29,7 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
         config: Mapping[str, Any] | None = None,
         allow_fixed_base: bool = False,
         expected_belt_speed_mps: float | None = None,
+        expected_task_types: Iterable[str] | None = None,
     ) -> None:
         if not isinstance(allow_fixed_base, bool):
             raise M0MobileError("allow_fixed_base must be a boolean")
@@ -39,7 +40,7 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             )
         self.config = config if config is not None else load_m0_mobile_config()
         statistics = _load_statistics(state_statistics)
-        if statistics.get("split", "train") != "train":
+        if statistics.get("split") != "train":
             raise M0MobileError("state statistics must come from the train split")
         self.normalizer = M0MobileNormalizer.from_config(self.config, statistics)
         self.allow_fixed_base = allow_fixed_base
@@ -47,14 +48,32 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             isinstance(expected_belt_speed_mps, bool)
             or not isinstance(expected_belt_speed_mps, (int, float))
             or not math.isfinite(expected_belt_speed_mps)
-            or expected_belt_speed_mps <= 0.0
+            or expected_belt_speed_mps < 0.0
         ):
-            raise M0MobileError("expected_belt_speed_mps must be positive and finite")
+            raise M0MobileError(
+                "expected_belt_speed_mps must be non-negative and finite"
+            )
         self.expected_belt_speed_mps = (
             float(expected_belt_speed_mps)
             if expected_belt_speed_mps is not None
             else None
         )
+        allowed_task_types = {"stationary_sort", "dynamic_sort"}
+        if expected_task_types is None:
+            resolved_task_types = None
+        elif isinstance(expected_task_types, str):
+            resolved_task_types = frozenset((expected_task_types,))
+        else:
+            resolved_task_types = frozenset(expected_task_types)
+        if resolved_task_types is not None and (
+            not resolved_task_types
+            or not resolved_task_types <= allowed_task_types
+        ):
+            raise M0MobileError(
+                "expected_task_types must contain stationary_sort and/or "
+                "dynamic_sort"
+            )
+        self.expected_task_types = resolved_task_types
         self._records: list[tuple[Path, int, int]] = []
 
         paths = _jsonl_paths(jsonl_paths)
@@ -114,6 +133,58 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             raise M0MobileError(f"{location} is not a train-split record")
         if record.get("source_task_outcome") != "success":
             raise M0MobileError(f"{location} is not a successful episode record")
+        if record.get("source_assisted") is not False:
+            raise M0MobileError(
+                f"{location} source_assisted must be false; regenerate legacy "
+                "exports that omit this field"
+            )
+        task_type = record.get("source_task_type")
+        if task_type not in {"stationary_sort", "dynamic_sort"}:
+            raise M0MobileError(
+                f"{location} source_task_type must be stationary_sort or "
+                "dynamic_sort; regenerate legacy exports that omit this field"
+            )
+        speed = record.get("belt_speed_mps")
+        if (
+            isinstance(speed, bool)
+            or not isinstance(speed, (int, float))
+            or not math.isfinite(speed)
+            or speed < 0.0
+        ):
+            raise M0MobileError(
+                f"{location} belt_speed_mps must be finite and non-negative"
+            )
+        stationary_speed = math.isclose(
+            float(speed), 0.0, rel_tol=0.0, abs_tol=1.0e-9
+        )
+        if (task_type == "stationary_sort") != stationary_speed:
+            raise M0MobileError(
+                f"{location} source_task_type and belt_speed_mps disagree"
+            )
+        object_curriculum_split = record.get("object_curriculum_split")
+        if object_curriculum_split not in {"train", "val", "unseen"}:
+            raise M0MobileError(
+                f"{location} object_curriculum_split must be train, val, or "
+                "unseen; regenerate legacy exports that omit this field"
+            )
+        if task_type == "dynamic_sort" and object_curriculum_split != record.get(
+            "split"
+        ):
+            raise M0MobileError(
+                f"{location} dynamic_sort object_curriculum_split must match split"
+            )
+        if task_type == "stationary_sort" and object_curriculum_split != "train":
+            raise M0MobileError(
+                f"{location} stationary_sort object_curriculum_split must be train"
+            )
+        if (
+            self.expected_task_types is not None
+            and task_type not in self.expected_task_types
+        ):
+            raise M0MobileError(
+                f"{location} source_task_type must be one of "
+                f"{sorted(self.expected_task_types)}"
+            )
         allowed_modes = {"whole_body_policy"}
         if self.allow_fixed_base:
             allowed_modes.add("fixed_base")
@@ -122,13 +193,11 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
                 f"{location} robot_mode must be one of {sorted(allowed_modes)}"
             )
         if self.expected_belt_speed_mps is not None:
-            speed = record.get("belt_speed_mps")
-            if (
-                isinstance(speed, bool)
-                or not isinstance(speed, (int, float))
-                or not math.isclose(
-                    float(speed), self.expected_belt_speed_mps, rel_tol=0.0, abs_tol=1e-9
-                )
+            if not math.isclose(
+                float(speed),
+                self.expected_belt_speed_mps,
+                rel_tol=0.0,
+                abs_tol=1e-9,
             ):
                 raise M0MobileError(
                     f"{location} belt_speed_mps must be "

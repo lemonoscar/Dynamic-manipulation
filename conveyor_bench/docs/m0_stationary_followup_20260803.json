@@ -1,0 +1,170 @@
+{
+  "schema_version": "conveyor-bench-m0-stationary-followup-1",
+  "date": "2026-08-03",
+  "accepted_baseline": {
+    "name": "m1-multiphase-balanced-step1200-20260803-1925",
+    "training_records": 1183,
+    "training_steps": 1200,
+    "action_model_sha256": "2f6c10a55f857cab198daa1886be0d8b2df5fbb7f93d3e8c648df3f3bd795024",
+    "state_statistics_sha256": "29bc9a04a9c0eb03947e21e3fb752959c3d6841097df52cbb001acb5558d0e66",
+    "training_report_sha256": "ac80d39d764412a4782ac94988e4f73c332869d83e6389682f507ac36eef8a02"
+  },
+  "carry_executor_diagnostic": {
+    "episode_id": "run-20260803T125027997106Z-b815588a-ep0000-seed0-whole_body_policy",
+    "assisted": true,
+    "teacher_executor_control_steps": 83,
+    "joint_gate": {
+      "max_error_rad": 0.02690,
+      "max_speed_radps": 0.33443,
+      "dwell_s": 0.30,
+      "transitioned_to_carry_turn_s": 11.40
+    },
+    "conclusion": "The Cartesian M0 executor can satisfy the compact carry joint gate; the learned closed-loop output remains the limiting factor.",
+    "terminal_result": {
+      "success": false,
+      "failure_reason": "dropped",
+      "phase": "place_descend",
+      "release_time_s": 16.86
+    }
+  },
+  "rejected_checkpoint": {
+    "name": "m2-carry-retract-step800-20260803-2100",
+    "action_model_sha256": "b1dbc623020cd432f5d247043fa75103384ecd94e9f0bed64901c0d96824b936",
+    "state_statistics_sha256": "29bc9a04a9c0eb03947e21e3fb752959c3d6841097df52cbb001acb5558d0e66",
+    "training_report_sha256": "ee76a6b1403b63ed341e9d2ec0e831a3663cd2d07acc879c28781f6073da4071",
+    "offline_grasp_transition_passed": 0,
+    "offline_grasp_transition_total": 3,
+    "online_episode_id": "run-20260803T130505910041Z-96e69381-ep0000-seed0-whole_body_policy",
+    "online_failure": "mobile_approach_timeout",
+    "accepted_for_collection": false,
+    "reason": "Focused same-seed replay caused an early-stage regression and is treated as catastrophic forgetting."
+  },
+  "stationary_platform": {
+    "task_type": "stationary_sort",
+    "benchmark_role": "stationary_belt_diagnostic",
+    "counts_toward_dynamic_benchmark": false,
+    "belt_speed_mps": 0.0,
+    "target_asset_id": "part_red_block",
+    "destination_zone_id": "sort_bin_blue",
+    "root_perturbation": "deferred_after_seed1102_ik_failure",
+    "scenarios": {
+      "train": [1101, 1102, 1103],
+      "val": [2101],
+      "test": [3101]
+    },
+    "oracle_runs": {
+      "train": {
+        "output_root": "outputs/gate/v1_stationary_train_oracle_final_1101_1103",
+        "episodes": 3,
+        "successful_episodes": 3,
+        "control_steps": 2906,
+        "png_frames": 4356,
+        "m0_mobile_records": 1428,
+        "export_sha256": [
+        "c83b96db8fc74cae13214987465f6eb8ef1229cb1bea13f1989ade02fb4420cc",
+        "9bc76aeb2cace9e85b29085c226344b3f2e398d2d4ebf5ba9d9551223a8bc58f",
+        "3018bd1d7bc34fe320ccd45d3d5454ebc0f523ad3b8576629cfb625d92360414"
+        ]
+      },
+      "val": {
+        "output_root": "outputs/gate/v1_stationary_val_oracle_2101",
+        "episodes": 1,
+        "successful_episodes": 1,
+        "control_steps": 957,
+        "png_frames": 1434,
+        "m0_mobile_records": 470,
+      "export_sha256": "1c44a78e2df589c03a6412623861fc6e05555a5dcababe25c964ea2ff15e3df9"
+      },
+      "test": {
+        "output_root": "outputs/gate/v1_stationary_test_oracle_3101",
+        "episodes": 1,
+        "successful_episodes": 1,
+        "control_steps": 966,
+        "png_frames": 1449,
+        "m0_mobile_records": 475,
+      "export_sha256": "070283223556426313a68a1739a509d1b6ae2096f7cc1e4f0a3a3898c02e2b51"
+      }
+    },
+    "gates": {
+      "strict_validator": "5/5 passed",
+      "quality_audit": "5/5 clean",
+      "temporal_camera_gate": "5/5 passed",
+      "max_abs_measured_belt_speed_mps": 0.0,
+      "falls": 0,
+      "forbidden_collisions": 0,
+      "split_leakage_guard": "M0 exports use scenario split; object curriculum split is retained separately."
+    }
+  },
+  "m1_stationary_online": {
+    "policy_only": {
+      "episode_id": "run-20260803T134610339351Z-0330e747-ep0000-seed1101-whole_body_policy",
+      "success": false,
+      "failure": "mobile_approach_timeout",
+      "duration_s": 4.0,
+      "request_count": 100,
+      "full_action_control_steps": 0,
+      "conclusion": "The static instruction fails before manipulation, so this run alone cannot judge grasp capability."
+    },
+    "approach_assisted_pick_isolation": {
+      "episode_id": "run-20260803T135248388896Z-510ef586-ep0000-seed1101-whole_body_policy",
+      "assisted_scope": "mobile_approach_only",
+      "policy_requests_before_object_spawn": 0,
+      "first_inference": {
+        "sequence_id": 0,
+        "phase": "settle",
+        "time_s": 4.44
+      },
+      "handoff": {
+        "time_s": 4.42,
+        "root_x_m": 0.07355265319347382,
+        "root_planar_speed_mps": 0.026935292153164914,
+        "arm_max_joint_error_rad": 0.06374216651916509
+      },
+      "m1_full_action_control_steps": 455,
+      "bilateral_held": {
+        "control_steps": 112,
+        "first_time_s": 5.14,
+        "last_time_s": 7.36,
+        "release_boundary_s": 7.38,
+        "continuous_duration_s": 2.24,
+        "max_object_z_m": 0.7149305939674377,
+        "lift_from_prehold_m": 0.182644
+      },
+      "success": false,
+      "canonical_failure_reason": "runtime_error",
+      "diagnostic_cause": {
+        "classification": "pregrasp_ik_convergence_error_after_model_opened_gripper",
+        "evidence_source": "canonical summary.json metrics.abort_metadata",
+        "persisted_in_canonical_episode": true,
+        "abort_metadata": {
+          "exception_type": "IKConvergenceError",
+          "message": "TCP target is outside the calibrated workspace: position_error=0.0892 m, orientation_error=0.2678",
+          "phase": "pregrasp"
+        }
+      },
+      "model_release_time_s": 7.38,
+      "shadow_phase_control_steps": {
+        "settle": 13,
+        "select": 5,
+        "pregrasp": 438,
+        "track_descend_close_lift_carry": 0
+      },
+      "camera_gate_passed": true,
+      "conclusion": "M1 has a stationary close, bilateral hold, and lift primitive, but phase alignment, premature release, carry, and placement are not solved."
+    }
+  },
+  "readiness": {
+    "oracle_data_collection_framework_ready": true,
+    "m0_policy_success_collection_ready": false,
+    "large_scale_collection_authorized": false
+  },
+  "recommended_next_training_gate": {
+    "initial_checkpoint": "accepted_baseline",
+    "static_train_fraction": "45-60%",
+    "complete_dynamic_replay_min_fraction": "40%",
+    "carry_booster_max_fraction": "5%",
+    "steps": "1000-1200",
+    "required_static_policy_only_success": "3/3 registered train seeds",
+    "required_regression": "No degradation of the accepted dynamic offline and online gates"
+  }
+}

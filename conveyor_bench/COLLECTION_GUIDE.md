@@ -268,6 +268,39 @@ python scripts/export_v1.py \
 如果同一 episode 已有导出 manifest，需明确使用 `--force` 重建派生清单；
 canonical 六个事实源仍受到哈希保护，不会被覆盖。
 
+### 4.2 静止传送带补充数据
+
+静态诊断只接受 `part_red_block → sort_bin_blue` 和五个预注册 seed。训练集合并
+1101–1103 三条完整成功轨迹；2101 与 3101 只做 val/test。导出记录同时包含：
+
+- `source_task_type=stationary_sort`；
+- `belt_speed_mps=0`；
+- `split=train|val|test`，来自 scenario；
+- `object_curriculum_split=train`，只说明红色方块在资产注册表中的归属。
+
+训练加载器默认拒绝非 train 记录。静态专用烟测应显式 fail-closed：
+
+```bash
+python scripts/train_m0_mobile.py \
+  --episode-root TRAIN_EPISODE_ROOT \
+  --state-statistics TRAIN_STATE_STATISTICS \
+  --initial-action-checkpoint ACCEPTED_M1_ACTION_MODEL \
+  --model-root LOCAL_MODEL_ROOT \
+  --output-dir NEW_STATIC_EXPERIMENT_ROOT \
+  --belt-speed 0 \
+  --task-type stationary_sort \
+  --max-steps 1000 \
+  --batch-size-per-device 2
+```
+
+混合静态与动态完整轨迹时使用 `--all-belt-speeds`，并分别重复
+`--task-type stationary_sort --task-type dynamic_sort`。状态统计只能由最终训练
+混合中的 train 记录计算；不得读取 val/test，也不得把失败的 online diagnostic
+episode 当作成功示教。训练加载器会无条件核对 `source_task_type` 与带速语义，
+且 `--all-belt-speeds` 必须配显式 `--task-type`。旧版动态导出若没有
+`source_task_type` 会被拒绝，必须从 canonical episode 使用当前 exporter 重新
+生成，不能在 JSONL 中手工补字段。
+
 最小 AML action head 是纯 PyTorch 实现，复现 ABot-M0 的 clean-action
 velocity-matching loss 与四步 Euler 方程。它使用轻量 Transformer decoder，
 并不声称复现完整 M0 DiT-B 架构。先在 CPU 做可重复过拟合烟测：
@@ -310,6 +343,8 @@ VLA 任务性能、视觉语言骨干训练或四卡扩展已经通过。
 | `outputs/gate/v1_fixed_single_current_v5` | fixed 单目标成功；`10.48 s`、524 control 样本；strict validator 通过、quality 为 clean；该条未保存相机 |
 | `outputs/gate/v1_release_camera` | whole-body 单目标 release 成功；`21.60 s`、1080 control 样本、540 个同步相机 tick、1620 张 PNG；strict validator、quality 和 temporal camera gate 均通过；M0/DynamicVLA 各导出 540 条，canonical 哈希未改变 |
 | `outputs/gate/v1_mobile_multi_current` | whole-body 三物体、双语目标选择成功；`21.58 s`、1079 control 样本、3237 条物体记录；strict validator 通过、quality 为 clean；该条未保存相机 |
+| `outputs/gate/v1_stationary_train_oracle_final_1101_1103` | 零速 whole-body 静态诊断 3/3 成功；2906 control 样本、4356 张三相机 PNG、1428 条 M0-Mobile train 记录；strict validator 与 camera gate 均 3/3 通过 |
+| `outputs/gate/v1_stationary_val_oracle_2101` / `v1_stationary_test_oracle_3101` | val/test 各 1/1 成功并通过 strict/camera gate；导出分别标记为 `val`/`test`，不能进入训练 |
 
 最终 release 正例的 episode ID 为
 `run-20260730T142415659352Z-6c097b79-ep0000-seed0-whole_body_policy`，记录的

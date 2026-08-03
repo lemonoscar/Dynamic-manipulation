@@ -100,6 +100,52 @@
     "max_duration_s": 20.0,
     "failure_is_retained_as_valid_benchmark_data": true
   },
+  "stationary_diagnostic": {
+    "task_type": "stationary_sort",
+    "counts_toward_dynamic_benchmark": false,
+    "belt_speed_mps": 0.0,
+    "active_object_count": 1,
+    "target_asset_id": "part_red_block",
+    "destination_zone_id": "sort_bin_blue",
+    "spawn_origin_xy_m": [0.65, 0.1],
+    "scenario_splits": {
+      "train": [1101, 1102, 1103],
+      "val": [2101],
+      "test": [3101]
+    },
+    "scenarios": {
+      "1101": {
+        "split": "train",
+        "object_xy_offset_m": [0.0, 0.0],
+        "root_xy_offset_m": [0.0, 0.0],
+        "root_yaw_rad": 0.0
+      },
+      "1102": {
+        "split": "train",
+        "object_xy_offset_m": [0.02, 0.02],
+        "root_xy_offset_m": [0.0, 0.0],
+        "root_yaw_rad": 0.0
+      },
+      "1103": {
+        "split": "train",
+        "object_xy_offset_m": [-0.02, -0.02],
+        "root_xy_offset_m": [0.0, 0.0],
+        "root_yaw_rad": 0.0
+      },
+      "2101": {
+        "split": "val",
+        "object_xy_offset_m": [0.01, -0.025],
+        "root_xy_offset_m": [0.0, 0.0],
+        "root_yaw_rad": 0.0
+      },
+      "3101": {
+        "split": "test",
+        "object_xy_offset_m": [-0.01, 0.025],
+        "root_xy_offset_m": [0.0, 0.0],
+        "root_yaw_rad": 0.0
+      }
+    }
+  },
   "robot_modes": {
     "accepted": [
       "fixed_base",

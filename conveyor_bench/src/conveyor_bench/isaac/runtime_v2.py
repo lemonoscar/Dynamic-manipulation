@@ -33,7 +33,7 @@ from .scene_remote_delivery import (
     REMOTE_RECEPTACLE_MANIFEST_PATH,
     ConveyorRemoteDeliverySceneCfg,
 )
-from .scene_v1 import OBJECT_SPAWN_Y_M, ConveyorSceneV1Cfg
+from .scene_v1 import OBJECT_LANE_X_M, OBJECT_SPAWN_Y_M, ConveyorSceneV1Cfg
 from .scene_v2 import ConveyorNearSortV2SceneCfg
 
 
@@ -67,6 +67,7 @@ class RuntimeOptionsV2:
     m0_policy_seed: int = 20260803
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
+    m0_mobile_approach_assist: bool = False
     m0_pregrasp_workspace_guard: bool = False
     m0_pregrasp_staging_assist: bool = False
     m0_carry_retract_teacher_executor: bool = False
@@ -204,6 +205,8 @@ class RuntimeOptionsV2:
             )
         if not isinstance(self.m0_pregrasp_workspace_guard, bool):
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
+        if not isinstance(self.m0_mobile_approach_assist, bool):
+            raise TypeError("m0_mobile_approach_assist must be a bool")
         if not isinstance(self.m0_pregrasp_staging_assist, bool):
             raise TypeError("m0_pregrasp_staging_assist must be a bool")
         if not isinstance(self.m0_carry_retract_teacher_executor, bool):
@@ -233,6 +236,10 @@ class RuntimeOptionsV2:
                 raise ValueError("online M0 requires m0_state_statistics")
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
+            )
+        elif self.m0_mobile_approach_assist:
+            raise ValueError(
+                "m0_mobile_approach_assist requires online M0"
             )
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
@@ -389,6 +396,9 @@ class ConveyorRuntimeV2(ConveyorRuntimeV1):
             manifest=manifest,
             assets=assets,
             targets=targets,
+            spawn_x_by_id={
+                asset.object_id: OBJECT_LANE_X_M for asset in assets
+            },
             spawn_y_by_id=spawn_y_by_id,
             service_gated_spawn=len(targets) > 1,
         )

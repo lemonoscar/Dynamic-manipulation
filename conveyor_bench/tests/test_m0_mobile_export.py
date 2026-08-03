@@ -10,6 +10,7 @@ from conveyor_bench.v1.exporters import (
     iter_m0_mobile_records,
     m0_mobile_to_canonical_action,
 )
+from conveyor_bench.v1.stationary import STATIONARY_SCENARIOS
 
 
 def _write_json(path: Path, value) -> None:
@@ -35,6 +36,7 @@ def _episode(tmp_path: Path, *, missing_joint: bool = False) -> Path:
                 "protocol_version": "conveyor-bench-v1",
                 "task": {
                     "task_id": "task-test",
+                    "task_type": "dynamic_sort",
                     "instruction": "pick the moving part",
                     "robot_mode": "whole_body_policy",
                     "belt_speed_mps": 0.08,
@@ -45,7 +47,10 @@ def _episode(tmp_path: Path, *, missing_joint: bool = False) -> Path:
                         "head_rgb": {"role": "policy_observation"},
                         "overview_rgb": {"role": "observer_only"},
                         "wrist_rgb": {"role": "policy_observation"},
-                    }
+                    },
+                    "m0_mobile_approach_assist": {"enabled": False},
+                    "m0_pregrasp_staging_assist": {"enabled": False},
+                    "m0_carry_retract_teacher_executor": {"enabled": False},
                 },
             }
         },
@@ -138,6 +143,61 @@ def _episode(tmp_path: Path, *, missing_joint: bool = False) -> Path:
     return episode
 
 
+def _declare_stationary(episode: Path, seed: int) -> dict:
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    task = manifest["episode"]["task"]
+    scenario = STATIONARY_SCENARIOS[seed]
+    task.update(
+        {
+            "task_type": "stationary_sort",
+            "belt_speed_mps": 0.0,
+            "seed": seed,
+            "objects": [
+                {
+                    "instance_id": "part_red_block",
+                    "asset_id": "part_red_block",
+                    "class_id": "block",
+                    "goal_zone_id": "sort_bin_blue",
+                }
+            ],
+            "goal_zones": [
+                {
+                    "zone_id": "sort_bin_blue",
+                    "min_xyz": [0.0, 0.0, 0.0],
+                    "max_xyz": [1.0, 1.0, 1.0],
+                }
+            ],
+            "scored_object_ids": ["part_red_block"],
+        }
+    )
+    task["metadata"].update(
+        {
+            "task_family": "single_target",
+            "target_asset_id": "part_red_block",
+            "destination_zone_id": "sort_bin_blue",
+            "benchmark_role": "stationary_belt_diagnostic",
+            "belt_motion": "stationary",
+            "active_object_count": 1,
+            "spawn_x_by_id": {
+                "part_red_block": 0.65 + scenario.object_xy_offset_m[0]
+            },
+            "spawn_y_by_id": {
+                "part_red_block": 0.10 + scenario.object_xy_offset_m[1]
+            },
+            "stationary_scenario": {
+                "scenario_id": seed,
+                "scenario_split": scenario.split,
+                "object_xy_offset_m": list(scenario.object_xy_offset_m),
+                "root_xy_offset_m": list(scenario.root_xy_offset_m),
+                "root_yaw_rad": scenario.root_yaw_rad,
+            },
+        }
+    )
+    manifest["episode"]["seeds"] = {"episode": seed, "layout": seed}
+    _write_json(episode / "manifest.json", manifest)
+    return manifest
+
+
 def test_m0_mobile_records_are_causal_and_exclude_privileged_fields(tmp_path) -> None:
     records = list(iter_m0_mobile_records(_episode(tmp_path)))
 
@@ -151,7 +211,10 @@ def test_m0_mobile_records_are_causal_and_exclude_privileged_fields(tmp_path) ->
     assert first["action_horizon"] == 16
     assert first["action_rate_hz"] == 50
     assert first["split"] == "train"
+    assert first["object_curriculum_split"] == "train"
     assert first["robot_mode"] == "whole_body_policy"
+    assert first["source_task_type"] == "dynamic_sort"
+    assert first["source_assisted"] is False
     assert [
         frame["camera_id"] for frame in first["policy_camera_frames"]
     ] == ["head_rgb", "wrist_rgb"]
@@ -163,6 +226,145 @@ def test_m0_mobile_records_are_causal_and_exclude_privileged_fields(tmp_path) ->
         "future_object_states",
     ):
         assert forbidden not in encoded
+
+
+@pytest.mark.parametrize(
+    ("assist_key", "flag"),
+    (
+        (key, flag)
+        for key in (
+            "m0_mobile_approach_assist",
+            "m0_pregrasp_staging_assist",
+            "m0_carry_retract_teacher_executor",
+        )
+        for flag in ("enabled", "assisted")
+    ),
+)
+def test_m0_mobile_export_rejects_declared_diagnostic_assist(
+    tmp_path: Path, assist_key: str, flag: str
+) -> None:
+    episode = _episode(tmp_path)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["metadata"][assist_key][flag] = True
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="diagnostic-assisted"):
+        next(iter_m0_mobile_records(episode))
+
+
+@pytest.mark.parametrize(
+    "control_layer",
+    (
+        "diagnostic_mobile_approach_assist",
+        "diagnostic_pregrasp_staging_assist",
+        "diagnostic_teacher_via_m0_executor",
+    ),
+)
+def test_m0_mobile_export_rejects_recorded_diagnostic_intervention(
+    tmp_path: Path, control_layer: str
+) -> None:
+    episode = _episode(tmp_path)
+    steps = [
+        json.loads(line)
+        for line in (episode / "steps.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    steps[0]["metadata"] = {
+        "m0_online_action": {"control_layer": control_layer}
+    }
+    _write_jsonl(episode / "steps.jsonl", steps)
+
+    with pytest.raises(ExportError, match="recorded control intervention"):
+        next(iter_m0_mobile_records(episode))
+
+
+def test_m0_mobile_export_requires_explicit_curriculum_split(tmp_path: Path) -> None:
+    episode = _episode(tmp_path)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    del manifest["episode"]["task"]["metadata"]["curriculum_split"]
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="explicitly"):
+        next(iter_m0_mobile_records(episode))
+
+
+def test_m0_mobile_export_rejects_non_mapping_task_metadata(tmp_path: Path) -> None:
+    episode = _episode(tmp_path)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = None
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="task.metadata must be a JSON object"):
+        next(iter_m0_mobile_records(episode))
+
+
+def test_stationary_export_requires_train_object_curriculum(tmp_path: Path) -> None:
+    episode = _episode(tmp_path)
+    manifest = _declare_stationary(episode, 2101)
+    manifest["episode"]["task"]["metadata"]["curriculum_split"] = "val"
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="object curriculum_split must be train"):
+        next(iter_m0_mobile_records(episode))
+
+
+@pytest.mark.parametrize("scenario_split", ("val", "test"))
+def test_stationary_scenario_split_cannot_leak_into_training(
+    tmp_path, scenario_split
+) -> None:
+    episode = _episode(tmp_path)
+    _declare_stationary(
+        episode, 2101 if scenario_split == "val" else 3101
+    )
+
+    first = next(iter_m0_mobile_records(episode))
+
+    assert first["split"] == scenario_split
+    assert first["object_curriculum_split"] == "train"
+
+
+def test_stationary_export_rejects_unregistered_task_contract(tmp_path) -> None:
+    episode = _episode(tmp_path)
+    manifest = _declare_stationary(episode, 1101)
+    task = manifest["episode"]["task"]
+    task["metadata"]["target_asset_id"] = "part_blue_cylinder"
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="registered diagnostic contract"):
+        next(iter_m0_mobile_records(episode))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("scenario_split", "test"),
+        ("scenario_id", 3101),
+        ("object_xy_offset_m", [0.1, 0.0]),
+        ("root_xy_offset_m", [0.1, 0.0]),
+        ("root_yaw_rad", 0.1),
+    ),
+)
+def test_stationary_export_rejects_spoofed_scenario_claims(
+    tmp_path: Path,
+    field: str,
+    value,
+) -> None:
+    episode = _episode(tmp_path)
+    manifest = _declare_stationary(episode, 1101)
+    manifest["episode"]["task"]["metadata"]["stationary_scenario"][field] = value
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="registered diagnostic contract"):
+        next(iter_m0_mobile_records(episode))
+
+
+def test_stationary_export_rejects_episode_seed_spoof(tmp_path: Path) -> None:
+    episode = _episode(tmp_path)
+    manifest = _declare_stationary(episode, 3101)
+    manifest["episode"]["seeds"]["episode"] = 1101
+    _write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="registered diagnostic contract"):
+        next(iter_m0_mobile_records(episode))
 
 
 def test_m0_mobile_state28_uses_named_joints_and_measured_gripper(tmp_path) -> None:

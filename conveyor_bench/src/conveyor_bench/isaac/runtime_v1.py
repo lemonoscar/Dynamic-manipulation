@@ -69,6 +69,12 @@ from conveyor_bench.v1.protocol import (
     make_run_id,
 )
 from conveyor_bench.v1.recorder import EpisodeRecorder
+from conveyor_bench.v1.stationary import (
+    STATIONARY_DESTINATION_ZONE_ID as _STATIONARY_DESTINATION_ZONE_ID,
+    STATIONARY_SCENARIOS as _STATIONARY_SCENARIOS,
+    STATIONARY_SPAWN_ORIGIN_XY_M as _STATIONARY_SPAWN_ORIGIN_XY_M,
+    STATIONARY_TARGET_ASSET_ID as _STATIONARY_TARGET_ASSET_ID,
+)
 from conveyor_bench.v1.tasking import (
     TASKING_SCHEMA_VERSION,
     CurriculumSplit,
@@ -220,6 +226,7 @@ class RuntimeOptionsV1:
     m0_policy_seed: int = 20260803
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
+    m0_mobile_approach_assist: bool = False
     m0_pregrasp_workspace_guard: bool = False
     m0_pregrasp_staging_assist: bool = False
     m0_carry_retract_teacher_executor: bool = False
@@ -231,8 +238,12 @@ class RuntimeOptionsV1:
             raise ValueError("seed cannot be negative")
         if not 1 <= self.active_object_count <= len(OBJECT_ASSETS):
             raise ValueError("active_object_count is outside the object pool")
-        if self.belt_speed_mps <= 0.0:
-            raise ValueError("belt_speed_mps must be positive")
+        if (
+            isinstance(self.belt_speed_mps, bool)
+            or not math.isfinite(self.belt_speed_mps)
+            or self.belt_speed_mps < 0.0
+        ):
+            raise ValueError("belt_speed_mps must be finite and non-negative")
         if self.max_duration_s <= 0.0:
             raise ValueError("max_duration_s must be positive")
         if self.device != "cpu":
@@ -274,6 +285,8 @@ class RuntimeOptionsV1:
             )
         if not isinstance(self.m0_pregrasp_workspace_guard, bool):
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
+        if not isinstance(self.m0_mobile_approach_assist, bool):
+            raise TypeError("m0_mobile_approach_assist must be a bool")
         if not isinstance(self.m0_pregrasp_staging_assist, bool):
             raise TypeError("m0_pregrasp_staging_assist must be a bool")
         if not isinstance(self.m0_carry_retract_teacher_executor, bool):
@@ -330,6 +343,41 @@ class RuntimeOptionsV1:
             and self.active_object_count != 1
         ):
             raise ValueError("single_target requires active_object_count=1")
+        if self.belt_speed_mps == 0.0 and self.active_object_count != 1:
+            raise ValueError(
+                "the stationary-belt diagnostic requires active_object_count=1"
+            )
+        if self.belt_speed_mps == 0.0:
+            if resolved_family is not TaskFamily.SINGLE_TARGET:
+                raise ValueError(
+                    "the stationary-belt diagnostic requires single_target"
+                )
+            if self.target_asset_id != _STATIONARY_TARGET_ASSET_ID:
+                raise ValueError(
+                    "the stationary-belt diagnostic requires part_red_block"
+                )
+            if self.destination_zone_id is None:
+                object.__setattr__(
+                    self,
+                    "destination_zone_id",
+                    _STATIONARY_DESTINATION_ZONE_ID,
+                )
+            elif self.destination_zone_id != _STATIONARY_DESTINATION_ZONE_ID:
+                raise ValueError(
+                    "the stationary-belt diagnostic requires sort_bin_blue"
+                )
+            missing_scenarios = [
+                episode_seed
+                for episode_seed in range(
+                    self.seed, self.seed + self.episodes
+                )
+                if episode_seed not in _STATIONARY_SCENARIOS
+            ]
+            if missing_scenarios:
+                raise ValueError(
+                    "stationary-belt seeds must be pre-registered scenarios; "
+                    f"missing {missing_scenarios}"
+                )
         if (
             resolved_family is TaskFamily.LANGUAGE_CONDITIONED
             and self.active_object_count < 2
@@ -361,6 +409,10 @@ class RuntimeOptionsV1:
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
             )
+        elif self.m0_mobile_approach_assist:
+            raise ValueError(
+                "m0_mobile_approach_assist requires online M0"
+            )
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
                 "m0_pregrasp_workspace_guard requires online M0"
@@ -387,6 +439,7 @@ class _ResolvedTask:
     manifest: TaskManifest
     assets: tuple[ObjectAsset, ...]
     targets: tuple[_ResolvedTarget, ...]
+    spawn_x_by_id: dict[str, float]
     spawn_y_by_id: dict[str, float]
     current_target_index: int = 0
     service_gated_spawn: bool = False
@@ -624,7 +677,18 @@ class ConveyorRuntimeV1:
         return _guard_locomotion_command(command)
 
     def _summary_task_type(self) -> TaskType:
-        return TaskType.DYNAMIC_SORT
+        return (
+            TaskType.STATIONARY_SORT
+            if self.options.belt_speed_mps == 0.0
+            else TaskType.DYNAMIC_SORT
+        )
+
+    def _intercept_y_world(self, resolved: _ResolvedTask) -> float:
+        if resolved.manifest.task_type is TaskType.STATIONARY_SORT:
+            return float(
+                resolved.spawn_y_by_id[resolved.target_asset.object_id]
+            )
+        return _MOBILE_INTERCEPT_Y_WORLD_M
 
     def _extra_episode_metadata(
         self, resolved: _ResolvedTask
@@ -842,6 +906,17 @@ class ConveyorRuntimeV1:
                     else "privileged_oracle"
                 ),
                 "m0_online_contract": self._m0_health,
+                "m0_mobile_approach_assist": {
+                    "enabled": self.options.m0_mobile_approach_assist,
+                    "scope": "diagnostic_only",
+                    "phase": "mobile_approach",
+                    "base_command_body": [0.20, 0.0, 0.0],
+                    "dimension_sources": {
+                        "base": "diagnostic_service",
+                        "arm": "service",
+                        "gripper": "service",
+                    },
+                },
                 "m0_pregrasp_workspace_guard": {
                     "enabled": self.options.m0_pregrasp_workspace_guard,
                     "scope": "diagnostic_only",
@@ -928,12 +1003,17 @@ class ConveyorRuntimeV1:
         m0_chunk_round_trip_ms: float | None = None
         m0_action_index = 0
         m0_next_sequence = 0
+        m0_first_inference_phase: str | None = None
+        m0_requests_before_object_spawn = 0
+        m0_approach_assist_handoff: dict[str, Any] | None = None
         m0_inference_ms: list[float] = []
         m0_round_trip_ms: list[float] = []
         m0_consumed_actions = 0
         m0_full_action_steps = 0
         m0_transition_action_steps = 0
         m0_base_only_action_steps = 0
+        m0_approach_assist_steps = 0
+        m0_approach_assist_replaced_action_steps = 0
         m0_service_preposition_steps = 0
         m0_service_hold_steps = 0
         m0_staging_assist_steps = 0
@@ -1164,6 +1244,39 @@ class ConveyorRuntimeV1:
                         oracle = self._make_oracle(
                             resolved, sim_time_s=sim_time_s
                         )
+                        if self.options.m0_mobile_approach_assist:
+                            arm_max_joint_error_rad = float(
+                                torch.max(
+                                    torch.abs(
+                                        self.robot.data.joint_pos[
+                                            :, self.arm_joint_ids
+                                        ]
+                                        - torch.tensor(
+                                            [_PREGRASP_ARM],
+                                            dtype=torch.float32,
+                                            device=self.sim.device,
+                                        )
+                                    )
+                                ).item()
+                            )
+                            m0_approach_assist_handoff = {
+                                "sim_time_s": sim_time_s,
+                                "root_x_m": state_before[
+                                    "root_pose"
+                                ].xyz[0],
+                                "root_planar_speed_mps": math.hypot(
+                                    *state_before[
+                                        "root_twist"
+                                    ].linear_xyz[:2]
+                                ),
+                                "arm_max_joint_error_rad": (
+                                    arm_max_joint_error_rad
+                                ),
+                                "next_sequence_id": m0_next_sequence,
+                                "policy_requests_before_object_spawn": len(
+                                    m0_inference_ms
+                                ),
+                            }
                         phase = "settle"
                         if self._m0_client is not None:
                             # Never apply a chunk inferred from an image in
@@ -1198,7 +1311,7 @@ class ConveyorRuntimeV1:
                         target_tcp_pose_world = Pose(
                             (
                                 target_tcp_pose_world.xyz[0],
-                                _MOBILE_INTERCEPT_Y_WORLD_M,
+                                self._intercept_y_world(resolved),
                                 target_tcp_pose_world.xyz[2],
                             ),
                             target_tcp_pose_world.wxyz,
@@ -1638,6 +1751,27 @@ class ConveyorRuntimeV1:
                             }
                             m0_staging_assist_steps += 1
                             m0_staging_assist_replaced_action_steps += 1
+                        elif (
+                            self.options.m0_mobile_approach_assist
+                            and phase == "mobile_approach"
+                        ):
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = True
+                            control_layer = (
+                                "diagnostic_mobile_approach_assist"
+                            )
+                            dimension_sources = {
+                                "base": "diagnostic_service",
+                                "arm": "service",
+                                "gripper": "service",
+                            }
+                            m0_approach_assist_steps += 1
+                            m0_approach_assist_replaced_action_steps += 1
                         elif phase == "mobile_approach":
                             from conveyor_bench.m0_online import (
                                 quantize_go2_forward_intent,
@@ -1719,6 +1853,14 @@ class ConveyorRuntimeV1:
                             "dimension_sources": dimension_sources,
                             "execution_prefix": m0_execution_prefix,
                         }
+                        if control_layer == "diagnostic_mobile_approach_assist":
+                            m0_step_metadata[
+                                "policy_proposed_action_applied"
+                            ] = False
+                            m0_step_metadata["mobile_approach_assist"] = {
+                                "assisted": True,
+                                "scope": "diagnostic_only",
+                            }
                         if m0_workspace_guard_metadata is not None:
                             m0_step_metadata["workspace_guard"] = (
                                 m0_workspace_guard_metadata
@@ -1726,7 +1868,12 @@ class ConveyorRuntimeV1:
                         m0_action_index += 1
                         m0_consumed_actions += 1
                     else:
-                        base_command = (0.0, 0.0, 0.0)
+                        approach_assist_active = (
+                            self.options.m0_mobile_approach_assist
+                            and phase == "mobile_approach"
+                        )
+                        if not approach_assist_active:
+                            base_command = (0.0, 0.0, 0.0)
                         if scripted_preposition:
                             gripper_open = True
                             control_layer = "service_preposition"
@@ -1741,6 +1888,18 @@ class ConveyorRuntimeV1:
                             gripper_open = True
                             control_layer = "service_hold"
                             m0_service_hold_steps += 1
+                        elif approach_assist_active:
+                            canonical_ee_delta = (0.0, 0.0, 0.0)
+                            canonical_rotvec = (0.0, 0.0, 0.0)
+                            last_command_target_base = state_before[
+                                "tcp_base"
+                            ].xyz
+                            self._hold_arm_target()
+                            gripper_open = True
+                            control_layer = (
+                                "diagnostic_mobile_approach_assist"
+                            )
+                            m0_approach_assist_steps += 1
                         elif (
                             self.options.m0_pregrasp_staging_assist
                             and phase == "pregrasp"
@@ -1779,6 +1938,12 @@ class ConveyorRuntimeV1:
                             "dimension_sources": (
                                 {
                                     "base": "diagnostic_service",
+                                    "arm": "service",
+                                    "gripper": "service",
+                                }
+                                if approach_assist_active
+                                else {
+                                    "base": "diagnostic_service",
                                     "arm": (
                                         "diagnostic_static_world_pose"
                                     ),
@@ -1793,6 +1958,12 @@ class ConveyorRuntimeV1:
                             ),
                             "execution_prefix": m0_execution_prefix,
                         }
+                        if approach_assist_active:
+                            m0_step_metadata["mobile_approach_assist"] = {
+                                "assisted": True,
+                                "scope": "diagnostic_only",
+                                "policy_request_suppressed": True,
+                            }
                     if m0_staging_assist_metadata is not None:
                         m0_step_metadata[
                             "policy_proposed_action_applied"
@@ -1932,6 +2103,10 @@ class ConveyorRuntimeV1:
                         or m0_action_index >= m0_execution_prefix
                     )
                     and not target_command_terminal
+                    and not (
+                        self.options.m0_mobile_approach_assist
+                        and oracle is None
+                    )
                 ):
                     online_observation = self._m0_live_state28(state_after)
                     policy_result = self._m0_client.infer(
@@ -1959,6 +2134,10 @@ class ConveyorRuntimeV1:
                     )
                     m0_chunk_round_trip_ms = policy_result.round_trip_ms
                     m0_action_index = 0
+                    if m0_first_inference_phase is None:
+                        m0_first_inference_phase = phase
+                    if not target_spawned:
+                        m0_requests_before_object_spawn += 1
                     m0_next_sequence += 1
                     m0_inference_ms.append(policy_result.server_inference_ms)
                     m0_round_trip_ms.append(policy_result.round_trip_ms)
@@ -2239,6 +2418,9 @@ class ConveyorRuntimeV1:
                     m0_transition_action_steps
                 ),
                 "base_only_action_control_steps": m0_base_only_action_steps,
+                "service_mobile_approach_assist_control_steps": (
+                    m0_approach_assist_steps
+                ),
                 "service_preposition_control_steps": (
                     m0_service_preposition_steps
                 ),
@@ -2263,6 +2445,22 @@ class ConveyorRuntimeV1:
                 "transition_chunk_phases": sorted(
                     _M0_TRANSITION_CHUNK_PHASES
                 ),
+                "mobile_approach_assist": {
+                    "enabled": self.options.m0_mobile_approach_assist,
+                    "assisted": m0_approach_assist_steps > 0,
+                    "scope": "diagnostic_only",
+                    "phase": "mobile_approach",
+                    "base_command_body": [0.20, 0.0, 0.0],
+                    "control_steps": m0_approach_assist_steps,
+                    "replaced_model_action_steps": (
+                        m0_approach_assist_replaced_action_steps
+                    ),
+                    "policy_requests_before_object_spawn": (
+                        m0_requests_before_object_spawn
+                    ),
+                    "first_inference_phase": m0_first_inference_phase,
+                    "handoff": m0_approach_assist_handoff,
+                },
                 "pregrasp_workspace_guard": {
                     "enabled": self.options.m0_pregrasp_workspace_guard,
                     "scope": "diagnostic_only",
@@ -2393,15 +2591,27 @@ class ConveyorRuntimeV1:
             for asset in assets
         )
         target_alias = target.language_aliases["en"][0]
-        instruction_en = (
-            f"Pick the {target_alias} moving from left to right and place it "
-            f"in the {target_zone.display_name}."
-        )
-        instruction_zh = (
-            f"抓取从左向右移动的{target.language_aliases['zh'][0]}，"
-            f"并将它放入"
-            f"{'蓝色' if zone_id == 'sort_bin_blue' else '黄色'}分拣盘。"
-        )
+        stationary = self.options.belt_speed_mps == 0.0
+        if stationary:
+            instruction_en = (
+                f"Pick the stationary {target_alias} on the conveyor and "
+                f"place it in the {target_zone.display_name}."
+            )
+            instruction_zh = (
+                f"抓取传送带上静止的{target.language_aliases['zh'][0]}，"
+                f"并将它放入"
+                f"{'蓝色' if zone_id == 'sort_bin_blue' else '黄色'}分拣盘。"
+            )
+        else:
+            instruction_en = (
+                f"Pick the {target_alias} moving from left to right and "
+                f"place it in the {target_zone.display_name}."
+            )
+            instruction_zh = (
+                f"抓取从左向右移动的{target.language_aliases['zh'][0]}，"
+                f"并将它放入"
+                f"{'蓝色' if zone_id == 'sort_bin_blue' else '黄色'}分拣盘。"
+            )
         instruction = (
             instruction_en
             if self.options.instruction_language
@@ -2413,13 +2623,39 @@ class ConveyorRuntimeV1:
             asset.object_id: spawn_slots[index]
             for index, asset in enumerate(assets)
         }
+        spawn_x_by_id = {
+            asset.object_id: OBJECT_LANE_X_M for asset in assets
+        }
+        stationary_scenario = None
+        if stationary:
+            stationary_scenario = _STATIONARY_SCENARIOS[seed]
+            object_offset_x, object_offset_y = (
+                stationary_scenario.object_xy_offset_m
+            )
+            spawn_x_by_id[target.object_id] = (
+                _STATIONARY_SPAWN_ORIGIN_XY_M[0] + object_offset_x
+            )
+            spawn_y_by_id[target.object_id] = (
+                _STATIONARY_SPAWN_ORIGIN_XY_M[1] + object_offset_y
+            )
+        task_type = (
+            TaskType.STATIONARY_SORT
+            if stationary
+            else TaskType.DYNAMIC_SORT
+        )
+        task_label = "stationary-sort" if stationary else "dynamic-sort"
+        task_split = (
+            stationary_scenario.split
+            if stationary_scenario is not None
+            else self.options.curriculum_split.value
+        )
         manifest = TaskManifest(
             task_id=(
-                f"dynamic-sort-{self.options.curriculum_split.value}-"
+                f"{task_label}-{task_split}-"
                 f"{self.options.task_family.value}-"
                 f"{self.options.robot_mode.value}-seed-{seed}"
             ),
-            task_type=TaskType.DYNAMIC_SORT,
+            task_type=task_type,
             robot_mode=self.options.robot_mode,
             instruction=instruction,
             objects=objects,
@@ -2466,9 +2702,34 @@ class ConveyorRuntimeV1:
                     asset.object_id for asset in distractors
                 ),
                 "layout_id": LAYOUT_ID,
+                "benchmark_role": (
+                    "stationary_belt_diagnostic"
+                    if stationary
+                    else "dynamic_benchmark"
+                ),
+                "belt_motion": "stationary" if stationary else "left_to_right",
+                "stationary_spawn_offset_y_m": (
+                    stationary_scenario.object_xy_offset_m[1]
+                    if stationary_scenario is not None
+                    else None
+                ),
+                "stationary_scenario": (
+                    {
+                        "scenario_id": seed,
+                        "scenario_split": stationary_scenario.split,
+                        "object_xy_offset_m": (
+                            stationary_scenario.object_xy_offset_m
+                        ),
+                        "root_xy_offset_m": stationary_scenario.root_xy_offset_m,
+                        "root_yaw_rad": stationary_scenario.root_yaw_rad,
+                    }
+                    if stationary_scenario is not None
+                    else None
+                ),
                 "target_asset_id": target.object_id,
                 "destination_zone_id": target_zone.zone_id,
                 "active_object_count": len(assets),
+                "spawn_x_by_id": spawn_x_by_id,
                 "spawn_y_by_id": spawn_y_by_id,
                 "spawn_policy": (
                     "after_mobile_approach_and_arm_preposition"
@@ -2492,11 +2753,12 @@ class ConveyorRuntimeV1:
                     zone=target_zone,
                 ),
             ),
+            spawn_x_by_id=spawn_x_by_id,
             spawn_y_by_id=spawn_y_by_id,
         )
 
     def _reset_episode(self, resolved: _ResolvedTask) -> None:
-        self._reset_robot_state()
+        self._reset_robot_state(resolved)
         for index, asset in enumerate(OBJECT_ASSETS):
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
@@ -2531,12 +2793,30 @@ class ConveyorRuntimeV1:
             tuple[float, float, float, float, float, float] | None
         ) = None
 
-    def _reset_robot_state(self) -> None:
+    def _reset_robot_state(
+        self, resolved: _ResolvedTask | None = None
+    ) -> None:
         root_state = self.robot.data.default_root_state.clone()
         root_state[:, :3] += self.scene.env_origins
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
             root_state[:, 0] = -0.22
             root_state[:, 2] = 0.30
+            if (
+                resolved is not None
+                and resolved.manifest.task_type
+                is TaskType.STATIONARY_SORT
+            ):
+                scenario = _STATIONARY_SCENARIOS[
+                    resolved.manifest.seed
+                ]
+                root_state[:, 0] += scenario.root_xy_offset_m[0]
+                root_state[:, 1] += scenario.root_xy_offset_m[1]
+                half_yaw = 0.5 * scenario.root_yaw_rad
+                root_state[:, 3:7] = torch.tensor(
+                    [[math.cos(half_yaw), 0.0, 0.0, math.sin(half_yaw)]],
+                    dtype=root_state.dtype,
+                    device=root_state.device,
+                )
         self.robot.write_root_pose_to_sim(root_state[:, :7])
         self.robot.write_root_velocity_to_sim(root_state[:, 7:])
         self.robot.write_joint_state_to_sim(
@@ -2613,7 +2893,7 @@ class ConveyorRuntimeV1:
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
             root_state[:, :3] += self.scene.env_origins
-            root_state[:, 0] = OBJECT_LANE_X_M
+            root_state[:, 0] = resolved.spawn_x_by_id[asset.object_id]
             root_state[:, 1] = resolved.spawn_y_by_id[asset.object_id]
             root_state[:, 2] = (
                 BELT_TOP_Z_M + asset.half_extents_xyz[2] + 0.003
@@ -2646,7 +2926,7 @@ class ConveyorRuntimeV1:
                     payload={
                         "asset_id": asset.object_id,
                         "spawn_xyz": [
-                            OBJECT_LANE_X_M,
+                            resolved.spawn_x_by_id[asset.object_id],
                             resolved.spawn_y_by_id[asset.object_id],
                             BELT_TOP_Z_M
                             + asset.half_extents_xyz[2]
@@ -2663,8 +2943,9 @@ class ConveyorRuntimeV1:
         affordance = asset.grasp_affordances[0]
         return Pose(
             (
-                OBJECT_LANE_X_M + affordance.tcp_offset_xyz[0],
-                _MOBILE_INTERCEPT_Y_WORLD_M,
+                resolved.spawn_x_by_id[asset.object_id]
+                + affordance.tcp_offset_xyz[0],
+                self._intercept_y_world(resolved),
                 BELT_TOP_Z_M
                 + asset.half_extents_xyz[2]
                 + affordance.tcp_offset_xyz[2]
@@ -2711,7 +2992,7 @@ class ConveyorRuntimeV1:
                 # Wait above a fixed intercept point instead of sweeping the
                 # floating arm laterally toward an upstream part.  Tracking
                 # begins only once the predicted part enters this window.
-                intercept_staging_y_world=_MOBILE_INTERCEPT_Y_WORLD_M,
+                intercept_staging_y_world=self._intercept_y_world(resolved),
                 # Enter a narrow prediction window so the open 114 mm jaw is
                 # centered before its lower collision envelope reaches the
                 # 48 mm part.  A broad window closes above the moving part.

@@ -22,6 +22,9 @@ def _record(name: str, *, mode: str = "whole_body_policy") -> dict:
         "profile": "m0_mobile_v1",
         "split": "train",
         "source_task_outcome": "success",
+        "source_task_type": "dynamic_sort",
+        "source_assisted": False,
+        "object_curriculum_split": "train",
         "robot_mode": mode,
         "belt_speed_mps": 0.08,
         "sample_id": name,
@@ -50,6 +53,10 @@ def _write_source(root: Path, name: str, record: dict) -> Path:
     path = root / f"{name}.jsonl"
     path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     return path
+
+
+def _statistics() -> dict:
+    return {"split": "train", "mean": [0.0] * 28, "std": [1.0] * 28}
 
 
 def test_dataset_is_lazy_normalized_and_policy_only(
@@ -119,7 +126,7 @@ def test_dataset_rejects_non_training_records_by_default(
     path = _write_source(tmp_path, "sample", record)
 
     with pytest.raises(M0MobileError, match=message):
-        M0MobileDataset(path, tmp_path, {"mean": [0.0] * 28, "std": [1.0] * 28})
+        M0MobileDataset(path, tmp_path, _statistics())
 
 
 def test_dataset_can_explicitly_allow_fixed_base(tmp_path: Path) -> None:
@@ -128,7 +135,7 @@ def test_dataset_can_explicitly_allow_fixed_base(tmp_path: Path) -> None:
     dataset = M0MobileDataset(
         path,
         tmp_path,
-        {"mean": [0.0] * 28, "std": [1.0] * 28},
+        _statistics(),
         allow_fixed_base=True,
     )
 
@@ -144,6 +151,113 @@ def test_dataset_can_freeze_initial_belt_speed(tmp_path: Path) -> None:
         M0MobileDataset(
             path,
             tmp_path,
-            {"mean": [0.0] * 28, "std": [1.0] * 28},
+            _statistics(),
             expected_belt_speed_mps=0.08,
         )
+
+
+def test_dataset_can_select_stationary_records_fail_closed(tmp_path: Path) -> None:
+    record = _record("stationary")
+    record["belt_speed_mps"] = 0.0
+    record["source_task_type"] = "stationary_sort"
+    path = _write_source(tmp_path, "stationary", record)
+
+    dataset = M0MobileDataset(
+        path,
+        tmp_path,
+        _statistics(),
+        expected_belt_speed_mps=0.0,
+        expected_task_types=("stationary_sort",),
+    )
+
+    assert len(dataset) == 1
+
+
+def test_dataset_rejects_wrong_task_type_filter(tmp_path: Path) -> None:
+    record = _record("dynamic")
+    record["source_task_type"] = "dynamic_sort"
+    path = _write_source(tmp_path, "dynamic", record)
+
+    with pytest.raises(M0MobileError, match="source_task_type"):
+        M0MobileDataset(
+            path,
+            tmp_path,
+            _statistics(),
+            expected_task_types=("stationary_sort",),
+        )
+
+
+@pytest.mark.parametrize(
+    ("task_type", "speed"),
+    (
+        ("stationary_sort", 0.08),
+        ("dynamic_sort", 0.0),
+        (None, 0.08),
+    ),
+)
+def test_dataset_always_rejects_task_speed_contract_mismatch(
+    tmp_path: Path,
+    task_type: str | None,
+    speed: float,
+) -> None:
+    record = _record("mismatch")
+    if task_type is None:
+        record.pop("source_task_type")
+    else:
+        record["source_task_type"] = task_type
+    record["belt_speed_mps"] = speed
+    path = _write_source(tmp_path, "mismatch", record)
+
+    with pytest.raises(M0MobileError, match="source_task_type"):
+        M0MobileDataset(
+            path,
+            tmp_path,
+            _statistics(),
+        )
+
+
+@pytest.mark.parametrize("value", (True, None))
+def test_dataset_rejects_assisted_or_legacy_provenance(
+    tmp_path: Path, value: bool | None
+) -> None:
+    record = _record("assisted")
+    if value is None:
+        record.pop("source_assisted")
+    else:
+        record["source_assisted"] = value
+    path = _write_source(tmp_path, "assisted", record)
+
+    with pytest.raises(M0MobileError, match="source_assisted"):
+        M0MobileDataset(path, tmp_path, _statistics())
+
+
+@pytest.mark.parametrize(
+    ("task_type", "object_split"),
+    (("dynamic_sort", "val"), ("stationary_sort", "val"), ("dynamic_sort", None)),
+)
+def test_dataset_rejects_missing_or_mismatched_object_curriculum(
+    tmp_path: Path, task_type: str, object_split: str | None
+) -> None:
+    record = _record("curriculum")
+    record["source_task_type"] = task_type
+    if task_type == "stationary_sort":
+        record["belt_speed_mps"] = 0.0
+    if object_split is None:
+        record.pop("object_curriculum_split")
+    else:
+        record["object_curriculum_split"] = object_split
+    path = _write_source(tmp_path, "curriculum", record)
+
+    with pytest.raises(M0MobileError, match="object_curriculum_split"):
+        M0MobileDataset(path, tmp_path, _statistics())
+
+
+def test_dataset_rejects_statistics_without_explicit_train_split(
+    tmp_path: Path,
+) -> None:
+    path = _write_source(tmp_path, "sample", _record("sample"))
+    statistics = _statistics()
+    del statistics["split"]
+
+    with pytest.raises(M0MobileError, match="train split"):
+        M0MobileDataset(path, tmp_path, statistics)

@@ -116,6 +116,30 @@ def test_task_registry_rejects_unknown_or_missing_goal_zone_identity() -> None:
         )
 
 
+def test_stationary_sort_requires_a_stopped_belt() -> None:
+    base = task()
+    stationary = replace(
+        base,
+        task_type=TaskType.STATIONARY_SORT,
+        belt_speed_mps=0.0,
+        objects=(base.objects[0],),
+    )
+    assert stationary.belt_speed_mps == 0.0
+
+    with pytest.raises(ValueError, match="stationary_sort requires"):
+        replace(stationary, belt_speed_mps=0.01)
+    with pytest.raises(ValueError, match="exactly one object"):
+        replace(
+            stationary,
+            objects=(
+                *stationary.objects,
+                ObjectInstance("cup-001", "asset-cup", "cup"),
+            ),
+        )
+    with pytest.raises(ValueError, match="require a positive"):
+        replace(task(), belt_speed_mps=0.0)
+
+
 def test_canonical_action_is_exactly_ten_finite_values() -> None:
     with pytest.raises(ValueError, match="10"):
         CanonicalAction((0.0,) * 9)  # type: ignore[arg-type]

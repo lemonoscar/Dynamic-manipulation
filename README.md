@@ -10,6 +10,9 @@ Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓
 - V0：单目标、固定机身的动态传送带抓取基线。
 - V1：多物体动态分拣任务，支持 `fixed_base` 消融模式与
   `whole_body_policy` 移动操作模式。
+- V1 静态诊断：传送带速度严格为零的单物体抓取—携带—投放任务，冻结
+  `3 train / 1 val / 1 test` 五个场景，用于先验证 M0 的基础操作能力；不计入
+  动态 benchmark 分数。
 - V2：双目标连续分拣和强制持物移动的远端投放任务，提供 2 个场景、7 个允许
   组合、严格事件/位移校验及 M0/DynamicVLA 上下文投影。
 - 统一的 400 Hz 物理、50 Hz 控制和 25 Hz 相机/模型时钟。
@@ -135,5 +138,9 @@ python scripts/validate_v1_dataset.py outputs/gate/v1_fixed
 ## 当前状态
 
 V1 框架已经覆盖任务配置、动态场景、固定机身与全身模式、三相机记录、严格数据
-校验和模型视图导出。正式扩大数据采集前，请依照采集手册逐项完成环境、物理、
-移动策略和相机门禁。
+校验和模型视图导出。新增静态诊断的 5/5 oracle episode 均通过 strict validator
+与 temporal camera gate；其中 3 条 train episode 已导出 1,428 条 M0-Mobile
+记录，val/test 会由导出器明确隔离。M1 在线测试证明静态闭夹、双侧持有和抬升
+primitive 存在，但无辅助回合仍在底盘靠近阶段失败，辅助隔离回合也会提前开爪，
+因此当前只能开启 oracle 小规模采集，不能开启 M0 成功轨迹采集或大规模放量。
+完整证据见 [M0-Mobile 在线闭环与验收](conveyor_bench/M0_ONLINE_GUIDE.md)。

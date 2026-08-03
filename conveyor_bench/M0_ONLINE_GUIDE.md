@@ -97,6 +97,31 @@ python scripts/run_m0_closed_loop.py \
   --device cpu
 ```
 
+若零速任务在 `mobile_approach` 就超时，可只辅助这一前置阶段，隔离判断静态
+抓取 primitive。该诊断用冻结的 `0.20 m/s` service command 完成靠近，在物体
+生成前抑制所有 M0 请求，并从 object-visible `sequence 0` 开始推理：
+
+```bash
+python scripts/run_m0_closed_loop.py \
+  --endpoint http://127.0.0.1:18765 \
+  --state-statistics EXPERIMENT_ROOT/state_statistics.json \
+  --actions-per-replan 2 \
+  --transition-actions-per-replan 12 \
+  --mobile-approach-assist \
+  --episodes 1 \
+  --seed 1101 \
+  --belt-speed 0 \
+  --max-duration 30 \
+  --output-dir outputs/gate/m0_stationary_approach_assist \
+  --headless \
+  --device cpu
+```
+
+manifest 只记录开关是否 `enabled`；每步 metadata 和 run summary 另行记录是否
+实际介入、辅助步数、控制来源、交接时的 root 位置/速度、机械臂误差、生成前
+请求数和首次推理 phase。该开关默认关闭；实际介入过的回合都是
+`assisted diagnostic`，不能计作 policy-only 成功或写入训练集。
+
 若 guard-off 回合一直停在 `pregrasp`，可在完全相同的模型、seed、速度和时长下
 增加一次诊断性 A/B：
 
@@ -222,10 +247,64 @@ TCP 在物体窗口前连续 `0.5 s` 的最大位置误差为 `9.94 mm`、最大
 `0.298 rad`，没有达到 `0.060 rad`。完整机器可读结论位于
 `docs/m0_assisted_staging_seed0_20260803.json`。
 
-因此下一轮补足分成两个互不混淆的目标：先增加带初始 TCP/root 扰动的成功
-pregrasp 恢复示教，使 guard-off 能稳定到达 staging；再提高成功示教中
-`lift→carry_retract→carry_turn` 窗口的采样权重。当前 1,183 条训练记录只包含
-一次完整成功轨迹，已有 booster 主要重复 approach 与 grasp transition。补训后
-先复跑 seed 0 guard-off，并单独检查 Cartesian action 与 joint-space compact gate
-是否仍不一致；在有数据证据前不放宽 gate。通过后再扩到至少 5 个 seed 和一个
-不同高度物体。只有抓取、持有、搬运和投放均由策略完成后，才扩大采集规模。
+后续 teacher-executor A/B 已经排除了 executor 不可实现这一假设。该回合在
+`carry_retract` 用 shadow teacher physical10 通过与 M0 完全相同的 Cartesian IK
+执行路径，83 个控制步后满足 `0.060 rad / 0.35 rad/s / 0.30 s` compact joint
+gate，并在 `11.40 s` 进入 `carry_turn`。因此旧回合的 carry timeout 是学习输出
+和闭环分布问题，不应通过放宽 joint gate 掩盖。teacher 回合后来在
+`place_descend` 高位提前开爪，仍不是成功轨迹。
+
+一次针对 carry 的 M2 补训也已按回归门禁拒绝。其 action SHA 为
+`b1dbc623020cd432f5d247043fa75103384ecd94e9f0bed64901c0d96824b936`：离线抓取
+transition 从 M1 的 `1/3` 退化到 `0/3`，在线 seed 0 在 `mobile_approach` 超时，
+从未执行 full action。该 checkpoint 不用于服务、采集或后续初始化；远端服务已
+恢复为上文三项 SHA 对应的 M1。
+
+### 静止传送带补足结果
+
+正式 `stationary_sort` 仍执行完整抓取—携带—投放任务，但带速严格为零且不计入
+动态分数。预注册的 3 个 train、1 个 val、1 个 test oracle 回合全部成功，并均
+通过 strict validator 与 temporal camera gate：
+
+- train：2906 control step、4356 张三相机 PNG、1428 条 M0-Mobile 记录；
+- val：957 step、1434 PNG、470 条记录；
+- test：966 step、1449 PNG、475 条记录。
+
+exporter 使用 scenario split，val/test 明确标为 `val`/`test`，不会因为
+`part_red_block` 属于 train 资产而泄漏。静态训练可用
+`--belt-speed 0 --task-type stationary_sort` 精确筛选；完整机器可读证据位于
+`docs/m0_stationary_followup_20260803.json`。
+
+M1 的无辅助静态 seed 1101 在 `mobile_approach` 的 `4.0 s` 超时，100 次请求均
+未进入机械臂 full action，说明静态语言条件下的底盘前置能力尚未学会。仅辅助
+mobile approach 的干净隔离回合则满足以下事实：
+
+- 物体生成前 M0 请求为 0，首次推理为 `sequence 0 / settle / 4.44 s`；
+- 交接时 root `x=0.07355 m`、平面速度 `0.02694 m/s`、最大机械臂关节误差
+  `0.06374 rad`，均处于冻结前置门槛内；
+- 交接后 455 步全部为 M1 full action；双侧接触与 `in_gripper` 的 112 个
+  50 Hz step 完全一致，连续持有约 `2.24 s`；
+- 零件最高达到 `z=0.71493 m`，相对抓取前稳定高度抬升约 `0.18264 m`；
+- M1 在 `7.38 s` 主动开爪，shadow phase 从未离开 `pregrasp`；canonical
+  failure reason 为 `runtime_error`。对应 `summary.json` 的
+  `metrics.abort_metadata` 已持久化 `IKConvergenceError`、`pregrasp` phase，以及
+  `position_error=0.0892 m / orientation_error=0.2678`，因此 IK 越界是可复核的
+  canonical 诊断原因；它仍不能替代顶层标准 failure reason。
+
+因此 M1 已经具有静止物体的闭夹、双侧持有和明显抬升 primitive，但没有学会
+相位对齐、高位保持、carry 和 placement；两条在线回合都不能计作任务成功。
+
+### 下一次训练门禁
+
+下一轮从已接受 M1 初始化，不从被拒绝的 M2 初始化。先只构造可审计的小混合：
+
+- 静态三条 train 完整轨迹占约 `45–60%`；
+- 现有动态完整成功 replay 不低于 `40%`；
+- carry window booster 不高于 `5%`，避免再次覆盖早期能力；
+- 先跑 `1000–1200` step，两张 H20，状态统计只由最终 train 混合计算。
+
+验收顺序固定为：静态离线动作边界 → 静态无辅助 seeds 1101/1102/1103 必须
+`3/3` 完整投放成功 → 复跑已接受的动态离线/在线门禁且不得退化 → 再检查 val
+2101 和 test 3101。任何阶段失败都停止，不通过重复同一 seed、放宽 gate 或把
+assisted 回合加入训练来“修正”结果。通过这些门禁前，可以继续小规模 oracle
+示教采集，但不能开启 M0 成功轨迹采集或大规模放量。

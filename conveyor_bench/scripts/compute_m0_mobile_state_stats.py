@@ -59,6 +59,16 @@ def _record(path: Path, line_number: int, raw_line: bytes) -> Mapping[str, Any]:
         raise StatisticsError(f"{location} must use profile {PROFILE!r}")
     if value.get("split") != "train":
         raise StatisticsError(f"{location} is not a train-split record")
+    if value.get("source_task_outcome") != "success":
+        raise StatisticsError(f"{location} is not a successful episode record")
+    if value.get("source_assisted") is not False:
+        raise StatisticsError(
+            f"{location} source_assisted must be explicitly false"
+        )
+    if value.get("object_curriculum_split") != "train":
+        raise StatisticsError(
+            f"{location} object_curriculum_split must be train"
+        )
     if value.get("state_layout") != list(STATE_LAYOUT):
         raise StatisticsError(f"{location} has a non-canonical state_layout")
     return value

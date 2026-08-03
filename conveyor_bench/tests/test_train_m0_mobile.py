@@ -11,6 +11,7 @@ pytest.importorskip("safetensors")
 
 from conveyor_bench.m0_dit import M0DiTActionHead, M0DiTConfig
 from conveyor_bench.m0_mobile import load_m0_mobile_config
+from conveyor_bench.m0_mobile import M0MobileError
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "train_m0_mobile.py"
@@ -90,3 +91,20 @@ def test_initial_action_checkpoint_restores_exact_tensor_mapping(tmp_path) -> No
     assert len(digest) == 64
     for key, value in source_model.state_dict().items():
         assert torch.equal(target_model.state_dict()[key], value)
+
+
+def test_all_belt_speeds_requires_explicit_task_type(tmp_path) -> None:
+    args = TRAIN.build_parser().parse_args(
+        [
+            "--episode-root",
+            str(tmp_path / "episode"),
+            "--state-statistics",
+            str(tmp_path / "statistics.json"),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--all-belt-speeds",
+        ]
+    )
+
+    with pytest.raises(M0MobileError, match="explicit --task-type"):
+        TRAIN._datasets(args, load_m0_mobile_config())

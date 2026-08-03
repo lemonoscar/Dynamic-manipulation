@@ -4,6 +4,8 @@ ConveyorBench 现在同时保留 V0 单目标固定机身基线、冻结的 V1 �
 框架，并新增 V2 任务套件。V2 围绕“从横向传送带动态抓取零件，再近端分拣或
 持物移动到远端投放”组织：共有 8 类本地程序化零件、2 个场景和 7 个允许的
 scene/task/mode 组合，包含首版双目标连续分拣与强制 whole-body 的远端交付。
+V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五个预注册场景先
+隔离 M0 的移动、抓取与投放能力；它不会计入动态 benchmark 分数。
 
 - V2 规范：[BENCHMARK_V2_SPEC.md](BENCHMARK_V2_SPEC.md)
 - V2 可机读快照：[configs/v2.json](configs/v2.json)

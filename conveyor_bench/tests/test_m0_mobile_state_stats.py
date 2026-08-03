@@ -40,6 +40,9 @@ def _record(state: list[float]) -> dict:
         "schema_version": "conveyor-bench-m0-mobile-v1",
         "profile": "m0_mobile_v1",
         "split": "train",
+        "source_task_outcome": "success",
+        "source_assisted": False,
+        "object_curriculum_split": "train",
         "state28": state,
         "state_layout": STATE_LAYOUT,
     }
@@ -121,6 +124,37 @@ def test_cli_rejects_non_train_or_non_finite_records(tmp_path: Path) -> None:
         output_path = tmp_path / f"{name}.json"
         row = _record([0.0] * 28)
         row.update(mutation)
+        input_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+        completed = _run(input_path, output_path)
+
+        assert completed.returncode == 2
+        assert message in completed.stderr
+        assert not output_path.exists()
+
+
+def test_cli_rejects_untrusted_training_provenance(tmp_path: Path) -> None:
+    for name, mutation, message in (
+        (
+            "failure",
+            {"source_task_outcome": "failure"},
+            "not a successful episode record",
+        ),
+        ("assisted", {"source_assisted": True}, "source_assisted"),
+        ("legacy", {}, "source_assisted"),
+        (
+            "object-val",
+            {"object_curriculum_split": "val"},
+            "object_curriculum_split",
+        ),
+    ):
+        input_path = tmp_path / f"{name}.jsonl"
+        output_path = tmp_path / f"{name}.json"
+        row = _record([0.0] * 28)
+        if name == "legacy":
+            row.pop("source_assisted")
+        else:
+            row.update(mutation)
         input_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
         completed = _run(input_path, output_path)

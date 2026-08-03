@@ -16,6 +16,10 @@ from .tasking import (
     CurriculumSplit,
     split_object_ids,
 )
+from .stationary import (
+    stationary_spawn_xy,
+    validate_stationary_episode_contract,
+)
 
 
 PROTOCOL_VERSION = "conveyor-bench-v1"
@@ -71,6 +75,8 @@ class _EpisodeContext:
     env_id: int
     task_id: str
     task_type: str
+    belt_speed_mps: float
+    expected_spawn_xy_by_object: Mapping[str, tuple[float, float]]
     robot_mode: str
     registered_ids: tuple[str, ...]
     scored_ids: tuple[str, ...]
@@ -429,6 +435,29 @@ def _parse_manifest(
     ):
         result.fail(path, "task_id, task_type, and robot_mode must be strings")
         return None
+    allowed_task_types = {
+        "stationary_sort",
+        "dynamic_sort",
+        "continuous_sort",
+    }
+    if task_type not in allowed_task_types:
+        result.fail(path, "task_type must be a registered V1 sorting task")
+        return None
+    belt_speed_mps = task.get("belt_speed_mps")
+    if not _is_number(belt_speed_mps) or belt_speed_mps < 0.0:
+        result.fail(path, "belt_speed_mps must be finite and non-negative")
+        return None
+    if task_type == "stationary_sort" and not math.isclose(
+        float(belt_speed_mps), 0.0, rel_tol=0.0, abs_tol=1.0e-12
+    ):
+        result.fail(path, "stationary_sort requires belt_speed_mps=0")
+        return None
+    if task_type != "stationary_sort" and belt_speed_mps <= 0.0:
+        result.fail(
+            path,
+            "dynamic and continuous sorting require positive belt_speed_mps",
+        )
+        return None
     if not _is_sequence(task_objects) or not task_objects:
         result.fail(path, "task objects must be a non-empty list")
         return None
@@ -438,6 +467,16 @@ def _parse_manifest(
     if not _is_sequence(scored_ids) or not scored_ids:
         result.fail(path, "task scored_object_ids must be a non-empty list")
         return None
+    if task_type == "stationary_sort" and len(task_objects) != 1:
+        result.fail(path, "stationary_sort requires exactly one object")
+        return None
+    stationary_scenario = None
+    if task_type == "stationary_sort":
+        try:
+            stationary_scenario = validate_stationary_episode_contract(episode)
+        except ValueError as error:
+            result.fail(path, f"stationary diagnostic contract: {error}")
+            return None
 
     registered_ids: list[str] = []
     task_asset_ids: list[str] = []
@@ -513,6 +552,12 @@ def _parse_manifest(
         or goal_by_object.get(object_id) not in goal_bounds
         for object_id in resolved_scored
     ):
+        return None
+    if (
+        task_type in {"stationary_sort", "dynamic_sort"}
+        and len(resolved_scored) != 1
+    ):
+        result.fail(path, f"{task_type} requires exactly one scored object")
         return None
 
     physics_hz = config.get("physics_hz")
@@ -602,6 +647,12 @@ def _parse_manifest(
         env_id=env_id,
         task_id=task_id,
         task_type=task_type,
+        belt_speed_mps=float(belt_speed_mps),
+        expected_spawn_xy_by_object=(
+            {registered_ids[0]: stationary_spawn_xy(stationary_scenario)}
+            if stationary_scenario is not None
+            else {}
+        ),
         robot_mode=robot_mode,
         registered_ids=tuple(registered_ids),
         scored_ids=resolved_scored,
@@ -800,6 +851,24 @@ def _validate_steps(
             result.fail(path, "joint names/positions/velocities are malformed", line)
         if not _valid_action(row.get("action")):
             result.fail(path, "action must contain ten finite values", line)
+        measured_belt_speed = row.get("belt_measured_speed_mps")
+        if not _is_number(measured_belt_speed):
+            result.fail(
+                path,
+                "belt_measured_speed_mps must be finite",
+                line,
+            )
+        elif not math.isclose(
+            float(measured_belt_speed),
+            context.belt_speed_mps,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
+            result.fail(
+                path,
+                "belt_measured_speed_mps does not match task belt_speed_mps",
+                line,
+            )
         if not isinstance(row.get("phase"), str) or not row["phase"]:
             result.fail(path, "phase must be a non-empty string", line)
         if row.get("selected_object_id") not in (None, *context.registered_ids):
@@ -1529,6 +1598,7 @@ def _validate_events(
 ) -> None:
     previous_time: float | None = None
     end_events: list[Mapping[str, Any]] = []
+    stationary_spawned_ids: set[str] = set()
     for line, event in enumerate(rows, start=1):
         kind = event.get("kind")
         time_s = event.get("time_s")
@@ -1560,10 +1630,47 @@ def _validate_events(
                     "event time_s does not match its sim_step clock",
                     line,
                 )
-        if not isinstance(event.get("payload", {}), Mapping):
+        event_payload = event.get("payload", {})
+        if not isinstance(event_payload, Mapping):
             result.fail(path, "event payload must be an object", line)
+        if (
+            kind == "object_spawned"
+            and event.get("object_instance_id")
+            in context.expected_spawn_xy_by_object
+        ):
+            object_id = event["object_instance_id"]
+            spawn_xyz = (
+                event_payload.get("spawn_xyz")
+                if isinstance(event_payload, Mapping)
+                else None
+            )
+            expected_xy = context.expected_spawn_xy_by_object[object_id]
+            if object_id in stationary_spawned_ids:
+                result.fail(path, "stationary object spawned more than once", line)
+            stationary_spawned_ids.add(object_id)
+            if (
+                not _is_vector(spawn_xyz, 3)
+                or any(
+                    not math.isclose(
+                        float(actual),
+                        expected,
+                        rel_tol=0.0,
+                        abs_tol=1.0e-9,
+                    )
+                    for actual, expected in zip(
+                        spawn_xyz[:2], expected_xy, strict=True
+                    )
+                )
+            ):
+                result.fail(
+                    path,
+                    "stationary object_spawned position does not match registry",
+                    line,
+                )
         if kind == "episode_end":
             end_events.append(event)
+    if stationary_spawned_ids != set(context.expected_spawn_xy_by_object):
+        result.fail(path, "stationary object_spawned evidence is incomplete")
     if len(end_events) != 1 or not rows or rows[-1].get("kind") != "episode_end":
         result.fail(path, "events must end with exactly one episode_end")
         return

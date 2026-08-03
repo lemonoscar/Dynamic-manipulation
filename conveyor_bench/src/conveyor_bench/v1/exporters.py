@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from .config import PROTOCOL_VERSION, BenchmarkConfig
 from .quality import audit_episode
+from .stationary import validate_stationary_episode_contract
 from .validation import validate_v1_episode
 
 EXPORT_SCHEMA_VERSION = "conveyor-bench-v1-export-1"
@@ -55,6 +56,18 @@ M0_MOBILE_STATE_LAYOUT = (
     "gripper_open_fraction",
 )
 _REQUIRED_POLICY_CAMERA_IDS = frozenset({"head_rgb", "wrist_rgb"})
+_M0_DIAGNOSTIC_ASSIST_KEYS = (
+    "m0_mobile_approach_assist",
+    "m0_pregrasp_staging_assist",
+    "m0_carry_retract_teacher_executor",
+)
+_M0_DIAGNOSTIC_CONTROL_LAYERS = frozenset(
+    {
+        "diagnostic_mobile_approach_assist",
+        "diagnostic_pregrasp_staging_assist",
+        "diagnostic_teacher_via_m0_executor",
+    }
+)
 _CONTROL_STEPS_PER_MODEL_TICK = (
     BenchmarkConfig.v1().control_hz // BenchmarkConfig.v1().model_hz
 )
@@ -619,6 +632,44 @@ def _episode_context(
     return episode_path, episode, task, _source_task_result(episode_path)
 
 
+def _reject_m0_diagnostic_assist(
+    episode: Mapping[str, Any],
+    control_steps: Sequence[Mapping[str, Any]] | None = None,
+) -> None:
+    """Keep diagnostic intervention out of standard M0-Mobile exports."""
+
+    metadata = _mapping(episode.get("metadata"), "manifest.episode.metadata")
+    for key in _M0_DIAGNOSTIC_ASSIST_KEYS:
+        raw_contract = metadata.get(key)
+        if raw_contract is None:  # Legacy oracle episodes predate these flags.
+            continue
+        contract = _mapping(raw_contract, f"manifest.episode.metadata.{key}")
+        enabled = contract.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ExportError(f"{key}.enabled must be a bool")
+        assisted = contract.get("assisted", False)
+        if not isinstance(assisted, bool):
+            raise ExportError(f"{key}.assisted must be a bool")
+        if enabled or assisted:
+            raise ExportError(
+                "diagnostic-assisted episodes cannot be exported for "
+                f"standard M0-Mobile training ({key})"
+            )
+
+    for step in control_steps or ():
+        step_metadata = step.get("metadata")
+        if not isinstance(step_metadata, Mapping):
+            continue
+        online_action = step_metadata.get("m0_online_action")
+        if not isinstance(online_action, Mapping):
+            continue
+        if online_action.get("control_layer") in _M0_DIAGNOSTIC_CONTROL_LAYERS:
+            raise ExportError(
+                "diagnostic-assisted episodes cannot be exported for "
+                "standard M0-Mobile training (recorded control intervention)"
+            )
+
+
 def _camera_ids_for_role(
     episode: Mapping[str, Any], role: str
 ) -> tuple[str, ...] | None:
@@ -858,14 +909,29 @@ def iter_m0_mobile_records(
     episode_path, episode, task, source_result = _episode_context(
         episode_directory
     )
-    task_metadata = task.get("metadata")
-    split = (
-        task_metadata.get("curriculum_split", "train")
-        if isinstance(task_metadata, Mapping)
-        else "train"
+    _reject_m0_diagnostic_assist(episode)
+    task_metadata = _mapping(
+        task.get("metadata"), "manifest.episode.task.metadata"
     )
-    if split not in {"train", "val", "unseen"}:
-        raise ExportError("M0-Mobile curriculum_split is invalid")
+    object_curriculum_split = task_metadata.get("curriculum_split")
+    if object_curriculum_split not in {"train", "val", "unseen"}:
+        raise ExportError(
+            "M0-Mobile curriculum_split must be explicitly train, val, or unseen"
+        )
+    split = object_curriculum_split
+    if task.get("task_type") == "stationary_sort":
+        if object_curriculum_split != "train":
+            raise ExportError(
+                "stationary_sort object curriculum_split must be train"
+            )
+        try:
+            stationary_scenario = validate_stationary_episode_contract(episode)
+        except ValueError as error:
+            raise ExportError(
+                "stationary_sort does not match the registered diagnostic "
+                f"contract: {error}"
+            ) from error
+        split = stationary_scenario.split
     robot_mode = task.get("robot_mode", "unspecified")
     if not isinstance(robot_mode, str) or not robot_mode:
         raise ExportError("M0-Mobile robot_mode must be a non-empty string")
@@ -886,6 +952,7 @@ def iter_m0_mobile_records(
         )
 
     control_steps = _load_control_steps(episode_path, benchmark)
+    _reject_m0_diagnostic_assist(episode, control_steps)
     horizon = M0_MOBILE_ACTION_HORIZON
     for source_index, source in enumerate(control_steps):
         frames = tuple(
@@ -915,9 +982,12 @@ def iter_m0_mobile_records(
             "profile": "m0_mobile_v1",
             "source_episode_id": episode.get("episode_id"),
             "source_task_id": task.get("task_id"),
+            "source_task_type": task.get("task_type"),
             "source_task_outcome": source_result.outcome,
             "source_failure_reason": source_result.failure_reason,
+            "source_assisted": False,
             "split": split,
+            "object_curriculum_split": object_curriculum_split,
             "robot_mode": robot_mode,
             "belt_speed_mps": belt_speed_mps,
             "source_steps_path": "steps.jsonl",

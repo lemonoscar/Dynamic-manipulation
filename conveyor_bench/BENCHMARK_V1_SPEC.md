@@ -53,6 +53,34 @@
 `35 s`。目标越过出口、错抓、掉落、错误分拣盒、机器人跌倒、禁区碰撞和
 超时等均记录为明确失败原因。
 
+### 2.1 零速传送带诊断
+
+`stationary_sort` 是独立的能力诊断，不是把 `dynamic_sort` 的速度标签改成零，
+也不计入动态 benchmark 分数。它仍要求完成抓取、携带、放入正确分拣盒以及
+连续 `0.5 s` 稳定判据；不是只检查闭爪的简化任务。冻结合同为：
+
+- 传送带命令和每步实测速度均为 `0.0 m/s`；
+- `single_target`、一个激活物体、`part_red_block → sort_bin_blue`；
+- 物体直接生成在可达拦截位，spawn、staging、oracle 和评测使用同一坐标；
+- 只有下表五个 seed 合法，整条 episode 按场景切分，禁止窗口级混切；
+- 根部位置和朝向扰动暂时为零。seed 1102 的初测证明当前非零 root yaw 会把
+  下探目标推到标定工作空间外，因此根扰动推迟到单独的可达性扩展，不得暗中
+  重试或筛 seed。
+
+| scenario split | seed | 物体 `(dx, dy)` / m |
+| --- | ---: | ---: |
+| train | 1101 | `(0.000, 0.000)` |
+| train | 1102 | `(+0.020, +0.020)` |
+| train | 1103 | `(-0.020, -0.020)` |
+| val | 2101 | `(+0.010, -0.025)` |
+| test | 3101 | `(-0.010, +0.025)` |
+
+物体所属的 `curriculum_split=train` 与诊断场景的 `scenario_split` 是两个不同
+概念。M0-Mobile 导出字段 `split` 必须采用后者，并把前者另存为
+`object_curriculum_split`，否则 val/test 会因红色方块属于 train 资产而泄漏。
+strict validator 逐步核对实测带速，exporter 还会复核固定 target/destination
+合同。
+
 ## 3. 本地物体与 seen/unseen
 
 V1 冻结 8 个本地程序化物体，注册表为 `assets/objects/registry.json`：
@@ -349,7 +377,36 @@ train 可激活 3 个物体，val/unseen 各自最多激活 2 个 split-local �
 `0`。门禁加该参数后，任一任务失败返回 `3`；参数错误返回 `2`，运行/录制
 异常返回 `1`。
 
-### 10.5 数据验收与导出
+### 10.5 零速诊断门禁
+
+训练场景只需一次 Isaac 启动：
+
+```bash
+python scripts/run_benchmark_v1.py \
+  --robot-mode whole_body_policy \
+  --episodes 3 \
+  --seed 1101 \
+  --split train \
+  --task-family single_target \
+  --belt-speed 0 \
+  --max-duration 30 \
+  --active-objects 1 \
+  --target-asset part_red_block \
+  --destination sort_bin_blue \
+  --output-dir outputs/gate/v1_stationary_train \
+  --enable_cameras \
+  --save-camera-frames \
+  --require-all-success \
+  --headless \
+  --device cpu
+```
+
+val/test 必须分别使用 seed `2101` 与 `3101` 运行，不能通过重复随机 seed 挑选
+成功轨迹。CLI 的 `--split train` 在这里仍表示资产注册表划分；真正的诊断数据
+切分由 seed 对应的 `scenario_split` 冻结。三组输出各自通过 strict validator、
+temporal camera gate 后再导出；只有 seeds 1101–1103 可以进入训练。
+
+### 10.6 数据验收与导出
 
 ```bash
 python scripts/validate_v1_dataset.py outputs/gate/v1_whole_body

@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import ast
 import copy
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from conveyor_bench.v1.protocol import FailureReason, Pose
+from conveyor_bench.v1.stationary import (
+    STATIONARY_DESTINATION_ZONE_ID,
+    STATIONARY_SCENARIOS,
+    STATIONARY_SPAWN_ORIGIN_XY_M,
+    STATIONARY_TARGET_ASSET_ID,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +25,7 @@ RUNTIME_V2_PATH = (
     PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "runtime_v2.py"
 )
 RUN_M0_PATH = PROJECT_ROOT / "scripts" / "run_m0_closed_loop.py"
+V1_CONFIG_PATH = PROJECT_ROOT / "configs" / "v1.json"
 
 
 def _runtime_tree() -> ast.Module:
@@ -150,6 +158,35 @@ def test_runtime_consumes_split_local_tasking_contract() -> None:
     assert "split_object_ids()[self.options.curriculum_split]" in (
         make_task_source
     )
+
+
+def test_stationary_belt_is_an_explicit_seeded_diagnostic() -> None:
+    tree = _runtime_tree()
+    options = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "RuntimeOptionsV1"
+    )
+    options_source = ast.unparse(options)
+    make_task_source = ast.unparse(_method(tree, "_make_task"))
+    summary_source = ast.unparse(_method(tree, "_summary_task_type"))
+    intercept_source = ast.unparse(_method(tree, "_intercept_y_world"))
+
+    assert "belt_speed_mps must be finite and non-negative" in options_source
+    assert "stationary-belt diagnostic requires active_object_count=1" in (
+        options_source
+    )
+    assert "stationary-belt diagnostic requires single_target" in options_source
+    assert "stationary-belt diagnostic requires part_red_block" in options_source
+    assert "stationary-belt diagnostic requires sort_bin_blue" in options_source
+    assert "TaskType.STATIONARY_SORT" in summary_source
+    assert "TaskType.STATIONARY_SORT" in make_task_source
+    assert "stationary_belt_diagnostic" in make_task_source
+    assert "stationary_spawn_offset_y_m" in make_task_source
+    assert "task_split = stationary_scenario.split" in make_task_source
+    assert "Pick the stationary" in make_task_source
+    assert "resolved.spawn_y_by_id" in intercept_source
     assert "'tasking_schema_version': TASKING_SCHEMA_VERSION" in (
         make_task_source
     )
@@ -157,6 +194,40 @@ def test_runtime_consumes_split_local_tasking_contract() -> None:
         make_task_source
     )
     assert "InstructionLanguage.ENGLISH" in make_task_source
+
+
+def test_stationary_runtime_registry_matches_machine_readable_config() -> None:
+    config = json.loads(V1_CONFIG_PATH.read_text(encoding="utf-8"))[
+        "stationary_diagnostic"
+    ]
+    registry_scenarios = {
+        str(seed): {
+            "split": scenario.split,
+            "object_xy_offset_m": list(scenario.object_xy_offset_m),
+            "root_xy_offset_m": list(scenario.root_xy_offset_m),
+            "root_yaw_rad": scenario.root_yaw_rad,
+        }
+        for seed, scenario in STATIONARY_SCENARIOS.items()
+    }
+    registry_splits = {
+        split: sorted(
+            seed
+            for seed, scenario in STATIONARY_SCENARIOS.items()
+            if scenario.split == split
+        )
+        for split in {scenario.split for scenario in STATIONARY_SCENARIOS.values()}
+    }
+
+    assert registry_scenarios == config["scenarios"]
+    assert registry_splits == config["scenario_splits"]
+    configured_seeds = [
+        seed for seeds in config["scenario_splits"].values() for seed in seeds
+    ]
+    assert len(configured_seeds) == len(set(configured_seeds))
+    assert sorted(configured_seeds) == sorted(STATIONARY_SCENARIOS)
+    assert STATIONARY_TARGET_ASSET_ID == config["target_asset_id"]
+    assert STATIONARY_DESTINATION_ZONE_ID == config["destination_zone_id"]
+    assert list(STATIONARY_SPAWN_ORIGIN_XY_M) == config["spawn_origin_xy_m"]
 
 
 def test_m0_pregrasp_workspace_guard_is_explicit_and_diagnostic_only() -> None:
@@ -184,6 +255,32 @@ def test_m0_pregrasp_workspace_guard_is_explicit_and_diagnostic_only() -> None:
     assert "m0_pregrasp_workspace_guard: bool = False" in v2_source
     assert '"--pregrasp-workspace-guard"' in cli_source
     assert "action=\"store_true\"" in cli_source
+
+
+def test_m0_mobile_approach_assist_is_audited_and_default_off() -> None:
+    tree = _runtime_tree()
+    options = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "RuntimeOptionsV1"
+    )
+    options_source = ast.unparse(options)
+    episode_source = ast.unparse(_method(tree, "_run_episode"))
+    v2_source = RUNTIME_V2_PATH.read_text(encoding="utf-8")
+    cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
+
+    assert "m0_mobile_approach_assist: bool = False" in options_source
+    assert "m0_mobile_approach_assist requires online M0" in options_source
+    assert "diagnostic_mobile_approach_assist" in episode_source
+    assert "approach_assist_active" in episode_source
+    assert "policy_requests_before_object_spawn" in episode_source
+    assert "arm_max_joint_error_rad" in episode_source
+    assert "policy_request_suppressed" in episode_source
+    assert "m0_mobile_approach_assist and oracle is None" in episode_source
+    assert "policy_proposed_action_applied" in episode_source
+    assert "m0_mobile_approach_assist" in v2_source
+    assert '"--mobile-approach-assist"' in cli_source
 
 
 def test_m0_pregrasp_staging_assist_is_static_audited_and_default_off() -> None:
@@ -216,7 +313,7 @@ def test_m0_pregrasp_staging_assist_is_static_audited_and_default_off() -> None:
         "self._command_m0_pregrasp_staging_assist"
     ) == 2
     assert "'observation_phase': phase" in episode_source
-    assert "OBJECT_LANE_X_M" in pose_source
+    assert "resolved.spawn_x_by_id" in pose_source
     assert "BELT_TOP_Z_M" in pose_source
     assert "_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M" in pose_source
     assert "object_state" not in pose_source
@@ -249,14 +346,21 @@ def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
     }
     exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
     asset = SimpleNamespace(
+        object_id="part_red_block",
         half_extents_xyz=(0.024, 0.024, 0.032),
         grasp_affordances=(
             SimpleNamespace(tcp_offset_xyz=(0.0, 0.0, 0.004)),
         ),
     )
-    resolved = SimpleNamespace(target_asset=asset)
+    resolved = SimpleNamespace(
+        target_asset=asset,
+        spawn_x_by_id={"part_red_block": 0.65},
+    )
 
-    pose = namespace["_m0_pregrasp_staging_pose"](None, resolved)
+    runtime = SimpleNamespace(
+        _intercept_y_world=lambda _resolved: 0.10,
+    )
+    pose = namespace["_m0_pregrasp_staging_pose"](runtime, resolved)
 
     assert pose.xyz == pytest.approx((0.65, 0.10, 0.636))
     assert pose.wxyz == pytest.approx((-1.0, 0.0, 0.0, 0.0))

@@ -494,15 +494,22 @@ def validate_episode_manifest(episode: EpisodeManifest) -> None:
     if family is TaskFamily.SINGLE_TARGET:
         if len(target_ids) != 1 or distractor_ids:
             raise ValueError("single_target requires one target and no distractors")
-        if task.task_type is not TaskType.DYNAMIC_SORT:
-            raise ValueError("single_target must use dynamic_sort")
+        if task.task_type not in {
+            TaskType.STATIONARY_SORT,
+            TaskType.DYNAMIC_SORT,
+        }:
+            raise ValueError(
+                "single_target must use stationary_sort or dynamic_sort"
+            )
     elif family is TaskFamily.LANGUAGE_CONDITIONED:
         if len(target_ids) != 1 or not distractor_ids:
             raise ValueError(
                 "language_conditioned requires one target and distractors"
             )
         if task.task_type is not TaskType.DYNAMIC_SORT:
-            raise ValueError("language_conditioned must use dynamic_sort")
+            raise ValueError(
+                "language_conditioned must use dynamic_sort"
+            )
     else:
         if len(target_ids) < 2 or distractor_ids:
             raise ValueError(

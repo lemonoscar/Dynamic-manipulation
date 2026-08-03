@@ -13,6 +13,12 @@ from conveyor_bench.v1.tasking import (
     TRAIN_OBJECT_IDS,
     UNSEEN_OBJECT_IDS,
 )
+from conveyor_bench.v1.stationary import (
+    STATIONARY_DESTINATION_ZONE_ID,
+    STATIONARY_SCENARIOS,
+    STATIONARY_SPAWN_ORIGIN_XY_M,
+    STATIONARY_TARGET_ASSET_ID,
+)
 from conveyor_bench.v1.validation import validate_v1_dataset
 
 
@@ -94,6 +100,7 @@ def _make_dataset(
     success: bool = True,
     failure_reason: str = "target_missed",
     with_camera: bool = False,
+    with_distractor: bool = True,
 ) -> dict[str, Path]:
     run_id = "run-v1-validation"
     episode_id = "ep-v1-validation"
@@ -111,25 +118,29 @@ def _make_dataset(
         if with_camera
         else {}
     )
-    task = {
-        "task_id": "sort-validation",
-        "task_type": "dynamic_sort",
-        "robot_mode": "fixed_base",
-        "instruction": "place target in zone a",
-        "objects": [
-            {
-                "instance_id": "target",
-                "asset_id": "asset-target",
-                "class_id": "part",
-                "goal_zone_id": "zone-a",
-            },
+    task_objects = [
+        {
+            "instance_id": "target",
+            "asset_id": "asset-target",
+            "class_id": "part",
+            "goal_zone_id": "zone-a",
+        }
+    ]
+    if with_distractor:
+        task_objects.append(
             {
                 "instance_id": "distractor",
                 "asset_id": "asset-distractor",
                 "class_id": "part",
                 "goal_zone_id": None,
-            },
-        ],
+            }
+        )
+    task = {
+        "task_id": "sort-validation",
+        "task_type": "dynamic_sort",
+        "robot_mode": "fixed_base",
+        "instruction": "place target in zone a",
+        "objects": task_objects,
         "goal_zones": [
             {
                 "zone_id": "zone-a",
@@ -242,7 +253,8 @@ def _make_dataset(
             "in_gripper": False,
             "crossed_exit": False,
         }
-        for state in (target, distractor):
+        states = (target, distractor) if with_distractor else (target,)
+        for state in states:
             object_rows.append(
                 {
                     "sim_step": sim_step,
@@ -463,6 +475,118 @@ def _declare_train_tasking_metadata(paths: dict[str, Path]) -> dict:
     return manifest
 
 
+def _declare_stationary_contract(
+    paths: dict[str, Path],
+    *,
+    seed: int = 1101,
+) -> dict:
+    scenario = STATIONARY_SCENARIOS[seed]
+    manifest = _read_json(paths["manifest"])
+    episode = manifest["episode"]
+    task = episode["task"]
+    task.update(
+        {
+            "task_type": "stationary_sort",
+            "belt_speed_mps": 0.0,
+            "seed": seed,
+            "objects": [
+                {
+                    "instance_id": "target",
+                    "asset_id": STATIONARY_TARGET_ASSET_ID,
+                    "class_id": "block",
+                    "goal_zone_id": STATIONARY_DESTINATION_ZONE_ID,
+                }
+            ],
+            "goal_zones": [
+                {
+                    "zone_id": STATIONARY_DESTINATION_ZONE_ID,
+                    "min_xyz": [0.0, 0.0, 0.5],
+                    "max_xyz": [1.0, 1.0, 1.0],
+                }
+            ],
+            "scored_object_ids": ["target"],
+            "metadata": {
+                "task_family": "single_target",
+                "target_asset_id": STATIONARY_TARGET_ASSET_ID,
+                "destination_zone_id": STATIONARY_DESTINATION_ZONE_ID,
+                "benchmark_role": "stationary_belt_diagnostic",
+                "belt_motion": "stationary",
+                "active_object_count": 1,
+                "tasking_schema_version": TASKING_SCHEMA_VERSION,
+                "curriculum_split": "train",
+                "active_asset_ids": [STATIONARY_TARGET_ASSET_ID],
+                "spawn_x_by_id": {
+                    "target": STATIONARY_SPAWN_ORIGIN_XY_M[0]
+                    + scenario.object_xy_offset_m[0]
+                },
+                "spawn_y_by_id": {
+                    "target": STATIONARY_SPAWN_ORIGIN_XY_M[1]
+                    + scenario.object_xy_offset_m[1]
+                },
+                "stationary_scenario": {
+                    "scenario_id": seed,
+                    "scenario_split": scenario.split,
+                    "object_xy_offset_m": list(scenario.object_xy_offset_m),
+                    "root_xy_offset_m": list(scenario.root_xy_offset_m),
+                    "root_yaw_rad": scenario.root_yaw_rad,
+                },
+            },
+        }
+    )
+    episode["seeds"] = {"episode": seed, "layout": seed}
+    _write_json(paths["manifest"], manifest)
+
+    summary = _read_json(paths["summary"])
+    summary["task_type"] = "stationary_sort"
+    outcome = summary["metrics"]["object_outcomes"]["target"]
+    outcome["goal_zone_id"] = STATIONARY_DESTINATION_ZONE_ID
+    outcome["last_zone_ids"] = [STATIONARY_DESTINATION_ZONE_ID]
+    _write_json(paths["summary"], summary)
+
+    run_summary = _read_json(paths["run_summary"])
+    run_summary["task_type"] = "stationary_sort"
+    report_outcome = run_summary["episodes"][0]["metrics"]["object_outcomes"][
+        "target"
+    ]
+    report_outcome["goal_zone_id"] = STATIONARY_DESTINATION_ZONE_ID
+    report_outcome["last_zone_ids"] = [STATIONARY_DESTINATION_ZONE_ID]
+    _write_json(paths["run_summary"], run_summary)
+
+    events = _read_jsonl(paths["events"])
+    events.insert(
+        1,
+        {
+            "kind": "object_spawned",
+            "time_s": 0.0,
+            "object_instance_id": "target",
+            "goal_zone_id": None,
+            "payload": {
+                "asset_id": STATIONARY_TARGET_ASSET_ID,
+                "spawn_xyz": [
+                    STATIONARY_SPAWN_ORIGIN_XY_M[0]
+                    + scenario.object_xy_offset_m[0],
+                    STATIONARY_SPAWN_ORIGIN_XY_M[1]
+                    + scenario.object_xy_offset_m[1],
+                    0.535,
+                ],
+            },
+        },
+    )
+    for event in events:
+        if event.get("goal_zone_id") == "zone-a":
+            event["goal_zone_id"] = STATIONARY_DESTINATION_ZONE_ID
+    _write_jsonl(paths["events"], events)
+    summary = _read_json(paths["summary"])
+    summary["event_count"] = len(events)
+    _write_json(paths["summary"], summary)
+
+    steps = _read_jsonl(paths["steps"])
+    for step in steps:
+        step["belt_measured_speed_mps"] = 0.0
+    _write_jsonl(paths["steps"], steps)
+    return manifest
+
+
 def test_accepts_valid_success_from_summary_and_output_root(tmp_path) -> None:
     paths = _make_dataset(tmp_path, success=True)
 
@@ -478,6 +602,136 @@ def test_accepts_valid_success_from_summary_and_output_root(tmp_path) -> None:
     assert root_result.object_record_count == 60
     assert completed.returncode == 0, completed.stderr
     assert "1 run(s), 1 episode(s), 30 step(s)" in completed.stdout
+
+
+@pytest.mark.parametrize("seed", sorted(STATIONARY_SCENARIOS))
+def test_accepts_registered_stationary_scenarios(tmp_path, seed) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_distractor=False)
+    _declare_stationary_contract(paths, seed=seed)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert result.ok, result.errors
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    (
+        (
+            ("task", "metadata", "stationary_scenario", "scenario_split"),
+            "test",
+            "scenario_split",
+        ),
+        (
+            ("task", "metadata", "stationary_scenario", "scenario_id"),
+            1102,
+            "scenario_id",
+        ),
+        (("seeds", "episode"), 1102, "episode and layout seeds"),
+        (
+            (
+                "task",
+                "metadata",
+                "stationary_scenario",
+                "object_xy_offset_m",
+            ),
+            [0.01, 0.0],
+            "object_xy_offset_m",
+        ),
+        (
+            ("task", "metadata", "stationary_scenario", "root_xy_offset_m"),
+            [0.01, 0.0],
+            "root_xy_offset_m",
+        ),
+        (
+            ("task", "metadata", "stationary_scenario", "root_yaw_rad"),
+            0.01,
+            "root_yaw_rad",
+        ),
+        (
+            ("task", "metadata", "spawn_x_by_id", "target"),
+            0.123,
+            "spawn_x_by_id",
+        ),
+        (("task", "seed"), 9999, "not a registered scenario"),
+    ),
+)
+def test_rejects_stationary_manifest_outside_registered_contract(
+    tmp_path,
+    path,
+    value,
+    message,
+) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_distractor=False)
+    _declare_stationary_contract(paths)
+    manifest = _read_json(paths["manifest"])
+    target = manifest["episode"]
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    _write_json(paths["manifest"], manifest)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any(message in error for error in result.errors), result.errors
+
+
+def test_rejects_stationary_sort_with_nonzero_measured_belt_speed(
+    tmp_path,
+) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_distractor=False)
+    _declare_stationary_contract(paths)
+    steps = _read_jsonl(paths["steps"])
+    steps[0]["belt_measured_speed_mps"] = 0.1
+    _write_jsonl(paths["steps"], steps)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any(
+        "belt_measured_speed_mps does not match" in error
+        for error in result.errors
+    )
+
+
+def test_rejects_stationary_spawn_event_outside_registered_scenario(
+    tmp_path,
+) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_distractor=False)
+    _declare_stationary_contract(paths, seed=3101)
+    events = _read_jsonl(paths["events"])
+    spawned = next(event for event in events if event["kind"] == "object_spawned")
+    spawned["payload"]["spawn_xyz"][:2] = [0.65, 0.10]
+    _write_jsonl(paths["events"], events)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any("object_spawned position" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    ("task_type", "belt_speed", "message"),
+    (
+        ("stationary_sort", 0.01, "stationary_sort requires"),
+        ("dynamic_sort", 0.0, "require positive"),
+        ("unknown_sort", 0.1, "registered V1 sorting task"),
+    ),
+)
+def test_rejects_invalid_task_type_and_speed_pair(
+    tmp_path, task_type, belt_speed, message
+) -> None:
+    paths = _make_dataset(tmp_path, success=True)
+    manifest = _read_json(paths["manifest"])
+    manifest["episode"]["task"]["task_type"] = task_type
+    manifest["episode"]["task"]["belt_speed_mps"] = belt_speed
+    _write_json(paths["manifest"], manifest)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert not result.ok
+    assert any(message in error for error in result.errors)
 
 
 def test_rejects_event_time_that_disagrees_with_sim_step(tmp_path) -> None:

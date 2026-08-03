@@ -37,6 +37,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=12,
         help="Longer prefix used only across grasp transition phases.",
     )
+    parser.add_argument(
+        "--mobile-approach-assist",
+        action="store_true",
+        help=(
+            "Diagnostic only: use the frozen service approach command, then "
+            "return base, arm, and gripper control to M0."
+        ),
+    )
     pregrasp_diagnostics = parser.add_mutually_exclusive_group()
     pregrasp_diagnostics.add_argument(
         "--pregrasp-workspace-guard",
@@ -123,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
                 m0_actions_per_replan=args.actions_per_replan,
                 m0_transition_actions_per_replan=(
                     args.transition_actions_per_replan
+                ),
+                m0_mobile_approach_assist=(
+                    args.mobile_approach_assist
                 ),
                 m0_pregrasp_workspace_guard=(
                     args.pregrasp_workspace_guard

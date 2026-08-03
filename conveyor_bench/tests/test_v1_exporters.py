@@ -76,6 +76,7 @@ def make_episode(
             }
         ],
         "scored_object_ids": ["target"],
+        "belt_speed_mps": 0.1,
     }
     write_json(
         episode / "manifest.json",

@@ -15,6 +15,7 @@ from conveyor_bench.v1.exporters import (
     ExportError,
     validate_episode_for_export,
 )
+from conveyor_bench.v1.tasking import TASKING_SCHEMA_VERSION, TRAIN_OBJECT_IDS
 from conveyor_bench.v1.validation import validate_v1_episode
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -75,7 +76,7 @@ def make_episode(
         "objects": [
             {
                 "instance_id": "target",
-                "asset_id": "asset-can",
+                "asset_id": TRAIN_OBJECT_IDS[0],
                 "class_id": "can",
                 "goal_zone_id": "zone-a",
             }
@@ -88,6 +89,12 @@ def make_episode(
             }
         ],
         "scored_object_ids": ["target"],
+        "belt_speed_mps": 0.1,
+        "metadata": {
+            "tasking_schema_version": TASKING_SCHEMA_VERSION,
+            "curriculum_split": "train",
+            "active_asset_ids": [TRAIN_OBJECT_IDS[0]],
+        },
     }
     dump_json(
         path / "manifest.json",

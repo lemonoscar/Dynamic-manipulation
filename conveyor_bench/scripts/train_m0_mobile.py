@@ -66,7 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-steps", type=int)
     parser.add_argument("--num-workers", type=int)
     parser.add_argument("--allow-fixed-base", action="store_true")
-    parser.add_argument("--all-belt-speeds", action="store_true")
+    speed_filter = parser.add_mutually_exclusive_group()
+    speed_filter.add_argument("--all-belt-speeds", action="store_true")
+    speed_filter.add_argument(
+        "--belt-speed",
+        type=float,
+        help="Require this exact non-negative belt speed in every record.",
+    )
+    parser.add_argument(
+        "--task-type",
+        action="append",
+        choices=("stationary_sort", "dynamic_sort"),
+        help="Accepted source task type; repeat to allow both.",
+    )
     parser.add_argument(
         "--attention-implementation",
         choices=("sdpa", "flash_attention_2", "eager"),
@@ -134,7 +146,22 @@ def _reserve_output(path: Path, rank: int, world_size: int) -> Path:
 
 def _datasets(args: argparse.Namespace, config: dict) -> tuple[ConcatDataset, list[dict]]:
     initial_filter = config["data"]["initial_training_filter"]
-    expected_speed = None if args.all_belt_speeds else initial_filter["belt_speed_mps"]
+    if args.all_belt_speeds and not args.task_type:
+        raise M0MobileError(
+            "--all-belt-speeds requires at least one explicit --task-type"
+        )
+    expected_speed = (
+        None
+        if args.all_belt_speeds
+        else (
+            args.belt_speed
+            if args.belt_speed is not None
+            else initial_filter["belt_speed_mps"]
+        )
+    )
+    expected_task_types = (
+        None if args.task_type is None else frozenset(args.task_type)
+    )
     datasets = []
     sources = []
     for raw_root in args.episode_root:
@@ -147,6 +174,7 @@ def _datasets(args: argparse.Namespace, config: dict) -> tuple[ConcatDataset, li
             config=config,
             allow_fixed_base=args.allow_fixed_base,
             expected_belt_speed_mps=expected_speed,
+            expected_task_types=expected_task_types,
         )
         datasets.append(dataset)
         sources.append(
@@ -154,6 +182,12 @@ def _datasets(args: argparse.Namespace, config: dict) -> tuple[ConcatDataset, li
                 "episode_root": str(episode_root),
                 "jsonl": str(jsonl),
                 "records": len(dataset),
+                "expected_belt_speed_mps": expected_speed,
+                "expected_task_types": (
+                    None
+                    if expected_task_types is None
+                    else sorted(expected_task_types)
+                ),
             }
         )
     return ConcatDataset(datasets), sources

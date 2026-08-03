@@ -27,6 +27,7 @@ _SHA256_DIGEST = re.compile(r"^(?:sha256:)?[0-9a-fA-F]{64}$")
 
 
 class TaskType(str, Enum):
+    STATIONARY_SORT = "stationary_sort"
     DYNAMIC_SORT = "dynamic_sort"
     CONTINUOUS_SORT = "continuous_sort"
 
@@ -309,10 +310,15 @@ class TaskManifest:
                     f"scored object {instance_id!r} requires a goal_zone_id"
                 )
         if (
-            self.task_type is TaskType.DYNAMIC_SORT
+            self.task_type
+            in {TaskType.STATIONARY_SORT, TaskType.DYNAMIC_SORT}
             and len(self.scored_object_ids) != 1
         ):
-            raise ValueError("dynamic_sort requires exactly one scored object")
+            raise ValueError(
+                f"{self.task_type.value} requires exactly one scored object"
+            )
+        if self.task_type is TaskType.STATIONARY_SORT and len(self.objects) != 1:
+            raise ValueError("stationary_sort requires exactly one object")
         if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("seed must be a non-negative integer")
         for name in ("belt_speed_mps", "belt_surface_z_m", "max_duration_s"):
@@ -323,8 +329,16 @@ class TaskManifest:
                 or not math.isfinite(value)
             ):
                 raise ValueError(f"{name} must be finite")
-        if self.belt_speed_mps <= 0:
-            raise ValueError("belt_speed_mps must be positive for V1 sorting tasks")
+        if self.task_type is TaskType.STATIONARY_SORT:
+            if not math.isclose(
+                float(self.belt_speed_mps), 0.0, rel_tol=0.0, abs_tol=1.0e-12
+            ):
+                raise ValueError("stationary_sort requires belt_speed_mps=0")
+        elif self.belt_speed_mps <= 0:
+            raise ValueError(
+                "dynamic and continuous V1 sorting tasks require a positive "
+                "belt_speed_mps"
+            )
         if self.max_duration_s <= 0:
             raise ValueError("max_duration_s must be positive")
         _validate_finite_vector(
