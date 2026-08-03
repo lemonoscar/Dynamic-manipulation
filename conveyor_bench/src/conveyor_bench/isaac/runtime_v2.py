@@ -61,6 +61,10 @@ class RuntimeOptionsV2:
     instruction_language: InstructionLanguage = (
         InstructionLanguage.BILINGUAL
     )
+    m0_policy_endpoint: str | None = None
+    m0_state_statistics: Path | None = None
+    m0_policy_timeout_s: float = 30.0
+    m0_policy_seed: int = 20260803
 
     def __post_init__(self) -> None:
         try:
@@ -167,6 +171,34 @@ class RuntimeOptionsV2:
             )
         if self.save_camera_frames and not self.enable_cameras:
             raise ValueError("save_camera_frames requires enable_cameras")
+        if (
+            isinstance(self.m0_policy_timeout_s, bool)
+            or not math.isfinite(self.m0_policy_timeout_s)
+            or self.m0_policy_timeout_s <= 0.0
+        ):
+            raise ValueError("m0_policy_timeout_s must be finite and positive")
+        if (
+            isinstance(self.m0_policy_seed, bool)
+            or not isinstance(self.m0_policy_seed, int)
+            or self.m0_policy_seed < 0
+        ):
+            raise ValueError("m0_policy_seed must be a non-negative integer")
+        if self.m0_policy_endpoint is not None:
+            if not isinstance(self.m0_policy_endpoint, str):
+                raise TypeError("m0_policy_endpoint must be a string")
+            if scene_id is not SceneId.TRANSVERSE_NEAR_SORT_V2:
+                raise ValueError("the first online M0 gate requires near-sort")
+            if family is not TaskFamily.SINGLE_TARGET:
+                raise ValueError("the first online M0 gate requires single_target")
+            if mode is not RobotMode.WHOLE_BODY_POLICY:
+                raise ValueError("online M0 requires whole_body_policy")
+            if not self.enable_cameras:
+                raise ValueError("online M0 requires enable_cameras")
+            if self.m0_state_statistics is None:
+                raise ValueError("online M0 requires m0_state_statistics")
+            object.__setattr__(
+                self, "m0_state_statistics", Path(self.m0_state_statistics)
+            )
 
 
 class ConveyorRuntimeV2(ConveyorRuntimeV1):

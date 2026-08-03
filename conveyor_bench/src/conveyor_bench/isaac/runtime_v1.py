@@ -199,6 +199,10 @@ class RuntimeOptionsV1:
     instruction_language: InstructionLanguage = (
         InstructionLanguage.BILINGUAL
     )
+    m0_policy_endpoint: str | None = None
+    m0_state_statistics: Path | None = None
+    m0_policy_timeout_s: float = 30.0
+    m0_policy_seed: int = 20260803
 
     def __post_init__(self) -> None:
         if self.episodes <= 0:
@@ -220,6 +224,18 @@ class RuntimeOptionsV1:
             raise ValueError(
                 "save_camera_frames requires enable_cameras"
             )
+        if (
+            isinstance(self.m0_policy_timeout_s, bool)
+            or not math.isfinite(self.m0_policy_timeout_s)
+            or self.m0_policy_timeout_s <= 0.0
+        ):
+            raise ValueError("m0_policy_timeout_s must be finite and positive")
+        if (
+            isinstance(self.m0_policy_seed, bool)
+            or not isinstance(self.m0_policy_seed, int)
+            or self.m0_policy_seed < 0
+        ):
+            raise ValueError("m0_policy_seed must be a non-negative integer")
         if self.robot_mode not in {
             RobotMode.FIXED_BASE,
             RobotMode.WHOLE_BODY_POLICY,
@@ -278,6 +294,20 @@ class RuntimeOptionsV1:
         if self.active_object_count > len(split_pool):
             raise ValueError(
                 "active_object_count exceeds the selected split-local pool"
+            )
+        if self.m0_policy_endpoint is not None:
+            if not isinstance(self.m0_policy_endpoint, str):
+                raise TypeError("m0_policy_endpoint must be a string")
+            if self.robot_mode is not RobotMode.WHOLE_BODY_POLICY:
+                raise ValueError("online M0 requires whole_body_policy")
+            if not self.enable_cameras:
+                raise ValueError("online M0 requires enable_cameras")
+            if resolved_family is not TaskFamily.SINGLE_TARGET:
+                raise ValueError("the first online M0 gate requires single_target")
+            if self.m0_state_statistics is None:
+                raise ValueError("online M0 requires m0_state_statistics")
+            object.__setattr__(
+                self, "m0_state_statistics", Path(self.m0_state_statistics)
             )
 
 
@@ -368,6 +398,18 @@ class ConveyorRuntimeV1:
             asset.object_id: OBJECT_ENTITY_NAMES[index]
             for index, asset in enumerate(OBJECT_ASSETS)
         }
+        self._m0_client = None
+        self._m0_health: dict[str, Any] | None = None
+        if self.options.m0_policy_endpoint is not None:
+            from conveyor_bench.m0_online import M0OnlineClient
+
+            assert self.options.m0_state_statistics is not None
+            self._m0_client = M0OnlineClient.from_files(
+                self.options.m0_policy_endpoint,
+                self.options.m0_state_statistics,
+                timeout_s=self.options.m0_policy_timeout_s,
+            )
+            self._m0_health = dict(self._m0_client.health())
 
         self.sim = sim_utils.SimulationContext(
             sim_utils.SimulationCfg(
@@ -729,6 +771,12 @@ class ConveyorRuntimeV1:
                     "quaternion": "wxyz",
                     "units": "m-rad-s",
                 },
+                "controller": (
+                    "m0_mobile_online"
+                    if self._m0_client is not None
+                    else "privileged_oracle"
+                ),
+                "m0_online_contract": self._m0_health,
                 **self._extra_episode_metadata(resolved),
             },
         )
@@ -758,6 +806,23 @@ class ConveyorRuntimeV1:
         wall_started = time.perf_counter()
         buffered_samples: list[StepSample] = []
         samples_flushed = False
+        m0_chunk: tuple[tuple[float, ...], ...] = ()
+        m0_chunk_sequence: int | None = None
+        m0_chunk_server_ms: float | None = None
+        m0_chunk_round_trip_ms: float | None = None
+        m0_action_index = 0
+        m0_next_sequence = 0
+        m0_inference_ms: list[float] = []
+        m0_round_trip_ms: list[float] = []
+        m0_applied_actions = 0
+        m0_safe_hold_steps = 0
+        m0_trace_stream = (
+            (recorder.artifact_directory / "m0_online_trace.jsonl").open(
+                "x", encoding="utf-8"
+            )
+            if self._m0_client is not None
+            else None
+        )
 
         def flush_realized_samples() -> None:
             nonlocal samples_flushed
@@ -836,6 +901,15 @@ class ConveyorRuntimeV1:
                 oracle_command = None
                 target_command_terminal = False
                 target_command_success = False
+                m0_step_metadata: dict[str, Any] | None = None
+                shadow_arm_target = (
+                    self._arm_target.clone()
+                    if self._m0_client is not None
+                    else None
+                )
+                shadow_arm_ik_seed = self._arm_ik_seed
+                shadow_ik_error = self._last_ik_error_m
+                shadow_ik_iterations = self._last_ik_iterations
 
                 if oracle is None:
                     if approach_stage == "sequential_rearm":
@@ -1193,6 +1267,48 @@ class ConveyorRuntimeV1:
                             else oracle_command.failure_reason
                         )
 
+                if self._m0_client is not None:
+                    assert shadow_arm_target is not None
+                    # The oracle above remains the task-state evaluator.  Its
+                    # candidate actuation is discarded before physics so the
+                    # online policy is the sole high-level controller.
+                    self._arm_target = shadow_arm_target
+                    self._arm_ik_seed = shadow_arm_ik_seed
+                    self._last_ik_error_m = shadow_ik_error
+                    self._last_ik_iterations = shadow_ik_iterations
+                    if m0_chunk and m0_action_index < 2:
+                        model_action = m0_chunk[m0_action_index]
+                        (
+                            base_command,
+                            canonical_ee_delta,
+                            canonical_rotvec,
+                            last_command_target_base,
+                            gripper_open,
+                        ) = self._apply_m0_mobile_action(
+                            model_action, state_before
+                        )
+                        m0_step_metadata = {
+                            "sequence_id": m0_chunk_sequence,
+                            "action_index_control": m0_action_index,
+                            "physical_action10": model_action,
+                            "server_inference_ms": m0_chunk_server_ms,
+                            "round_trip_ms": m0_chunk_round_trip_ms,
+                        }
+                        m0_action_index += 1
+                        m0_applied_actions += 1
+                    else:
+                        base_command = (0.0, 0.0, 0.0)
+                        canonical_ee_delta = (0.0, 0.0, 0.0)
+                        canonical_rotvec = (0.0, 0.0, 0.0)
+                        last_command_target_base = state_before[
+                            "tcp_base"
+                        ].xyz
+                        self._hold_arm_target()
+                        # At reset and subtask boundaries an absent or stale
+                        # chunk always means a stationary, open safe hold.
+                        gripper_open = True
+                        m0_safe_hold_steps += 1
+
                 self._apply_gripper(gripper_open)
                 applied_policy_action = self._apply_base_command(base_command)
                 for _ in range(self.physics_decimation):
@@ -1219,6 +1335,70 @@ class ConveyorRuntimeV1:
                             ],
                         },
                     )
+                if (
+                    self._m0_client is not None
+                    and self._physics_step_count
+                    % self.camera_physics_stride
+                    == 0
+                    and not target_command_terminal
+                ):
+                    online_observation = self._m0_live_state28(state_after)
+                    policy_result = self._m0_client.infer(
+                        self._camera_rgb_numpy(
+                            self.head_camera.data.output["rgb"]
+                        ),
+                        self._camera_rgb_numpy(
+                            self.wrist_camera.data.output["rgb"]
+                        ),
+                        resolved.manifest.instruction,
+                        online_observation,
+                        sequence_id=m0_next_sequence,
+                        request_id=(
+                            f"{episode_id}:seq-{m0_next_sequence}"
+                        ),
+                        seed=(
+                            self.options.m0_policy_seed + m0_next_sequence
+                        )
+                        % (2**31),
+                    )
+                    m0_chunk = policy_result.physical_actions
+                    m0_chunk_sequence = policy_result.sequence_id
+                    m0_chunk_server_ms = (
+                        policy_result.server_inference_ms
+                    )
+                    m0_chunk_round_trip_ms = policy_result.round_trip_ms
+                    m0_action_index = 0
+                    m0_next_sequence += 1
+                    m0_inference_ms.append(policy_result.server_inference_ms)
+                    m0_round_trip_ms.append(policy_result.round_trip_ms)
+                    assert m0_trace_stream is not None
+                    json.dump(
+                        {
+                            "schema_version": "conveyor-bench-m0-runtime-trace-1",
+                            "sequence_id": policy_result.sequence_id,
+                            "request_id": policy_result.request_id,
+                            "observation_sim_step": self._physics_step_count,
+                            "observation_time_s": sample_time_s,
+                            "source_model_tick": control_index
+                            // self.model_control_stride,
+                            "server_inference_ms": (
+                                policy_result.server_inference_ms
+                            ),
+                            "round_trip_ms": policy_result.round_trip_ms,
+                            "normalized_actions": (
+                                policy_result.normalized_actions
+                            ),
+                            "physical_actions": (
+                                policy_result.physical_actions
+                            ),
+                        },
+                        m0_trace_stream,
+                        allow_nan=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                    m0_trace_stream.write("\n")
+                    m0_trace_stream.flush()
 
                 if phase != previous_phase:
                     recorder.record_event(
@@ -1280,6 +1460,7 @@ class ConveyorRuntimeV1:
                     base_command=base_command,
                     policy_action=applied_policy_action,
                     oracle_target_base=last_command_target_base,
+                    m0_step_metadata=m0_step_metadata,
                 )
                 buffered_samples.append(sample)
 
@@ -1345,6 +1526,10 @@ class ConveyorRuntimeV1:
                             self._gripper_open = True
                             self._last_gripper_open = True
                             previous_phase = phase
+                            if self._m0_client is not None:
+                                m0_chunk = ()
+                                m0_chunk_sequence = None
+                                m0_action_index = 0
                     else:
                         failure = oracle_terminal_reason or "oracle_failure"
                         coordinator.mark_failure(
@@ -1359,6 +1544,10 @@ class ConveyorRuntimeV1:
                 if terminal:
                     break
 
+            if m0_trace_stream is not None:
+                m0_trace_stream.flush()
+                os.fsync(m0_trace_stream.fileno())
+                m0_trace_stream.close()
             if camera_writer is not None:
                 camera_writer.close()
             flush_realized_samples()
@@ -1392,6 +1581,11 @@ class ConveyorRuntimeV1:
                     )
             episode_path, evaluation = recorder.finalize(evaluation)
         except Exception as error:
+            if m0_trace_stream is not None and not m0_trace_stream.closed:
+                try:
+                    m0_trace_stream.close()
+                except Exception:
+                    pass
             if camera_writer is not None:
                 try:
                     camera_writer.close()
@@ -1421,7 +1615,7 @@ class ConveyorRuntimeV1:
                 abort_metadata,
             )
 
-        return {
+        report = {
             "episode_id": episode_id,
             "path": str(episode_path),
             "success": evaluation.success,
@@ -1434,6 +1628,17 @@ class ConveyorRuntimeV1:
             ),
             "wall_time_s": time.perf_counter() - wall_started,
         }
+        if self._m0_client is not None:
+            report["m0_online"] = {
+                "request_count": len(m0_inference_ms),
+                "applied_action_count": m0_applied_actions,
+                "safe_hold_control_steps": m0_safe_hold_steps,
+                "server_inference_ms": _latency_summary(m0_inference_ms),
+                "round_trip_ms": _latency_summary(m0_round_trip_ms),
+                "replan_hz_simulated": self.benchmark.model_hz,
+                "executed_actions_per_chunk": 2,
+            }
+        return report
 
     def _make_task(self, seed: int) -> _ResolvedTask:
         rng = random.Random(seed)
@@ -2615,6 +2820,104 @@ class ConveyorRuntimeV1:
             tuple(float(value) for value in next_position),
         )
 
+    def _m0_live_state28(self, state: dict[str, Any]) -> tuple[float, ...]:
+        """Build only the 28 policy-visible proprioceptive values."""
+
+        from conveyor_bench.m0_online import build_live_state28
+
+        gripper_position = float(
+            self.robot.data.joint_pos[0, self.gripper_joint_ids]
+            .mean()
+            .item()
+        )
+        return build_live_state28(
+            _tensor_tuple(self.robot.data.root_lin_vel_b[0]),
+            _tensor_tuple(self.robot.data.root_ang_vel_b[0]),
+            _tensor_tuple(self.robot.data.projected_gravity_b[0]),
+            _tensor_tuple(
+                self.robot.data.joint_pos[0, self.arm_joint_ids]
+            ),
+            _tensor_tuple(
+                self.robot.data.joint_vel[0, self.arm_joint_ids]
+            ),
+            state["tcp_base"].xyz,
+            state["tcp_base"].wxyz,
+            min(1.0, max(0.0, gripper_position / 0.044)),
+        )
+
+    @staticmethod
+    def _camera_rgb_numpy(image: Any) -> np.ndarray:
+        """Copy one Isaac RGB/RGBA tensor into a bounded uint8 RGB array."""
+
+        if hasattr(image, "detach"):
+            image = image.detach().cpu().numpy()
+        array = np.asarray(image)
+        if array.ndim == 4 and array.shape[0] == 1:
+            array = array[0]
+        if array.ndim != 3 or array.shape[-1] not in (3, 4):
+            raise ValueError(f"invalid online policy camera shape: {array.shape}")
+        rgb = array[..., :3]
+        if np.issubdtype(rgb.dtype, np.floating):
+            maximum = float(np.nanmax(rgb)) if rgb.size else 0.0
+            if maximum <= 1.0:
+                rgb = rgb * 255.0
+        return np.ascontiguousarray(np.clip(rgb, 0, 255).astype(np.uint8))
+
+    def _apply_m0_mobile_action(
+        self,
+        action: Sequence[float],
+        state: dict[str, Any],
+    ) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+        bool,
+    ]:
+        """Project one physical M0 action through existing robot guards."""
+
+        if len(action) != 10 or any(
+            not math.isfinite(float(value)) for value in action
+        ):
+            raise ValueError("online M0 action must be finite canonical10")
+        values = tuple(float(value) for value in action)
+        base_command = self._guard_locomotion_command(values[:3])
+        current_tcp: Pose = state["tcp_base"]
+        translation = np.asarray(values[3:6], dtype=np.float64)
+        rotation = np.asarray(values[6:9], dtype=np.float64)
+        if (
+            float(np.linalg.norm(translation)) < 1.0e-10
+            and float(np.linalg.norm(rotation)) < 1.0e-10
+        ):
+            self._hold_arm_target()
+            ee_delta = (0.0, 0.0, 0.0)
+            rotvec = (0.0, 0.0, 0.0)
+            target_position = current_tcp.xyz
+        else:
+            target = Pose(
+                tuple(
+                    float(current + delta)
+                    for current, delta in zip(
+                        current_tcp.xyz, translation, strict=True
+                    )
+                ),
+                _apply_rotation_vector(current_tcp.wxyz, rotation),
+            )
+            ee_delta, rotvec, target_position = (
+                self._apply_tcp_target_base(
+                    target,
+                    current_tcp,
+                    max_translation_m=0.025,
+                )
+            )
+        return (
+            base_command,
+            ee_delta,
+            rotvec,
+            target_position,
+            values[9] >= 0.5,
+        )
+
     def _slew_arm_target(
         self,
         planned: torch.Tensor,
@@ -2955,6 +3258,7 @@ class ConveyorRuntimeV1:
         base_command: tuple[float, float, float],
         policy_action: tuple[float, ...],
         oracle_target_base: tuple[float, float, float] | None,
+        m0_step_metadata: dict[str, Any] | None,
     ) -> StepSample:
         future_labels: list[FutureObjectState] = []
         for obj in state["objects"]:
@@ -3033,6 +3337,7 @@ class ConveyorRuntimeV1:
                 "mobile_carry_stage": self._mobile_carry_stage,
                 "ik_position_error_m": self._last_ik_error_m,
                 "ik_iterations": self._last_ik_iterations,
+                "m0_online_action": m0_step_metadata,
                 **self._extra_step_metadata(resolved, state),
             },
         )
@@ -3158,6 +3463,18 @@ def _guard_locomotion_command(
         0.0,
         min(0.35, max(-0.35, wz)),
     )
+
+
+def _latency_summary(values: Sequence[float]) -> dict[str, float | int | None]:
+    if not values:
+        return {"count": 0, "mean": None, "p95": None, "max": None}
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        "count": len(values),
+        "mean": float(array.mean()),
+        "p95": float(np.percentile(array, 95)),
+        "max": float(array.max()),
+    }
 
 
 def _yaw_from_wxyz(quaternion: Sequence[float]) -> float:

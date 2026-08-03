@@ -226,6 +226,18 @@ def _save_action_model(
     return digest.hexdigest()
 
 
+def _publish_state_statistics(source: Path, output: Path) -> str:
+    """Copy the exact normalizer input beside the deployable action head."""
+
+    payload = source.expanduser().resolve().read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    destination = output / "state_statistics.json"
+    temporary = output / ".state_statistics.json.tmp"
+    temporary.write_bytes(payload)
+    os.replace(temporary, destination)
+    return digest
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     device, rank, local_rank, world_size = _distributed_device()
@@ -370,9 +382,9 @@ def main(argv: list[str] | None = None) -> int:
             dist.barrier()
         if rank == 0:
             action_sha256 = _save_action_model(raw_action_model, output)
-            statistics_sha256 = hashlib.sha256(
-                args.state_statistics.expanduser().resolve().read_bytes()
-            ).hexdigest()
+            statistics_sha256 = _publish_state_statistics(
+                args.state_statistics, output
+            )
             report = {
                 "schema_version": "conveyor-bench-m0-mobile-training-report-1",
                 "ok": True,
@@ -399,6 +411,7 @@ def main(argv: list[str] | None = None) -> int:
                     "reinitialized_tensors": len(transfer.reinitialized_keys),
                 },
                 "state_statistics_sha256": statistics_sha256,
+                "state_statistics_relative_path": "state_statistics.json",
                 "action_model_sha256": action_sha256,
             }
             (output / "training_report.json").write_text(

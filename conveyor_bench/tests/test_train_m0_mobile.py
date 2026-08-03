@@ -63,3 +63,15 @@ def test_cosine_schedule_warms_up_and_keeps_nonzero_floor() -> None:
     assert observed[0] == pytest.approx(0.5)
     assert observed[1] == pytest.approx(1.0)
     assert observed[-1] == pytest.approx(0.05)
+
+
+def test_publish_state_statistics_copies_exact_deployment_input(tmp_path) -> None:
+    source = tmp_path / "source.json"
+    output = tmp_path / "run"
+    output.mkdir()
+    source.write_bytes(b'{"count": 2}\n')
+
+    digest = TRAIN._publish_state_statistics(source, output)
+
+    assert (output / "state_statistics.json").read_bytes() == source.read_bytes()
+    assert digest == "386a7dbdc927cbf76d42f11a7f376fddefbeeb3fe2cb473cf972ce54ae108642"
