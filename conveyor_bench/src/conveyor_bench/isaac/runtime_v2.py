@@ -65,6 +65,8 @@ class RuntimeOptionsV2:
     m0_state_statistics: Path | None = None
     m0_policy_timeout_s: float = 30.0
     m0_policy_seed: int = 20260803
+    m0_actions_per_replan: int = 2
+    m0_transition_actions_per_replan: int = 12
 
     def __post_init__(self) -> None:
         try:
@@ -183,6 +185,20 @@ class RuntimeOptionsV2:
             or self.m0_policy_seed < 0
         ):
             raise ValueError("m0_policy_seed must be a non-negative integer")
+        if (
+            isinstance(self.m0_actions_per_replan, bool)
+            or not isinstance(self.m0_actions_per_replan, int)
+            or not 1 <= self.m0_actions_per_replan <= 16
+        ):
+            raise ValueError("m0_actions_per_replan must be within [1, 16]")
+        if (
+            isinstance(self.m0_transition_actions_per_replan, bool)
+            or not isinstance(self.m0_transition_actions_per_replan, int)
+            or not 1 <= self.m0_transition_actions_per_replan <= 16
+        ):
+            raise ValueError(
+                "m0_transition_actions_per_replan must be within [1, 16]"
+            )
         if self.m0_policy_endpoint is not None:
             if not isinstance(self.m0_policy_endpoint, str):
                 raise TypeError("m0_policy_endpoint must be a string")

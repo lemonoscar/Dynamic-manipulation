@@ -25,6 +25,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-statistics", required=True, type=Path)
     parser.add_argument("--policy-timeout", type=float, default=30.0)
     parser.add_argument("--policy-seed", type=int, default=20260803)
+    parser.add_argument(
+        "--actions-per-replan",
+        type=int,
+        default=2,
+        help="Execute this prefix of each 16-step M0 chunk before replanning.",
+    )
+    parser.add_argument(
+        "--transition-actions-per-replan",
+        type=int,
+        default=12,
+        help="Longer prefix used only across grasp transition phases.",
+    )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--belt-speed", type=float, default=0.06)
@@ -86,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
                 m0_state_statistics=args.state_statistics.resolve(),
                 m0_policy_timeout_s=args.policy_timeout,
                 m0_policy_seed=args.policy_seed,
+                m0_actions_per_replan=args.actions_per_replan,
+                m0_transition_actions_per_replan=(
+                    args.transition_actions_per_replan
+                ),
             )
         )
         print(json.dumps(summary, indent=2, sort_keys=True), flush=True)

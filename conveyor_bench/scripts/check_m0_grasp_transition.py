@@ -24,7 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-statistics", required=True, type=Path)
     parser.add_argument("--endpoint", default="http://127.0.0.1:18765")
     parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument("--approach-candidates", type=int, default=3)
+    parser.add_argument("--approach-intent-threshold", type=float, default=0.08)
     parser.add_argument("--index-tolerance", type=int, default=4)
+    parser.add_argument("--executed-prefix", type=int, default=12)
     parser.add_argument("--seed", type=int, default=20260803)
     parser.add_argument("--report", type=Path)
     return parser
@@ -45,19 +48,90 @@ def _is_transition_candidate(record: dict) -> bool:
     )
 
 
+def _spread(records: list[dict], count: int) -> list[dict]:
+    if len(records) <= count:
+        return records
+    if count == 1:
+        return [records[len(records) // 2]]
+    return [
+        records[round(index * (len(records) - 1) / (count - 1))]
+        for index in range(count)
+    ]
+
+
+def _timing_ok(
+    target_descent: int | None,
+    predicted_descent: int | None,
+    target_close: int | None,
+    predicted_close: int | None,
+    *,
+    index_tolerance: int,
+) -> bool:
+    pairs = (
+        (target_descent, predicted_descent),
+        (target_close, predicted_close),
+    )
+    if any(target is None or predicted is None for target, predicted in pairs):
+        return False
+    return bool(
+        all(
+            abs(predicted - target) <= index_tolerance
+            for target, predicted in pairs
+        )
+    )
+
+
+def _transition_ok(
+    target_descent: int | None,
+    predicted_descent: int | None,
+    target_close: int | None,
+    predicted_close: int | None,
+    *,
+    index_tolerance: int,
+    executed_prefix: int,
+) -> bool:
+    pairs = (
+        (target_descent, predicted_descent),
+        (target_close, predicted_close),
+    )
+    return bool(
+        _timing_ok(
+            target_descent,
+            predicted_descent,
+            target_close,
+            predicted_close,
+            index_tolerance=index_tolerance,
+        )
+        and all(
+            target is not None
+            and predicted is not None
+            and (target >= executed_prefix or predicted < executed_prefix)
+            for target, predicted in pairs
+        )
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.max_candidates <= 0 or args.index_tolerance < 0:
-        raise SystemExit("max-candidates must be positive and index-tolerance non-negative")
+    if (
+        args.max_candidates <= 0
+        or args.approach_candidates <= 0
+        or args.approach_intent_threshold <= 0.0
+        or args.index_tolerance < 0
+        or not 1 <= args.executed_prefix <= 16
+    ):
+        raise SystemExit(
+            "candidate counts and approach threshold must be positive, "
+            "index-tolerance non-negative, and executed-prefix within [1, 16]"
+        )
     episode = args.episode_root.expanduser().resolve()
     export = episode / "exports" / "m0_mobile.jsonl"
-    candidates = [
-        record
-        for record in (
-            json.loads(line) for line in export.read_text(encoding="utf-8").splitlines()
-        )
-        if _is_transition_candidate(record)
-    ][: args.max_candidates]
+    records = [
+        json.loads(line) for line in export.read_text(encoding="utf-8").splitlines()
+    ]
+    candidates = [record for record in records if _is_transition_candidate(record)][
+        : args.max_candidates
+    ]
     if not candidates:
         raise SystemExit("export contains no pregrasp-to-close transition candidates")
 
@@ -65,8 +139,50 @@ def main(argv: list[str] | None = None) -> int:
         args.endpoint, args.state_statistics.expanduser().resolve()
     )
     health = client.health()
+    approach_records = _spread(
+        [
+            record
+            for record in records
+            if record["observation_time_s"]
+            < candidates[0]["observation_time_s"]
+            if record["canonical_action10_chunk"][0][0] >= 0.16
+        ],
+        args.approach_candidates,
+    )
+    if not approach_records:
+        raise SystemExit("export contains no mobile-approach candidates")
+    approach_checks = []
+    for offset, record in enumerate(approach_records):
+        frames = record["policy_camera_frames"]
+        images = [
+            np.asarray(Image.open(episode / frame["relative_path"]).convert("RGB"))
+            for frame in frames
+        ]
+        sequence_id = int(record["model_tick"])
+        result = client.infer(
+            images[0],
+            images[1],
+            record["instruction"],
+            record["state28"],
+            sequence_id=sequence_id,
+            request_id=f"approach-intent-gate:{offset}",
+            seed=args.seed + sequence_id,
+        )
+        mean_prefix_vx = sum(
+            action[0] for action in result.physical_actions[:2]
+        ) / 2.0
+        approach_checks.append(
+            {
+                "observation_time_s": record["observation_time_s"],
+                "mean_prefix_vx_mps": mean_prefix_vx,
+                "server_inference_ms": result.server_inference_ms,
+                "round_trip_ms": result.round_trip_ms,
+                "ok": mean_prefix_vx >= args.approach_intent_threshold,
+            }
+        )
     checks = []
     for offset, record in enumerate(candidates):
+        sequence_id = int(record["model_tick"])
         frames = record["policy_camera_frames"]
         images = [
             np.asarray(Image.open(episode / frame["relative_path"]).convert("RGB"))
@@ -77,9 +193,9 @@ def main(argv: list[str] | None = None) -> int:
             images[1],
             record["instruction"],
             record["state28"],
-            sequence_id=offset,
+            sequence_id=sequence_id,
             request_id=f"grasp-transition-gate:{offset}",
-            seed=args.seed + offset,
+            seed=args.seed + sequence_id,
         )
         target = record["canonical_action10_chunk"]
         predicted = result.physical_actions
@@ -89,13 +205,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         target_close = _first_index([action[9] < 0.0 for action in target])
         predicted_close = _first_index([action[9] < 0.5 for action in predicted])
-        ok = bool(
-            target_descent is not None
-            and predicted_descent is not None
-            and target_close is not None
-            and predicted_close is not None
-            and abs(predicted_descent - target_descent) <= args.index_tolerance
-            and abs(predicted_close - target_close) <= args.index_tolerance
+        timing_within_tolerance = _timing_ok(
+            target_descent,
+            predicted_descent,
+            target_close,
+            predicted_close,
+            index_tolerance=args.index_tolerance,
+        )
+        ok = _transition_ok(
+            target_descent,
+            predicted_descent,
+            target_close,
+            predicted_close,
+            index_tolerance=args.index_tolerance,
+            executed_prefix=args.executed_prefix,
         )
         checks.append(
             {
@@ -104,6 +227,25 @@ def main(argv: list[str] | None = None) -> int:
                 "predicted_descent_index": predicted_descent,
                 "target_close_index": target_close,
                 "predicted_close_index": predicted_close,
+                "target_min_dz_m": min(action[5] for action in target),
+                "predicted_min_dz_m": min(action[5] for action in predicted),
+                "timing_within_tolerance": timing_within_tolerance,
+                "target_descent_within_executed_prefix": bool(
+                    target_descent is not None
+                    and target_descent < args.executed_prefix
+                ),
+                "predicted_descent_within_executed_prefix": bool(
+                    predicted_descent is not None
+                    and predicted_descent < args.executed_prefix
+                ),
+                "target_close_within_executed_prefix": bool(
+                    target_close is not None
+                    and target_close < args.executed_prefix
+                ),
+                "predicted_close_within_executed_prefix": bool(
+                    predicted_close is not None
+                    and predicted_close < args.executed_prefix
+                ),
                 "server_inference_ms": result.server_inference_ms,
                 "round_trip_ms": result.round_trip_ms,
                 "ok": ok,
@@ -111,11 +253,16 @@ def main(argv: list[str] | None = None) -> int:
         )
     report = {
         "schema_version": "conveyor-bench-m0-grasp-transition-gate-1",
-        "ok": all(check["ok"] for check in checks),
+        "ok": all(check["ok"] for check in checks)
+        and all(check["ok"] for check in approach_checks),
         "model": health["model"],
         "candidate_count": len(checks),
+        "approach_candidate_count": len(approach_checks),
+        "approach_intent_threshold_mps": args.approach_intent_threshold,
         "index_tolerance": args.index_tolerance,
+        "executed_prefix": args.executed_prefix,
         "checks": checks,
+        "approach_checks": approach_checks,
     }
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.report is not None:

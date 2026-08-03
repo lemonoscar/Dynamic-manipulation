@@ -165,6 +165,10 @@ _M0_SERVICE_PREPOSITION_PHASES = frozenset(
 _M0_SERVICE_HOLD_PHASES = frozenset(
     {"mobile_settle", "mobile_stabilize"}
 )
+_M0_ACTION_HORIZON = 16
+_M0_TRANSITION_CHUNK_PHASES = frozenset(
+    {"track", "descend", "close", "lift"}
+)
 _CAMERA_SPECS = (
     CameraSpec("head_rgb", 224, 224, "policy_observation"),
     CameraSpec("wrist_rgb", 224, 224, "policy_observation"),
@@ -209,6 +213,8 @@ class RuntimeOptionsV1:
     m0_state_statistics: Path | None = None
     m0_policy_timeout_s: float = 30.0
     m0_policy_seed: int = 20260803
+    m0_actions_per_replan: int = 2
+    m0_transition_actions_per_replan: int = 12
 
     def __post_init__(self) -> None:
         if self.episodes <= 0:
@@ -242,6 +248,22 @@ class RuntimeOptionsV1:
             or self.m0_policy_seed < 0
         ):
             raise ValueError("m0_policy_seed must be a non-negative integer")
+        if (
+            isinstance(self.m0_actions_per_replan, bool)
+            or not isinstance(self.m0_actions_per_replan, int)
+            or not 1 <= self.m0_actions_per_replan <= _M0_ACTION_HORIZON
+        ):
+            raise ValueError("m0_actions_per_replan must be within [1, 16]")
+        if (
+            isinstance(self.m0_transition_actions_per_replan, bool)
+            or not isinstance(self.m0_transition_actions_per_replan, int)
+            or not 1
+            <= self.m0_transition_actions_per_replan
+            <= _M0_ACTION_HORIZON
+        ):
+            raise ValueError(
+                "m0_transition_actions_per_replan must be within [1, 16]"
+            )
         if self.robot_mode not in {
             RobotMode.FIXED_BASE,
             RobotMode.WHOLE_BODY_POLICY,
@@ -822,6 +844,7 @@ class ConveyorRuntimeV1:
         m0_round_trip_ms: list[float] = []
         m0_consumed_actions = 0
         m0_full_action_steps = 0
+        m0_transition_action_steps = 0
         m0_base_only_action_steps = 0
         m0_service_preposition_steps = 0
         m0_service_hold_steps = 0
@@ -1286,6 +1309,11 @@ class ConveyorRuntimeV1:
                             else oracle_command.failure_reason
                         )
 
+                m0_execution_prefix = (
+                    self.options.m0_transition_actions_per_replan
+                    if phase in _M0_TRANSITION_CHUNK_PHASES
+                    else self.options.m0_actions_per_replan
+                )
                 if self._m0_client is not None:
                     assert shadow_arm_target is not None
                     scripted_preposition = (
@@ -1325,8 +1353,12 @@ class ConveyorRuntimeV1:
                                 "arm": "service",
                                 "gripper": "service",
                             },
+                            "execution_prefix": m0_execution_prefix,
                         }
-                    elif m0_chunk and m0_action_index < 2:
+                    elif (
+                        m0_chunk
+                        and m0_action_index < m0_execution_prefix
+                    ):
                         model_action = m0_chunk[m0_action_index]
                         if scripted_preposition:
                             base_command = (0.0, 0.0, 0.0)
@@ -1394,6 +1426,8 @@ class ConveyorRuntimeV1:
                                 "gripper": "m0",
                             }
                             m0_full_action_steps += 1
+                            if phase in _M0_TRANSITION_CHUNK_PHASES:
+                                m0_transition_action_steps += 1
                         m0_step_metadata = {
                             "sequence_id": m0_chunk_sequence,
                             "action_index_control": m0_action_index,
@@ -1402,6 +1436,7 @@ class ConveyorRuntimeV1:
                             "round_trip_ms": m0_chunk_round_trip_ms,
                             "control_layer": control_layer,
                             "dimension_sources": dimension_sources,
+                            "execution_prefix": m0_execution_prefix,
                         }
                         m0_action_index += 1
                         m0_consumed_actions += 1
@@ -1443,6 +1478,7 @@ class ConveyorRuntimeV1:
                                 "arm": "service",
                                 "gripper": "service",
                             },
+                            "execution_prefix": m0_execution_prefix,
                         }
 
                 self._apply_gripper(gripper_open)
@@ -1476,6 +1512,10 @@ class ConveyorRuntimeV1:
                     and self._physics_step_count
                     % self.camera_physics_stride
                     == 0
+                    and (
+                        not m0_chunk
+                        or m0_action_index >= m0_execution_prefix
+                    )
                     and not target_command_terminal
                 ):
                     online_observation = self._m0_live_state28(state_after)
@@ -1517,6 +1557,7 @@ class ConveyorRuntimeV1:
                             "observation_time_s": sample_time_s,
                             "source_model_tick": control_index
                             // self.model_control_stride,
+                            "execution_prefix": m0_execution_prefix,
                             "server_inference_ms": (
                                 policy_result.server_inference_ms
                             ),
@@ -1778,6 +1819,9 @@ class ConveyorRuntimeV1:
                     m0_full_action_steps + m0_base_only_action_steps
                 ),
                 "full_action_control_steps": m0_full_action_steps,
+                "transition_action_control_steps": (
+                    m0_transition_action_steps
+                ),
                 "base_only_action_control_steps": m0_base_only_action_steps,
                 "service_preposition_control_steps": (
                     m0_service_preposition_steps
@@ -1787,8 +1831,16 @@ class ConveyorRuntimeV1:
                 "safe_hold_control_steps": m0_safe_hold_steps,
                 "server_inference_ms": _latency_summary(m0_inference_ms),
                 "round_trip_ms": _latency_summary(m0_round_trip_ms),
-                "replan_hz_simulated": self.benchmark.model_hz,
-                "executed_actions_per_chunk": 2,
+                "observation_hz_simulated": self.benchmark.camera_hz,
+                "default_executed_actions_per_chunk": (
+                    self.options.m0_actions_per_replan
+                ),
+                "transition_executed_actions_per_chunk": (
+                    self.options.m0_transition_actions_per_replan
+                ),
+                "transition_chunk_phases": sorted(
+                    _M0_TRANSITION_CHUNK_PHASES
+                ),
             }
         return report
 

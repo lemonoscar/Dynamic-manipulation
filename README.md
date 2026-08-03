@@ -17,6 +17,8 @@ Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓
 - episode 原子写入、严格校验、质量审计和相机时变门禁。
 - DynamicVLA 与 M0 两种离线数据视图。
 - M0-Mobile 50 Hz 因果动作块导出，以及不依赖外部仓库的最小 AML 训练烟测。
+- M0-Mobile 在线服务、阶段门禁与 Go2-X5/Isaac 闭环入口，完整记录模型身份、
+  service/M0 控制边界和请求时延。
 
 > 本仓库包含基准框架和本地资产，不包含训练完成的 VLA 模型。Isaac Sim、
 > Isaac Lab、PyTorch、NumPy 和 OpenCV 等运行环境需要在宿主机上准备。
@@ -93,6 +95,8 @@ near whole-body、其余物体/速度/seed 矩阵仍需按 V2 手册小规模验
 面向下一阶段训练的 M0-Mobile profile 已按“观测后预测未来动作”重做因果
 对齐；其数据契约、导出和 AML 烟测命令见
 [V1 采集手册](conveyor_bench/COLLECTION_GUIDE.md)。
+在线部署、闭环命令和 2026-08-03 的实测失败边界见
+[M0-Mobile 在线闭环与验收](conveyor_bench/M0_ONLINE_GUIDE.md)。
 
 ## V1 最小运行示例
 

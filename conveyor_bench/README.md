@@ -12,6 +12,7 @@ scene/task/mode 组合，包含首版双目标连续分拣与强制 whole-body �
 - V1 冻结规范：[BENCHMARK_V1_SPEC.md](BENCHMARK_V1_SPEC.md)
 - V1 可机读快照：[configs/v1.json](configs/v1.json)
 - V1 采集与验收手册：[COLLECTION_GUIDE.md](COLLECTION_GUIDE.md)
+- M0-Mobile 在线闭环与验收：[M0_ONLINE_GUIDE.md](M0_ONLINE_GUIDE.md)
 - V0 冻结规范：[BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
 - V0 可机读快照：[configs/v0.json](configs/v0.json)
 - 阶段状态：[ROADMAP.md](ROADMAP.md)
@@ -91,6 +92,7 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── configs/v1.json             # V1 冻结快照
 ├── configs/v2.json             # V2 场景、任务矩阵与门槛快照
 ├── COLLECTION_GUIDE.md         # V1 门禁、采集、验收与导出操作手册
+├── M0_ONLINE_GUIDE.md          # M0 服务、离线阶段门禁与 Isaac 在线闭环
 ├── COLLECTION_V2_GUIDE.md      # V2 从 smoke 到正式采集的操作手册
 ├── BENCHMARK_V2_SPEC.md        # V2 benchmark 规范
 ├── scripts/render_v2_layout.py # 不启动 Isaac 的本地 SVG 场景预览
@@ -477,6 +479,11 @@ PYTHONPATH=src python scripts/smoke_m0_aml.py \
 该 profile 只暴露 head/wrist、语言、`state28` 和未来 `16×10` 50 Hz 动作，
 并排除 overview 与仿真特权字段。完整契约、H20 单卡 BF16 命令和验收边界见
 [COLLECTION_GUIDE.md](COLLECTION_GUIDE.md)。
+
+训练后的 action head 可通过本仓库内的服务端接入同一 Go2-X5 任务；部署顺序、
+SHA 身份校验、阶段 fail-closed 门禁、闭环命令和最新实测结果见
+[M0_ONLINE_GUIDE.md](M0_ONLINE_GUIDE.md)。当前 checkpoint 已跑通在线传输与
+Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策略抓取成功。
 
 当前本地物理烟测已经观察到 fixed 单目标约 `10.48 s` 成功、whole-body
 单目标约 `21.60 s` 成功，以及 whole-body 三物体双语目标选择约 `21.58 s`
