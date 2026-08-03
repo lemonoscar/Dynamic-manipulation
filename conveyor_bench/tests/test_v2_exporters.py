@@ -73,6 +73,7 @@ def _make_export_source(tmp_path: Path) -> Path:
     (
         ("iter_dynamicvla_records", "delta_action7_chunk"),
         ("iter_m0_records", "world_delta_arm7_chunk"),
+        ("iter_m0_mobile_records", "model_action10_chunk"),
     ),
 )
 def test_v2_export_is_a_lossless_v1_projection_with_task_supervision(
@@ -85,7 +86,13 @@ def test_v2_export_is_a_lossless_v1_projection_with_task_supervision(
     base_records = [
         {
             "schema_version": "conveyor-bench-v1-export-1",
-            "profile": "dynamicvla" if "dynamic" in iterator_name else "m0",
+            "profile": (
+                "dynamicvla"
+                if "dynamic" in iterator_name
+                else "m0_mobile_v1"
+                if "mobile" in iterator_name
+                else "m0"
+            ),
             "model_tick": tick,
             "sim_step": tick * 2 + 1,
             "state6": (1.0, 2.0, 3.0, 0.0, 0.0, 0.0),

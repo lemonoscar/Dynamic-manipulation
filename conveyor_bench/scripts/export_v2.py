@@ -29,6 +29,7 @@ from conveyor_bench.v2.collection import (  # noqa: E402
 from conveyor_bench.v2.exporters import (  # noqa: E402
     EXPORT_SCHEMA_VERSION,
     iter_dynamicvla_records,
+    iter_m0_mobile_records,
     iter_m0_records,
 )
 from conveyor_bench.v2.validation import validate_v2_episode  # noqa: E402
@@ -50,6 +51,7 @@ _ITERATORS: dict[
 ] = {
     "dynamicvla": iter_dynamicvla_records,
     "m0": iter_m0_records,
+    "m0_mobile": iter_m0_mobile_records,
 }
 
 
@@ -302,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--profile",
-        choices=("dynamicvla", "m0", "both"),
+        choices=("dynamicvla", "m0", "m0_mobile", "both", "all"),
         default="both",
         help="Projection to generate (default: both).",
     )
@@ -316,11 +318,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    profiles = (
-        ("dynamicvla", "m0")
-        if args.profile == "both"
-        else (args.profile,)
-    )
+    if args.profile == "both":
+        profiles = ("dynamicvla", "m0")
+    elif args.profile == "all":
+        profiles = ("dynamicvla", "m0", "m0_mobile")
+    else:
+        profiles = (args.profile,)
     try:
         inventory = require_complete_source(args.source)
         # Validate every source and every destination conflict before creating

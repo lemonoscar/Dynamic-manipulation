@@ -1,0 +1,269 @@
+{
+  "schema_version": "conveyor-bench-m0-mobile-train-config-1",
+  "model_root_env": "DYNAMIC_M0_MODEL_ROOT",
+  "artifacts": [
+    {
+      "id": "qwen3_vl_4b_instruct",
+      "revision": "0196dc7bb23f3c742616147c3254d0e4f1207787",
+      "source": "modelscope",
+      "files": [
+        {
+          "path": "Qwen3-VL-4B-Instruct/model-00001-of-00002.safetensors",
+          "size": 4967229296,
+          "sha256": "30a01a0556622645a3cce87b655bbbbbc1f170c196099f1b666c93202c3339a9"
+        },
+        {
+          "path": "Qwen3-VL-4B-Instruct/model-00002-of-00002.safetensors",
+          "size": 3908490048,
+          "sha256": "046296a2a387efb43b0c997d5833c789604d168834f6e0d3064bf7bb13d002a6"
+        },
+        {
+          "path": "Qwen3-VL-4B-Instruct/model.safetensors.index.json",
+          "size": 64742
+        },
+        {
+          "path": "Qwen3-VL-4B-Instruct/config.json",
+          "size": 1505
+        },
+        {
+          "path": "Qwen3-VL-4B-Instruct/preprocessor_config.json",
+          "size": 390
+        },
+        {
+          "path": "Qwen3-VL-4B-Instruct/tokenizer.json",
+          "size": 7032403,
+          "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7"
+        }
+      ]
+    },
+    {
+      "id": "abot_m0_robocasa",
+      "source": "abot_m0_model_release",
+      "files": [
+        {
+          "path": "ABot-M0-Robocasa/checkpoints/steps_50000_pytorch_model.pt",
+          "size": 10353139855,
+          "sha256": "b950f9698cec79336f96cc6442b112f5d128821bdc32f114cd9fcf5008d71408"
+        }
+      ]
+    },
+    {
+      "id": "vggt_1b",
+      "revision": "b911f29cc346b2add4263e89792d68cfeca841ef",
+      "source": "modelscope",
+      "files": [
+        {
+          "path": "VGGT-1B/model.safetensors",
+          "size": 5026367224,
+          "sha256": "f164acf60724910d8fe1578bb499d800850c7bb0948db7555c413f9fbe60467e"
+        }
+      ]
+    }
+  ],
+  "vlm": {
+    "architecture": "Qwen3VLForConditionalGeneration",
+    "artifact_id": "qwen3_vl_4b_instruct",
+    "relative_path": "Qwen3-VL-4B-Instruct",
+    "hidden_size": 2560,
+    "base_vocab_size": 151936,
+    "processor_tokenizer_size": 151669,
+    "checkpoint_vocab_size": 153984,
+    "action_token_id_range": [
+      151669,
+      153716
+    ],
+    "resize_embeddings_before_checkpoint_load": true,
+    "dtype": "bfloat16",
+    "attention_implementation": "flash_attention_2"
+  },
+  "spatial_model": {
+    "enabled": false,
+    "artifact_id": "vggt_1b",
+    "relative_path": "VGGT-1B",
+    "reason": "The released RoboCasa checkpoint contains no VGGT or fusion weights."
+  },
+  "action_model": {
+    "architecture": "DiT-B",
+    "action_dim": 10,
+    "state_dim": 28,
+    "action_horizon": 16,
+    "future_action_window_size": 15,
+    "input_embedding_dim": 768,
+    "hidden_size": 2560,
+    "cross_attention_dim": 2560,
+    "num_layers": 16,
+    "num_attention_heads": 12,
+    "attention_head_dim": 64,
+    "dropout": 0.2,
+    "num_target_vision_tokens": 32,
+    "max_seq_len": 1024,
+    "interleave_self_attention": true,
+    "positional_embeddings": null,
+    "norm_elementwise_affine": false,
+    "noise_beta_alpha": 1.5,
+    "noise_beta_beta": 1.0,
+    "noise_s": 0.999,
+    "time_epsilon": 0.05,
+    "num_timestep_buckets": 1000,
+    "num_inference_timesteps": 4
+  },
+  "checkpoint_transfer": {
+    "artifact_id": "abot_m0_robocasa",
+    "relative_path": "ABot-M0-Robocasa/checkpoints/steps_50000_pytorch_model.pt",
+    "mode": "shape_compatible_fail_closed",
+    "source_action_dim": 29,
+    "source_state_dim": 58,
+    "source_vocab_size": 153984,
+    "shape_mismatch_action_keys": [
+      "state_encoder.layer1.weight",
+      "action_encoder.layer1.weight",
+      "action_decoder.layer2.weight",
+      "action_decoder.layer2.bias"
+    ],
+    "reinitialize_action_keys": [
+      "state_encoder.layer1.weight",
+      "state_encoder.layer1.bias",
+      "action_encoder.layer1.weight",
+      "action_encoder.layer1.bias",
+      "action_decoder.layer2.weight",
+      "action_decoder.layer2.bias"
+    ],
+    "source_shapes": {
+      "qwen_vl_interface.model.model.language_model.embed_tokens.weight": [
+        153984,
+        2560
+      ],
+      "action_model.state_encoder.layer1.weight": [
+        2560,
+        58
+      ],
+      "action_model.action_encoder.layer1.weight": [
+        768,
+        29
+      ],
+      "action_model.action_decoder.layer2.weight": [
+        29,
+        2560
+      ],
+      "action_model.action_decoder.layer2.bias": [
+        29
+      ],
+      "action_model.future_tokens.weight": [
+        32,
+        768
+      ]
+    }
+  },
+  "data": {
+    "profile": "m0_mobile_v1",
+    "accepted_schema_versions": [
+      "conveyor-bench-m0-mobile-v1",
+      "conveyor-bench-v2-export-1"
+    ],
+    "camera_order": [
+      "head_rgb",
+      "wrist_rgb"
+    ],
+    "image_size": [
+      224,
+      224
+    ],
+    "state_dim": 28,
+    "state_sequence_length": 1,
+    "action_dim": 10,
+    "action_horizon": 16,
+    "action_rate_hz": 50,
+    "causal_offset_control_steps": 1,
+    "action_dimension_mask": [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ],
+    "observer_camera_allowed": false,
+    "supervision_only_fields_are_model_inputs": false,
+    "initial_training_filter": {
+      "split": "train",
+      "task_outcome": "success",
+      "robot_mode": "whole_body_policy",
+      "belt_speed_mps": 0.08
+    }
+  },
+  "normalization": {
+    "state": {
+      "method": "train_split_zscore",
+      "clip_standard_deviations": 5.0,
+      "standard_deviation_floor": 0.0001,
+      "statistics_must_be_recomputed_for_go2_x5": true
+    },
+    "action": {
+      "method": "fixed_physical_scale",
+      "scale": [
+        0.3,
+        1.0,
+        0.35,
+        0.025,
+        0.025,
+        0.025,
+        0.12,
+        0.12,
+        0.12,
+        1.0
+      ],
+      "clip_range": [
+        -1.0,
+        1.0
+      ],
+      "hard_zero_indices": [
+        1
+      ],
+      "passthrough_indices": [
+        9
+      ],
+      "gripper_range": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "training": {
+    "initial_stage": "action_model_only",
+    "launcher": "torchrun",
+    "processes_per_node": 4,
+    "freeze_modules": [
+      "qwen_vl_interface"
+    ],
+    "train_modules": [
+      "action_model"
+    ],
+    "repeated_diffusion_steps": 4,
+    "precision": "bfloat16",
+    "gradient_checkpointing": true,
+    "optimizer": {
+      "name": "AdamW",
+      "action_core_learning_rate": 0.00002,
+      "boundary_learning_rate": 0.0001,
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "epsilon": 1e-08,
+      "weight_decay": 1e-08
+    },
+    "max_train_steps": 10000,
+    "warmup_steps": 200,
+    "gradient_accumulation_steps": 8,
+    "max_gradient_norm": 1.0,
+    "save_interval_steps": 500,
+    "log_interval_steps": 10,
+    "dataloader_workers": 4,
+    "smoke_max_steps": 100,
+    "smoke_batch_size_per_device": 1
+  }
+}

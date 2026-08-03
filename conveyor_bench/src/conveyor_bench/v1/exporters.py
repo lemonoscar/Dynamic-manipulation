@@ -858,6 +858,23 @@ def iter_m0_mobile_records(
     episode_path, episode, task, source_result = _episode_context(
         episode_directory
     )
+    task_metadata = task.get("metadata")
+    split = (
+        task_metadata.get("curriculum_split", "train")
+        if isinstance(task_metadata, Mapping)
+        else "train"
+    )
+    if split not in {"train", "val", "unseen"}:
+        raise ExportError("M0-Mobile curriculum_split is invalid")
+    robot_mode = task.get("robot_mode", "unspecified")
+    if not isinstance(robot_mode, str) or not robot_mode:
+        raise ExportError("M0-Mobile robot_mode must be a non-empty string")
+    raw_belt_speed = task.get("belt_speed_mps")
+    belt_speed_mps = (
+        _number(raw_belt_speed, "task.belt_speed_mps")
+        if raw_belt_speed is not None
+        else None
+    )
     model_ticks = load_model_tick_steps(episode_path)
     _validate_training_camera_coverage(episode_path, model_ticks)
     policy_camera_ids = _camera_ids_for_role(episode, "policy_observation")
@@ -900,6 +917,9 @@ def iter_m0_mobile_records(
             "source_task_id": task.get("task_id"),
             "source_task_outcome": source_result.outcome,
             "source_failure_reason": source_result.failure_reason,
+            "split": split,
+            "robot_mode": robot_mode,
+            "belt_speed_mps": belt_speed_mps,
             "source_steps_path": "steps.jsonl",
             "sample_id": (
                 f"{episode.get('episode_id')}:sim-step-{observation_sim_step}"

@@ -36,6 +36,9 @@ def _episode(tmp_path: Path, *, missing_joint: bool = False) -> Path:
                 "task": {
                     "task_id": "task-test",
                     "instruction": "pick the moving part",
+                    "robot_mode": "whole_body_policy",
+                    "belt_speed_mps": 0.08,
+                    "metadata": {"curriculum_split": "train"},
                 },
                 "metadata": {
                     "cameras": {
@@ -147,6 +150,8 @@ def test_m0_mobile_records_are_causal_and_exclude_privileged_fields(tmp_path) ->
     assert first["model_action10_chunk"][0][9] == 0.0
     assert first["action_horizon"] == 16
     assert first["action_rate_hz"] == 50
+    assert first["split"] == "train"
+    assert first["robot_mode"] == "whole_body_policy"
     assert [
         frame["camera_id"] for frame in first["policy_camera_frames"]
     ] == ["head_rgb", "wrist_rgb"]

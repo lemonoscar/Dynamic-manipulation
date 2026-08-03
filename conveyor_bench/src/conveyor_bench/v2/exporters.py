@@ -10,6 +10,7 @@ from conveyor_bench.v1.config import BenchmarkConfig
 from conveyor_bench.v1.exporters import (
     ExportError,
     iter_dynamicvla_records as _iter_dynamicvla_records_v1,
+    iter_m0_mobile_records as _iter_m0_mobile_records_v1,
     iter_m0_records as _iter_m0_records_v1,
 )
 
@@ -50,6 +51,19 @@ def iter_m0_records(
     context = _load_context(episode_path)
     selected_by_tick = _selected_target_by_tick(episode_path)
     for record in _iter_m0_records_v1(episode_path, config):
+        yield _annotate(record, context, selected_by_tick)
+
+
+def iter_m0_mobile_records(
+    episode_directory: str | Path,
+    config: BenchmarkConfig | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield causal Go2-X5 M0-Mobile chunks plus V2 task supervision."""
+
+    episode_path = Path(episode_directory)
+    context = _load_context(episode_path)
+    selected_by_tick = _selected_target_by_tick(episode_path)
+    for record in _iter_m0_mobile_records_v1(episode_path, config):
         yield _annotate(record, context, selected_by_tick)
 
 
@@ -193,5 +207,6 @@ __all__ = [
     "ExportError",
     "SUPERVISION_ONLY_FIELDS",
     "iter_dynamicvla_records",
+    "iter_m0_mobile_records",
     "iter_m0_records",
 ]

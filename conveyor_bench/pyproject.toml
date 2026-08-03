@@ -11,6 +11,12 @@ dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 aml = ["torch>=2.6"]
+m0 = [
+  "torch>=2.6",
+  "transformers>=4.57",
+  "safetensors>=0.6",
+  "Pillow>=10",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
