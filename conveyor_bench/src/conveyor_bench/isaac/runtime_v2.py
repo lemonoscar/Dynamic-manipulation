@@ -68,6 +68,7 @@ class RuntimeOptionsV2:
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
     m0_pregrasp_workspace_guard: bool = False
+    m0_pregrasp_staging_assist: bool = False
 
     def __post_init__(self) -> None:
         try:
@@ -202,6 +203,16 @@ class RuntimeOptionsV2:
             )
         if not isinstance(self.m0_pregrasp_workspace_guard, bool):
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
+        if not isinstance(self.m0_pregrasp_staging_assist, bool):
+            raise TypeError("m0_pregrasp_staging_assist must be a bool")
+        if (
+            self.m0_pregrasp_workspace_guard
+            and self.m0_pregrasp_staging_assist
+        ):
+            raise ValueError(
+                "the pregrasp workspace guard and staging assist are "
+                "mutually exclusive diagnostics"
+            )
         if self.m0_policy_endpoint is not None:
             if not isinstance(self.m0_policy_endpoint, str):
                 raise TypeError("m0_policy_endpoint must be a string")
@@ -221,6 +232,10 @@ class RuntimeOptionsV2:
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
                 "m0_pregrasp_workspace_guard requires online M0"
+            )
+        elif self.m0_pregrasp_staging_assist:
+            raise ValueError(
+                "m0_pregrasp_staging_assist requires online M0"
             )
 
 

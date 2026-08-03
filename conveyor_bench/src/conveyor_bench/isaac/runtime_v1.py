@@ -163,6 +163,7 @@ _MOBILE_PLACE_DESCEND_STEP_M = 0.003
 _MOBILE_PLACE_HOLD_STEP_M = 0.003
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
+_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
 _M0_SERVICE_PREPOSITION_PHASES = frozenset(
     {"arm_preposition", "sequential_rearm"}
 )
@@ -220,6 +221,7 @@ class RuntimeOptionsV1:
     m0_actions_per_replan: int = 2
     m0_transition_actions_per_replan: int = 12
     m0_pregrasp_workspace_guard: bool = False
+    m0_pregrasp_staging_assist: bool = False
 
     def __post_init__(self) -> None:
         if self.episodes <= 0:
@@ -271,6 +273,16 @@ class RuntimeOptionsV1:
             )
         if not isinstance(self.m0_pregrasp_workspace_guard, bool):
             raise TypeError("m0_pregrasp_workspace_guard must be a bool")
+        if not isinstance(self.m0_pregrasp_staging_assist, bool):
+            raise TypeError("m0_pregrasp_staging_assist must be a bool")
+        if (
+            self.m0_pregrasp_workspace_guard
+            and self.m0_pregrasp_staging_assist
+        ):
+            raise ValueError(
+                "the pregrasp workspace guard and staging assist are "
+                "mutually exclusive diagnostics"
+            )
         if self.robot_mode not in {
             RobotMode.FIXED_BASE,
             RobotMode.WHOLE_BODY_POLICY,
@@ -347,6 +359,10 @@ class RuntimeOptionsV1:
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
                 "m0_pregrasp_workspace_guard requires online M0"
+            )
+        elif self.m0_pregrasp_staging_assist:
+            raise ValueError(
+                "m0_pregrasp_staging_assist requires online M0"
             )
 
 
@@ -735,6 +751,7 @@ class ConveyorRuntimeV1:
         episode_seed: int,
     ) -> dict[str, Any]:
         resolved = self._make_task(episode_seed)
+        m0_staging_pose = self._m0_pregrasp_staging_pose(resolved)
         coordinator = None
         if len(resolved.targets) > 1:
             from conveyor_bench.v2.coordinator import (
@@ -830,6 +847,26 @@ class ConveyorRuntimeV1:
                         )
                     },
                 },
+                "m0_pregrasp_staging_assist": {
+                    "enabled": self.options.m0_pregrasp_staging_assist,
+                    "assisted": self.options.m0_pregrasp_staging_assist,
+                    "scope": "diagnostic_only",
+                    "phase": "pregrasp",
+                    "frame": "world",
+                    "target_asset_id": resolved.target_asset.object_id,
+                    "target_tcp_pose_world": {
+                        "xyz": list(m0_staging_pose.xyz),
+                        "wxyz": list(m0_staging_pose.wxyz),
+                    },
+                    "dimension_sources": {
+                        "base": "service",
+                        "arm": "service",
+                        "gripper": "service",
+                    },
+                    "base_command_body": [0.0, 0.0, 0.0],
+                    "gripper": "open",
+                    "uses_realtime_object_state": False,
+                },
                 **self._extra_episode_metadata(resolved),
             },
         )
@@ -873,6 +910,12 @@ class ConveyorRuntimeV1:
         m0_base_only_action_steps = 0
         m0_service_preposition_steps = 0
         m0_service_hold_steps = 0
+        m0_staging_assist_steps = 0
+        m0_staging_assist_replaced_action_steps = 0
+        m0_staging_assist_handoff_resets = 0
+        m0_staging_assist_discarded_actions = 0
+        m0_staging_assist_tracking_error_norms: list[float] = []
+        m0_staging_assist_orientation_error_rads: list[float] = []
         m0_terminal_hold_steps = 0
         m0_safe_hold_steps = 0
         m0_workspace_guard_evaluated_steps = 0
@@ -967,6 +1010,7 @@ class ConveyorRuntimeV1:
                 target_command_success = False
                 m0_step_metadata: dict[str, Any] | None = None
                 m0_workspace_guard_metadata: dict[str, Any] | None = None
+                m0_staging_assist_metadata: dict[str, Any] | None = None
                 shadow_arm_target = (
                     self._arm_target.clone()
                     if self._m0_client is not None
@@ -1340,6 +1384,25 @@ class ConveyorRuntimeV1:
                             else oracle_command.failure_reason
                         )
 
+                if (
+                    self._m0_client is not None
+                    and self.options.m0_pregrasp_staging_assist
+                    and previous_phase == "pregrasp"
+                    and phase in _M0_TRANSITION_CHUNK_PHASES
+                ):
+                    # The staging service did not execute the policy's
+                    # pregrasp arm actions.  Do not reinterpret the unused
+                    # tail of that chunk as a transition-phase command.
+                    m0_staging_assist_discarded_actions += max(
+                        0, len(m0_chunk) - m0_action_index
+                    )
+                    m0_chunk = ()
+                    m0_chunk_sequence = None
+                    m0_chunk_server_ms = None
+                    m0_chunk_round_trip_ms = None
+                    m0_action_index = 0
+                    m0_staging_assist_handoff_resets += 1
+
                 m0_execution_prefix = (
                     self.options.m0_transition_actions_per_replan
                     if phase in _M0_TRANSITION_CHUNK_PHASES
@@ -1417,6 +1480,31 @@ class ConveyorRuntimeV1:
                                 "gripper": "service",
                             }
                             m0_service_hold_steps += 1
+                        elif (
+                            self.options.m0_pregrasp_staging_assist
+                            and phase == "pregrasp"
+                        ):
+                            base_command = (0.0, 0.0, 0.0)
+                            (
+                                canonical_ee_delta,
+                                canonical_rotvec,
+                                last_command_target_base,
+                                m0_staging_assist_metadata,
+                            ) = self._command_m0_pregrasp_staging_assist(
+                                m0_staging_pose,
+                                state_before,
+                            )
+                            gripper_open = True
+                            control_layer = (
+                                "diagnostic_pregrasp_staging_assist"
+                            )
+                            dimension_sources = {
+                                "base": "diagnostic_service",
+                                "arm": "diagnostic_static_world_pose",
+                                "gripper": "diagnostic_service",
+                            }
+                            m0_staging_assist_steps += 1
+                            m0_staging_assist_replaced_action_steps += 1
                         elif phase == "mobile_approach":
                             from conveyor_bench.m0_online import (
                                 quantize_go2_forward_intent,
@@ -1520,6 +1608,24 @@ class ConveyorRuntimeV1:
                             gripper_open = True
                             control_layer = "service_hold"
                             m0_service_hold_steps += 1
+                        elif (
+                            self.options.m0_pregrasp_staging_assist
+                            and phase == "pregrasp"
+                        ):
+                            (
+                                canonical_ee_delta,
+                                canonical_rotvec,
+                                last_command_target_base,
+                                m0_staging_assist_metadata,
+                            ) = self._command_m0_pregrasp_staging_assist(
+                                m0_staging_pose,
+                                state_before,
+                            )
+                            gripper_open = True
+                            control_layer = (
+                                "diagnostic_pregrasp_staging_assist"
+                            )
+                            m0_staging_assist_steps += 1
                         else:
                             canonical_ee_delta = (0.0, 0.0, 0.0)
                             canonical_rotvec = (0.0, 0.0, 0.0)
@@ -1537,13 +1643,30 @@ class ConveyorRuntimeV1:
                             "server_inference_ms": m0_chunk_server_ms,
                             "round_trip_ms": m0_chunk_round_trip_ms,
                             "control_layer": control_layer,
-                            "dimension_sources": {
-                                "base": "service",
-                                "arm": "service",
-                                "gripper": "service",
-                            },
+                            "dimension_sources": (
+                                {
+                                    "base": "diagnostic_service",
+                                    "arm": (
+                                        "diagnostic_static_world_pose"
+                                    ),
+                                    "gripper": "diagnostic_service",
+                                }
+                                if m0_staging_assist_metadata is not None
+                                else {
+                                    "base": "service",
+                                    "arm": "service",
+                                    "gripper": "service",
+                                }
+                            ),
                             "execution_prefix": m0_execution_prefix,
                         }
+                    if m0_staging_assist_metadata is not None:
+                        m0_step_metadata[
+                            "policy_proposed_action_applied"
+                        ] = False
+                        m0_step_metadata["staging_assist"] = (
+                            m0_staging_assist_metadata
+                        )
 
                 self._apply_gripper(gripper_open)
                 applied_policy_action = self._apply_base_command(base_command)
@@ -1587,6 +1710,62 @@ class ConveyorRuntimeV1:
                     )
                     m0_workspace_guard_tracking_error_norms.append(
                         tracking_error_norm
+                    )
+                if (
+                    m0_step_metadata is not None
+                    and "staging_assist" in m0_step_metadata
+                ):
+                    assist_metadata = m0_step_metadata["staging_assist"]
+                    realized_pose: Pose = state_after["tcp_world"]
+                    target_position = tuple(
+                        float(value)
+                        for value in assist_metadata[
+                            "target_tcp_pose_world"
+                        ]["xyz"]
+                    )
+                    target_orientation = tuple(
+                        float(value)
+                        for value in assist_metadata[
+                            "target_tcp_pose_world"
+                        ]["wxyz"]
+                    )
+                    tracking_error = tuple(
+                        realized - target
+                        for realized, target in zip(
+                            realized_pose.xyz,
+                            target_position,
+                            strict=True,
+                        )
+                    )
+                    tracking_error_norm = float(
+                        np.linalg.norm(tracking_error)
+                    )
+                    orientation_error_rad = float(
+                        np.linalg.norm(
+                            _rotation_vector_between(
+                                target_orientation,
+                                realized_pose.wxyz,
+                            )
+                        )
+                    )
+                    assist_metadata["realized_tcp_after_world"] = {
+                        "xyz": list(realized_pose.xyz),
+                        "wxyz": list(realized_pose.wxyz),
+                    }
+                    assist_metadata["realized_tracking_error_xyz"] = list(
+                        tracking_error
+                    )
+                    assist_metadata["realized_tracking_error_norm_m"] = (
+                        tracking_error_norm
+                    )
+                    assist_metadata[
+                        "realized_orientation_error_rad"
+                    ] = orientation_error_rad
+                    m0_staging_assist_tracking_error_norms.append(
+                        tracking_error_norm
+                    )
+                    m0_staging_assist_orientation_error_rads.append(
+                        orientation_error_rad
                     )
                 camera_frames = ()
                 if (
@@ -1654,6 +1833,7 @@ class ConveyorRuntimeV1:
                             "request_id": policy_result.request_id,
                             "observation_sim_step": self._physics_step_count,
                             "observation_time_s": sample_time_s,
+                            "observation_phase": phase,
                             "source_model_tick": control_index
                             // self.model_control_stride,
                             "execution_prefix": m0_execution_prefix,
@@ -1926,6 +2106,9 @@ class ConveyorRuntimeV1:
                     m0_service_preposition_steps
                 ),
                 "service_hold_control_steps": m0_service_hold_steps,
+                "service_staging_assist_control_steps": (
+                    m0_staging_assist_steps
+                ),
                 "terminal_hold_control_steps": m0_terminal_hold_steps,
                 "safe_hold_control_steps": m0_safe_hold_steps,
                 "server_inference_ms": _latency_summary(m0_inference_ms),
@@ -1973,6 +2156,35 @@ class ConveyorRuntimeV1:
                     ),
                     "realized_tracking_error_norm_m": _latency_summary(
                         m0_workspace_guard_tracking_error_norms
+                    ),
+                },
+                "pregrasp_staging_assist": {
+                    "enabled": self.options.m0_pregrasp_staging_assist,
+                    "assisted": self.options.m0_pregrasp_staging_assist,
+                    "scope": "diagnostic_only",
+                    "phase": "pregrasp",
+                    "frame": "world",
+                    "uses_realtime_object_state": False,
+                    "target_asset_id": resolved.target_asset.object_id,
+                    "target_tcp_pose_world": {
+                        "xyz": list(m0_staging_pose.xyz),
+                        "wxyz": list(m0_staging_pose.wxyz),
+                    },
+                    "control_steps": m0_staging_assist_steps,
+                    "replaced_model_action_steps": (
+                        m0_staging_assist_replaced_action_steps
+                    ),
+                    "handoff_chunk_resets": (
+                        m0_staging_assist_handoff_resets
+                    ),
+                    "handoff_discarded_actions": (
+                        m0_staging_assist_discarded_actions
+                    ),
+                    "realized_tracking_error_norm_m": _latency_summary(
+                        m0_staging_assist_tracking_error_norms
+                    ),
+                    "realized_orientation_error_rad": _latency_summary(
+                        m0_staging_assist_orientation_error_rads
                     ),
                 },
             }
@@ -2279,6 +2491,23 @@ class ConveyorRuntimeV1:
                     },
                 )
             )
+
+    def _m0_pregrasp_staging_pose(self, resolved: _ResolvedTask) -> Pose:
+        """Return the fixed public-scene staging pose for diagnostics."""
+
+        asset = resolved.target_asset
+        affordance = asset.grasp_affordances[0]
+        return Pose(
+            (
+                OBJECT_LANE_X_M + affordance.tcp_offset_xyz[0],
+                _MOBILE_INTERCEPT_Y_WORLD_M,
+                BELT_TOP_Z_M
+                + asset.half_extents_xyz[2]
+                + affordance.tcp_offset_xyz[2]
+                + _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M,
+            ),
+            (-1.0, 0.0, 0.0, 0.0),
+        )
 
     def _make_oracle(
         self, resolved: _ResolvedTask, *, sim_time_s: float
@@ -3200,6 +3429,43 @@ class ConveyorRuntimeV1:
             if maximum <= 1.0:
                 rgb = rgb * 255.0
         return np.ascontiguousarray(np.clip(rgb, 0, 255).astype(np.uint8))
+
+    def _command_m0_pregrasp_staging_assist(
+        self,
+        target_world: Pose,
+        state: dict[str, Any],
+    ) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+        dict[str, Any],
+    ]:
+        """Apply the fixed diagnostic station without object-state input."""
+
+        ee_delta, rotvec, target_base = self._apply_tcp_command(
+            target_world,
+            state["tcp_base"],
+            max_translation_m=0.020,
+        )
+        metadata = {
+            "enabled": True,
+            "assisted": True,
+            "scope": "diagnostic_only",
+            "phase": "pregrasp",
+            "frame": "world",
+            "uses_realtime_object_state": False,
+            "m0_action_applied": False,
+            "target_tcp_pose_world": {
+                "xyz": list(target_world.xyz),
+                "wxyz": list(target_world.wxyz),
+            },
+            "applied_tcp_target_base_xyz": list(target_base),
+            "current_tcp_before_world": {
+                "xyz": list(state["tcp_world"].xyz),
+                "wxyz": list(state["tcp_world"].wxyz),
+            },
+        }
+        return ee_delta, rotvec, target_base, metadata
 
     def _apply_m0_mobile_action(
         self,

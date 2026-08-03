@@ -37,10 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=12,
         help="Longer prefix used only across grasp transition phases.",
     )
-    parser.add_argument(
+    pregrasp_diagnostics = parser.add_mutually_exclusive_group()
+    pregrasp_diagnostics.add_argument(
         "--pregrasp-workspace-guard",
         action="store_true",
         help="Enable the fixed, diagnostic X5 pregrasp workspace guard.",
+    )
+    pregrasp_diagnostics.add_argument(
+        "--pregrasp-staging-assist",
+        action="store_true",
+        help=(
+            "Diagnostic only: service-hold the fixed world-frame pregrasp "
+            "station before handing control back to M0."
+        ),
     )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
@@ -109,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 m0_pregrasp_workspace_guard=(
                     args.pregrasp_workspace_guard
+                ),
+                m0_pregrasp_staging_assist=(
+                    args.pregrasp_staging_assist
                 ),
             )
         )

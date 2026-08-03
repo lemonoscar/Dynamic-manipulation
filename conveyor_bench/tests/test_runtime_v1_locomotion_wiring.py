@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conveyor_bench.v1.protocol import FailureReason
+from conveyor_bench.v1.protocol import FailureReason, Pose
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -184,6 +184,80 @@ def test_m0_pregrasp_workspace_guard_is_explicit_and_diagnostic_only() -> None:
     assert "m0_pregrasp_workspace_guard: bool = False" in v2_source
     assert '"--pregrasp-workspace-guard"' in cli_source
     assert "action=\"store_true\"" in cli_source
+
+
+def test_m0_pregrasp_staging_assist_is_static_audited_and_default_off() -> None:
+    tree = _runtime_tree()
+    options = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "RuntimeOptionsV1"
+    )
+    options_source = ast.unparse(options)
+    episode_source = ast.unparse(_method(tree, "_run_episode"))
+    pose_source = ast.unparse(
+        _method(tree, "_m0_pregrasp_staging_pose")
+    )
+    command_source = ast.unparse(
+        _method(tree, "_command_m0_pregrasp_staging_assist")
+    )
+    v2_source = RUNTIME_V2_PATH.read_text(encoding="utf-8")
+    cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
+
+    assert "m0_pregrasp_staging_assist: bool = False" in options_source
+    assert "mutually exclusive diagnostics" in options_source
+    assert "m0_pregrasp_staging_assist requires online M0" in options_source
+    assert "previous_phase == 'pregrasp'" in episode_source
+    assert "phase in _M0_TRANSITION_CHUNK_PHASES" in episode_source
+    assert "diagnostic_pregrasp_staging_assist" in episode_source
+    assert "policy_proposed_action_applied" in episode_source
+    assert episode_source.count(
+        "self._command_m0_pregrasp_staging_assist"
+    ) == 2
+    assert "'observation_phase': phase" in episode_source
+    assert "OBJECT_LANE_X_M" in pose_source
+    assert "BELT_TOP_Z_M" in pose_source
+    assert "_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M" in pose_source
+    assert "object_state" not in pose_source
+    assert "oracle" not in pose_source
+    assert "uses_realtime_object_state" in command_source
+    assert "m0_action_applied" in command_source
+    assert "m0_pregrasp_staging_assist: bool = False" in v2_source
+    assert '"--pregrasp-staging-assist"' in cli_source
+    assert "add_mutually_exclusive_group" in cli_source
+
+
+def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
+    tree = _runtime_tree()
+    method_node = copy.deepcopy(
+        _method(tree, "_m0_pregrasp_staging_pose")
+    )
+    method_node.decorator_list = []
+    module = ast.fix_missing_locations(
+        ast.Module(body=[method_node], type_ignores=[])
+    )
+    namespace = {
+        "_ResolvedTask": object,
+        "Pose": Pose,
+        "OBJECT_LANE_X_M": 0.65,
+        "_MOBILE_INTERCEPT_Y_WORLD_M": 0.10,
+        "BELT_TOP_Z_M": 0.50,
+        "_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M": 0.10,
+    }
+    exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
+    asset = SimpleNamespace(
+        half_extents_xyz=(0.024, 0.024, 0.032),
+        grasp_affordances=(
+            SimpleNamespace(tcp_offset_xyz=(0.0, 0.0, 0.004)),
+        ),
+    )
+    resolved = SimpleNamespace(target_asset=asset)
+
+    pose = namespace["_m0_pregrasp_staging_pose"](None, resolved)
+
+    assert pose.xyz == pytest.approx((0.65, 0.10, 0.636))
+    assert pose.wxyz == pytest.approx((-1.0, 0.0, 0.0, 0.0))
 
 
 def test_forbidden_belt_intrusion_is_spatially_scoped() -> None:
