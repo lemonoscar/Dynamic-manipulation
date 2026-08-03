@@ -220,16 +220,32 @@ M0 契约：
 - 14D 动作为左臂 7 个零加右臂 7D action，base 3D body action 单独输出；
 - 尾部携带 `action_valid_mask`。
 
+上述 `m0` profile 是为已有消费端保留的 25 Hz world-frame 投影。canonical
+step 记录的是动作执行后的状态，因此同 tick action 不得作为该状态的因果训练
+标签。移动底盘策略训练必须使用独立的 `m0_mobile` profile：
+
+- 观测取带同步相机的原始 50 Hz control row `t`，监督严格取后续
+  `t+1 ... t+16` 共 16 个 canonical action；尾部不足 16 步直接丢弃；
+- 策略输入只含 `head_rgb`、`wrist_rgb`、语言和同一观测 row 的 `state28`；
+  `overview_rgb`、phase、目标物 ID、物体真值及未来状态一律不导出；
+- `state28` 依次为 body-frame 根部线/角速度 6、投影重力 3、机械臂前六关节
+  位置/速度 12、base-frame TCP xyz/旋转向量 6、测量夹爪开度 1；
+- 动作保持 canonical 10D 布局和 50 Hz 频率，同时给出 model 10D；model 夹爪
+  使用 `0=close, 1=open`，不支持的 `base_vy` 维 mask 为 false；
+- 导出 schema 为 `conveyor-bench-m0-mobile-v1`，输出及 canonical 哈希写入统一
+  `export_manifest.json`。
+
 导出命令：
 
 ```bash
 python scripts/export_v1.py \
   outputs/gate/v1_whole_body/episodes/EPISODE_ID \
-  --profile both
+  --profile all
 ```
 
-已有导出默认拒绝覆盖。只有明确需要重建派生文件时才加 `--force`；该选项仍
-不会覆盖 canonical 文件。
+`both` 保留原 DynamicVLA/M0 两个 profile；`all` 额外生成因果
+`m0_mobile.jsonl`。已有导出默认拒绝覆盖。只有明确需要重建派生文件时才加
+`--force`；该选项仍不会覆盖 canonical 文件。
 
 ## 10. 验收命令
 

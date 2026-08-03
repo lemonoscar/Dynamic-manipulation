@@ -217,7 +217,7 @@ python scripts/check_v1_camera_gate.py \
 
 python scripts/export_v1.py \
   outputs/gate/v1_whole_body/episodes/EPISODE_ID \
-  --profile both
+  --profile all
 ```
 
 四层检查不能互相替代：
@@ -227,7 +227,8 @@ python scripts/export_v1.py \
 3. temporal camera gate 检查物理发生位移时三相机画面确实变化，并要求
    head/wrist 中存在目标变化证据；overview 不计入策略可见性；
 4. exporter 再次 fail-closed 校验 canonical episode，训练投影必须实际包含
-   `head_rgb` 和 `wrist_rgb`，然后才生成 M0 与 DynamicVLA 视图。
+   `head_rgb` 和 `wrist_rgb`，然后才生成 DynamicVLA、legacy M0 与因果
+   M0-Mobile 视图。
 
 导出只在 episode 内创建：
 
@@ -235,6 +236,7 @@ python scripts/export_v1.py \
 exports/
 ├── dynamicvla.jsonl
 ├── m0.jsonl
+├── m0_mobile.jsonl
 └── export_manifest.json
 ```
 
@@ -243,6 +245,56 @@ exports/
 model tick、20-step chunk 和 base-frame state/action；M0 视图使用 world-frame
 state/arm delta、16-step chunk 和右臂填充的 14D action。两者都保留 canonical
 10D、body-frame base 3D 与有效位 mask。
+
+### 4.1 M0-Mobile 因果训练视图
+
+运行时每个 canonical step 都是“动作已经执行、物理已经推进”后的状态，因此
+legacy `m0.jsonl` 的同 tick action 只用于兼容既有分析消费端，不能直接训练
+观测到动作的因果策略。`m0_mobile.jsonl` 使用以下闭合约定：
+
+- 相机所在的 50 Hz row 为观测 `t`，标签是后续 `t+1 ... t+16`；
+- 每条样本包含 `state28`、语言、head/wrist 两路图像和未来 `16×10` 动作；
+- canonical 夹爪 `[-1,1]` 映射到 model 夹爪 `[0,1]`，`base_vy` 不参与 loss；
+- 尾部不 padding，overview、phase、目标 ID、物体状态和未来真值不会进入样本。
+
+只生成训练 profile 时使用：
+
+```bash
+python scripts/export_v1.py \
+  outputs/gate/v1_whole_body/episodes/EPISODE_ID \
+  --profile m0_mobile
+```
+
+如果同一 episode 已有导出 manifest，需明确使用 `--force` 重建派生清单；
+canonical 六个事实源仍受到哈希保护，不会被覆盖。
+
+最小 AML action head 是纯 PyTorch 实现，复现 ABot-M0 的 clean-action
+velocity-matching loss 与四步 Euler 方程。它使用轻量 Transformer decoder，
+并不声称复现完整 M0 DiT-B 架构。先在 CPU 做可重复过拟合烟测：
+
+```bash
+PYTHONPATH=src python scripts/smoke_m0_aml.py \
+  --device cpu \
+  --dtype float32 \
+  --steps 250 \
+  --output-dir outputs/smoke/m0_aml_cpu_RUN_ID
+```
+
+脚本要求新输出目录，保存 `checkpoint.pt` 和 `report.json`，并检查 loss 下降、
+有限梯度、`16×16×10` 四步采样以及 checkpoint 重载一致性。H20 仅在确认某张
+卡独占空闲后运行单卡 BF16 烟测：
+
+```bash
+CUDA_VISIBLE_DEVICES=GPU_ID PYTHONPATH=src \
+python scripts/smoke_m0_aml.py \
+  --device cuda \
+  --dtype bfloat16 \
+  --steps 250 \
+  --output-dir outputs/smoke/m0_aml_h20_RUN_ID
+```
+
+该烟测只证明数据维度、AML 方程、反传、采样与 checkpoint 链路已接通，不代表
+VLA 任务性能、视觉语言骨干训练或四卡扩展已经通过。
 
 ## 5. 当前本地烟测证据
 

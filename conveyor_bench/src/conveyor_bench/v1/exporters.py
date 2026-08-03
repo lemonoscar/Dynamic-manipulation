@@ -20,6 +20,40 @@ from .quality import audit_episode
 from .validation import validate_v1_episode
 
 EXPORT_SCHEMA_VERSION = "conveyor-bench-v1-export-1"
+M0_MOBILE_SCHEMA_VERSION = "conveyor-bench-m0-mobile-v1"
+M0_MOBILE_ACTION_HORIZON = 16
+M0_MOBILE_ACTION_DIMENSION_MASK = (
+    True,
+    False,
+    True,
+    True,
+    True,
+    True,
+    True,
+    True,
+    True,
+    True,
+)
+M0_MOBILE_STATE_LAYOUT = (
+    "root_linear_velocity_body.x",
+    "root_linear_velocity_body.y",
+    "root_linear_velocity_body.z",
+    "root_angular_velocity_body.x",
+    "root_angular_velocity_body.y",
+    "root_angular_velocity_body.z",
+    "projected_gravity_body.x",
+    "projected_gravity_body.y",
+    "projected_gravity_body.z",
+    *(f"arm_joint_position.{index}" for index in range(1, 7)),
+    *(f"arm_joint_velocity.{index}" for index in range(1, 7)),
+    "tcp_position_base.x",
+    "tcp_position_base.y",
+    "tcp_position_base.z",
+    "tcp_rotation_vector_base.x",
+    "tcp_rotation_vector_base.y",
+    "tcp_rotation_vector_base.z",
+    "gripper_open_fraction",
+)
 _REQUIRED_POLICY_CAMERA_IDS = frozenset({"head_rgb", "wrist_rgb"})
 _CONTROL_STEPS_PER_MODEL_TICK = (
     BenchmarkConfig.v1().control_hz // BenchmarkConfig.v1().model_hz
@@ -450,6 +484,124 @@ def _m0_world_action7(step: Mapping[str, Any]) -> tuple[float, ...]:
     return delta_xyz_world + delta_rotvec_world + (canonical[9],)
 
 
+def canonical_to_m0_mobile_action(
+    action: Sequence[float],
+) -> tuple[float, ...]:
+    """Map canonical gripper ``[-1, 1]`` to the model's ``[0, 1]``."""
+
+    canonical = _vector(action, 10, "canonical action")
+    return canonical[:9] + ((canonical[9] + 1.0) / 2.0,)
+
+
+def m0_mobile_to_canonical_action(
+    action: Sequence[float],
+) -> tuple[float, ...]:
+    """Invert :func:`canonical_to_m0_mobile_action`."""
+
+    model_action = _vector(action, 10, "M0-Mobile action")
+    if not 0.0 <= model_action[9] <= 1.0:
+        raise ExportError("M0-Mobile gripper must be within [0, 1]")
+    return model_action[:9] + (model_action[9] * 2.0 - 1.0,)
+
+
+def _load_control_steps(
+    episode_path: Path,
+    benchmark: BenchmarkConfig,
+) -> tuple[Mapping[str, Any], ...]:
+    """Load the uncollapsed 50 Hz stream used for causal action labels."""
+
+    rows = tuple(_read_jsonl(episode_path / "steps.jsonl"))
+    if not rows:
+        raise ExportError("steps.jsonl contains no samples")
+    physics_steps_per_control = benchmark.physics_hz // benchmark.control_hz
+    control_dt_s = 1.0 / benchmark.control_hz
+    previous_step: int | None = None
+    previous_time: float | None = None
+    for row in rows:
+        sim_step = _integer(row.get("sim_step"), "sim_step")
+        sim_time_s = _number(row.get("sim_time_s"), "sim_time_s")
+        _integer(row.get("model_tick"), "model_tick")
+        _canonical_action(row)
+        _pose(row, "robot_root_world")
+        _pose(row, "tcp_base")
+        if previous_step is not None and (
+            sim_step - previous_step != physics_steps_per_control
+            or not math.isclose(
+                sim_time_s - previous_time,
+                control_dt_s,
+                rel_tol=0.0,
+                abs_tol=1.0e-8,
+            )
+        ):
+            raise ExportError("steps.jsonl is not a contiguous control-rate stream")
+        previous_step = sim_step
+        previous_time = sim_time_s
+    return rows
+
+
+def _joint_vectors(
+    step: Mapping[str, Any],
+) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+    joints = _mapping(step.get("joints"), "joints")
+    names = joints.get("names")
+    if isinstance(names, (str, bytes)) or not isinstance(names, Sequence):
+        raise ExportError("joints.names must be a sequence")
+    if any(not isinstance(name, str) or not name for name in names):
+        raise ExportError("joints.names must contain non-empty strings")
+    if len(names) != len(set(names)):
+        raise ExportError("joints.names must be unique")
+    positions = _vector(joints.get("positions"), len(names), "joints.positions")
+    velocities = _vector(
+        joints.get("velocities"), len(names), "joints.velocities"
+    )
+    by_name = {
+        name: (positions[index], velocities[index])
+        for index, name in enumerate(names)
+    }
+    required = tuple(f"arm_joint{index}" for index in range(1, 9))
+    missing = tuple(name for name in required if name not in by_name)
+    if missing:
+        raise ExportError(
+            "M0-Mobile state requires joint(s): " + ", ".join(missing)
+        )
+    arm_names = required[:6]
+    arm_positions = tuple(by_name[name][0] for name in arm_names)
+    arm_velocities = tuple(by_name[name][1] for name in arm_names)
+    gripper_position = sum(by_name[name][0] for name in required[6:]) / 2.0
+    gripper_open_fraction = min(1.0, max(0.0, gripper_position / 0.044))
+    return arm_positions, arm_velocities, gripper_open_fraction
+
+
+def _m0_mobile_state28(step: Mapping[str, Any]) -> tuple[float, ...]:
+    _, root_quaternion = _pose(step, "robot_root_world")
+    root_inverse = _quat_conjugate(root_quaternion)
+    twist = _mapping(step.get("robot_twist_world"), "robot_twist_world")
+    linear_world = _vector(
+        twist.get("linear_xyz"), 3, "robot_twist_world.linear_xyz"
+    )
+    angular_world = _vector(
+        twist.get("angular_xyz"), 3, "robot_twist_world.angular_xyz"
+    )
+    linear_body = _rotate_vector(root_inverse, linear_world)
+    angular_body = _rotate_vector(root_inverse, angular_world)
+    projected_gravity = _rotate_vector(root_inverse, (0.0, 0.0, -1.0))
+    arm_positions, arm_velocities, gripper_open_fraction = _joint_vectors(step)
+    tcp_xyz, tcp_quaternion = _pose(step, "tcp_base")
+    state = (
+        linear_body
+        + angular_body
+        + projected_gravity
+        + arm_positions
+        + arm_velocities
+        + tcp_xyz
+        + _quat_to_rotvec(tcp_quaternion)
+        + (gripper_open_fraction,)
+    )
+    if len(state) != len(M0_MOBILE_STATE_LAYOUT):
+        raise AssertionError("M0-Mobile state layout and values disagree")
+    return state
+
+
 def _episode_context(
     episode_directory: str | Path,
 ) -> tuple[
@@ -694,6 +846,89 @@ def iter_m0_records(
         }
 
 
+def iter_m0_mobile_records(
+    episode_directory: str | Path,
+    config: BenchmarkConfig | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield causal 50 Hz whole-body chunks for M0-Mobile training."""
+
+    benchmark = config or BenchmarkConfig.v1()
+    if benchmark.control_hz != 50:
+        raise ExportError("M0-Mobile v1 requires a 50 Hz control stream")
+    episode_path, episode, task, source_result = _episode_context(
+        episode_directory
+    )
+    model_ticks = load_model_tick_steps(episode_path)
+    _validate_training_camera_coverage(episode_path, model_ticks)
+    policy_camera_ids = _camera_ids_for_role(episode, "policy_observation")
+    required_camera_ids = tuple(sorted(_REQUIRED_POLICY_CAMERA_IDS))
+    if policy_camera_ids != required_camera_ids:
+        raise ExportError(
+            "M0-Mobile policy cameras must be exactly "
+            f"{required_camera_ids}; got {policy_camera_ids}"
+        )
+
+    control_steps = _load_control_steps(episode_path, benchmark)
+    horizon = M0_MOBILE_ACTION_HORIZON
+    for source_index, source in enumerate(control_steps):
+        frames = tuple(
+            sorted(
+                _select_camera_frames(source, policy_camera_ids),
+                key=lambda frame: _mapping(frame, "camera frame").get(
+                    "camera_id"
+                ),
+            )
+        )
+        recorded_camera_ids = tuple(
+            sorted(_mapping(frame, "camera frame").get("camera_id") for frame in frames)
+        )
+        if recorded_camera_ids != required_camera_ids:
+            continue
+        future_steps = control_steps[source_index + 1 : source_index + 1 + horizon]
+        if len(future_steps) != horizon:
+            continue
+        canonical_chunk = tuple(_canonical_action(step) for step in future_steps)
+        model_chunk = tuple(
+            canonical_to_m0_mobile_action(action) for action in canonical_chunk
+        )
+        observation_sim_step = _integer(source.get("sim_step"), "sim_step")
+        observation_time_s = _number(source.get("sim_time_s"), "sim_time_s")
+        yield {
+            "schema_version": M0_MOBILE_SCHEMA_VERSION,
+            "profile": "m0_mobile_v1",
+            "source_episode_id": episode.get("episode_id"),
+            "source_task_id": task.get("task_id"),
+            "source_task_outcome": source_result.outcome,
+            "source_failure_reason": source_result.failure_reason,
+            "source_steps_path": "steps.jsonl",
+            "sample_id": (
+                f"{episode.get('episode_id')}:sim-step-{observation_sim_step}"
+            ),
+            "instruction": task.get("instruction"),
+            "model_tick": _integer(source.get("model_tick"), "model_tick"),
+            "observation_sim_step": observation_sim_step,
+            "observation_time_s": observation_time_s,
+            "policy_camera_ids": required_camera_ids,
+            "policy_camera_frames": frames,
+            "observer_cameras_excluded": True,
+            "state28": _m0_mobile_state28(source),
+            "state_layout": M0_MOBILE_STATE_LAYOUT,
+            "state_frame": "robot_root/body_and_base",
+            "action_rate_hz": benchmark.control_hz,
+            "action_horizon": horizon,
+            "causal_offset_control_steps": 1,
+            "label_control_sim_steps": tuple(
+                _integer(step.get("sim_step"), "sim_step")
+                for step in future_steps
+            ),
+            "canonical_action10_chunk": canonical_chunk,
+            "model_action10_chunk": model_chunk,
+            "model_gripper_convention": "0=close,1=open",
+            "action_frame": "body_base_canonical",
+            "action_dimension_mask": M0_MOBILE_ACTION_DIMENSION_MASK,
+        }
+
+
 def _guard_output_path(episode_path: Path, output_path: Path) -> None:
     source_files = {
         (episode_path / filename).resolve()
@@ -779,15 +1014,45 @@ def export_m0_episode(
     )
 
 
+def export_m0_mobile_episode(
+    episode_directory: str | Path,
+    output_path: str | Path,
+    config: BenchmarkConfig | None = None,
+) -> ExportSummary:
+    episode_path = Path(episode_directory)
+    destination = Path(output_path)
+    _guard_output_path(episode_path, destination)
+    source_result = validate_episode_for_export(episode_path)
+    count = _write_jsonl_atomic(
+        iter_m0_mobile_records(episode_path, config), destination
+    )
+    return ExportSummary(
+        "m0_mobile_v1",
+        episode_path,
+        destination,
+        count,
+        source_result.outcome,
+        source_result.failure_reason,
+    )
+
+
 __all__ = [
     "EXPORT_SCHEMA_VERSION",
+    "M0_MOBILE_ACTION_DIMENSION_MASK",
+    "M0_MOBILE_ACTION_HORIZON",
+    "M0_MOBILE_SCHEMA_VERSION",
+    "M0_MOBILE_STATE_LAYOUT",
     "ExportError",
     "ExportSummary",
     "SourceTaskResult",
     "export_dynamicvla_episode",
     "export_m0_episode",
+    "export_m0_mobile_episode",
+    "canonical_to_m0_mobile_action",
     "iter_dynamicvla_records",
     "iter_m0_records",
+    "iter_m0_mobile_records",
     "load_model_tick_steps",
+    "m0_mobile_to_canonical_action",
     "validate_episode_for_export",
 ]

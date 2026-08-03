@@ -153,9 +153,11 @@ def make_episode(
                 "robot_twist_world": twist(),
                 "tcp_base": pose(0.4 + tick * 0.01),
                 "joints": {
-                    "names": ["joint-1"],
-                    "positions": [0.0],
-                    "velocities": [0.0],
+                    "names": [
+                        f"arm_joint{index}" for index in range(1, 9)
+                    ],
+                    "positions": [0.0] * 8,
+                    "velocities": [0.0] * 8,
                 },
                 "action": {"values": [0.0] * 10},
                 "camera_frames": frames,
@@ -412,6 +414,36 @@ def test_export_cli_handles_output_root_and_requires_force(tmp_path) -> None:
         "export_v1.py", episode, "--profile", "both", "--force"
     )
     assert forced.returncode == 0, forced.stderr
+    assert canonical_digests(episode) == before
+
+
+def test_export_cli_writes_causal_m0_mobile_bundle(tmp_path) -> None:
+    episode = make_episode(tmp_path / "ep-m0-mobile")
+    before = canonical_digests(episode)
+
+    completed = run_script(
+        "export_v1.py", episode, "--profile", "m0_mobile"
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    exports = episode / "exports"
+    records = [
+        json.loads(line)
+        for line in (exports / "m0_mobile.jsonl").read_text().splitlines()
+    ]
+    manifest = json.loads((exports / "export_manifest.json").read_text())
+    assert len(records) == 7
+    assert records[0]["observation_sim_step"] == 16
+    assert records[0]["label_control_sim_steps"][0] == 24
+    assert records[0]["label_control_sim_steps"][-1] == 144
+    assert len(records[0]["state28"]) == 28
+    assert len(records[0]["model_action10_chunk"]) == 16
+    assert records[0]["policy_camera_ids"] == ["head_rgb", "wrist_rgb"]
+    assert "phase" not in records[0]
+    assert manifest["profiles"]["m0_mobile"]["schema_version"] == (
+        "conveyor-bench-m0-mobile-v1"
+    )
+    assert manifest["canonical_source_hashes"] == before
     assert canonical_digests(episode) == before
 
 

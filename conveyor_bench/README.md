@@ -105,12 +105,14 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── scripts/audit_v1_episode.py # V1 episode 数据质量审计
 ├── scripts/check_v1_camera_gate.py # V1 相机时变与策略可见性门禁
 ├── scripts/export_v1.py        # V1 到 DynamicVLA/M0 的离线投影
+├── scripts/smoke_m0_aml.py     # M0-Mobile AML loss/采样/checkpoint 烟测
 ├── scripts/probe_kinematics.py # 机械臂位姿探针
 ├── scripts/probe_scene.py      # 传送带接触与运动探针
 ├── scripts/probe_v1_scene.py   # V1 工作站与三相机探针
 ├── scripts/probe_mobile_locomotion.py # V1 浮动根移动策略门禁
 ├── src/conveyor_bench/
 │   ├── isaac/                  # 场景、机器人配置和单一物理主循环
+│   ├── m0_aml.py               # 最小纯 PyTorch AML action head
 │   ├── v1/                     # V1 配置、协议、记录、审计与导出
 │   ├── v2/                     # V2 task context、连续协调、校验与导出注解
 │   ├── config.py               # 运行时 V0 常量
@@ -457,6 +459,24 @@ DynamicVLA 视图为 25 Hz、历史 `[-2,0]`、未来 TCP 偏移 `+5` tick、20-
 chunk；M0 视图把 TCP delta 投影到 world frame，形成左臂 7 个零加右臂 7D
 的 14D、16-step chunk。两者都单独保留 body-frame base 3D、原始 canonical
 10D 和有效位 mask，且不会改写 canonical episode。
+
+面向移动底盘策略训练，使用因果 `m0_mobile` profile，而不是上述 legacy M0
+同 tick 视图：
+
+```bash
+python scripts/export_v1.py \
+  outputs/gate/v1_release_camera/episodes/EPISODE_ID \
+  --profile m0_mobile
+
+PYTHONPATH=src python scripts/smoke_m0_aml.py \
+  --device cpu \
+  --steps 250 \
+  --output-dir outputs/smoke/m0_aml_cpu_RUN_ID
+```
+
+该 profile 只暴露 head/wrist、语言、`state28` 和未来 `16×10` 50 Hz 动作，
+并排除 overview 与仿真特权字段。完整契约、H20 单卡 BF16 命令和验收边界见
+[COLLECTION_GUIDE.md](COLLECTION_GUIDE.md)。
 
 当前本地物理烟测已经观察到 fixed 单目标约 `10.48 s` 成功、whole-body
 单目标约 `21.60 s` 成功，以及 whole-body 三物体双语目标选择约 `21.58 s`

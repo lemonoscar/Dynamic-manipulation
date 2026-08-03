@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export canonical V1 episodes into local DynamicVLA and M0 JSONL views."""
+"""Export canonical V1 episodes into local VLA JSONL views."""
 
 from __future__ import annotations
 
@@ -19,9 +19,11 @@ sys.path.insert(0, str(SOURCE_ROOT))
 
 from conveyor_bench.v1.exporters import (  # noqa: E402
     EXPORT_SCHEMA_VERSION,
+    M0_MOBILE_SCHEMA_VERSION,
     ExportSummary,
     export_dynamicvla_episode,
     export_m0_episode,
+    export_m0_mobile_episode,
 )
 
 _CANONICAL_FILES = (
@@ -38,6 +40,12 @@ _EXPORTERS: dict[
 ] = {
     "dynamicvla": export_dynamicvla_episode,
     "m0": export_m0_episode,
+    "m0_mobile": export_m0_mobile_episode,
+}
+_PROFILE_SCHEMA_VERSIONS = {
+    "dynamicvla": EXPORT_SCHEMA_VERSION,
+    "m0": EXPORT_SCHEMA_VERSION,
+    "m0_mobile": M0_MOBILE_SCHEMA_VERSION,
 }
 
 
@@ -162,7 +170,7 @@ def export_episode(
                 "relative_path": f"{profile}.jsonl",
                 "record_count": result.record_count,
                 "sha256": _sha256(temporary),
-                "schema_version": EXPORT_SCHEMA_VERSION,
+                "schema_version": _PROFILE_SCHEMA_VERSIONS[profile],
                 "source_task_outcome": result.source_task_outcome,
                 "source_failure_reason": result.source_failure_reason,
             }
@@ -221,7 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--profile",
-        choices=("dynamicvla", "m0", "both"),
+        choices=("dynamicvla", "m0", "m0_mobile", "both", "all"),
         default="both",
     )
     parser.add_argument(
@@ -234,11 +242,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    profiles = (
-        ("dynamicvla", "m0")
-        if args.profile == "both"
-        else (args.profile,)
-    )
+    if args.profile == "both":
+        profiles = ("dynamicvla", "m0")
+    elif args.profile == "all":
+        profiles = ("dynamicvla", "m0", "m0_mobile")
+    else:
+        profiles = (args.profile,)
     try:
         results = [
             export_episode(episode, profiles, force=args.force)
