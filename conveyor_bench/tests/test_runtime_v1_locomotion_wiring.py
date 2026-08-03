@@ -221,7 +221,9 @@ def test_m0_pregrasp_staging_assist_is_static_audited_and_default_off() -> None:
     assert "_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M" in pose_source
     assert "object_state" not in pose_source
     assert "oracle" not in pose_source
-    assert "uses_realtime_object_state" in command_source
+    assert "target_uses_realtime_object_state" in command_source
+    assert "activation_uses_shadow_oracle_phase" in command_source
+    assert "handoff_uses_shadow_oracle_phase" in command_source
     assert "m0_action_applied" in command_source
     assert "m0_pregrasp_staging_assist: bool = False" in v2_source
     assert '"--pregrasp-staging-assist"' in cli_source

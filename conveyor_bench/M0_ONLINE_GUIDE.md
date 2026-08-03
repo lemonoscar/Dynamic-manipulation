@@ -143,8 +143,9 @@ python scripts/run_m0_closed_loop.py \
 ```
 
 该模式在 `pregrasp` 将底盘命令置零、保持夹爪打开，并把 TCP 引导到由场景
-注册表计算出的固定 world-frame 工位；不读取实时物体状态，也不复用 shadow
-oracle 的目标。交接到 `track` 时会丢弃未实际执行的旧 pregrasp action chunk，
+注册表计算出的固定 world-frame 工位。固定目标本身不读取实时物体状态，也不
+复用 shadow oracle 的 TCP 目标；但辅助的启停与交接明确使用 shadow oracle
+的阶段判定，因此仍属于 privileged diagnostic。交接到 `track` 时会丢弃未实际执行的旧 pregrasp action chunk，
 再从当前观测重新推理。原始 M0 action、实际控制来源、固定目标、world-frame
 位置/姿态误差和交接丢弃数都会被记录。该模式比 workspace guard 更强，结果
 只能用于定位故障，绝不能计作 policy-only 成功或写入正式训练集。两个诊断

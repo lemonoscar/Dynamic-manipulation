@@ -865,7 +865,9 @@ class ConveyorRuntimeV1:
                     },
                     "base_command_body": [0.0, 0.0, 0.0],
                     "gripper": "open",
-                    "uses_realtime_object_state": False,
+                    "target_uses_realtime_object_state": False,
+                    "activation_uses_shadow_oracle_phase": True,
+                    "handoff_uses_shadow_oracle_phase": True,
                 },
                 **self._extra_episode_metadata(resolved),
             },
@@ -913,7 +915,8 @@ class ConveyorRuntimeV1:
         m0_staging_assist_steps = 0
         m0_staging_assist_replaced_action_steps = 0
         m0_staging_assist_handoff_resets = 0
-        m0_staging_assist_discarded_actions = 0
+        m0_staging_assist_dropped_chunk_entries = 0
+        m0_staging_assist_prevented_transition_actions = 0
         m0_staging_assist_tracking_error_norms: list[float] = []
         m0_staging_assist_orientation_error_rads: list[float] = []
         m0_terminal_hold_steps = 0
@@ -1011,6 +1014,7 @@ class ConveyorRuntimeV1:
                 m0_step_metadata: dict[str, Any] | None = None
                 m0_workspace_guard_metadata: dict[str, Any] | None = None
                 m0_staging_assist_metadata: dict[str, Any] | None = None
+                m0_staging_handoff_metadata: dict[str, Any] | None = None
                 shadow_arm_target = (
                     self._arm_target.clone()
                     if self._m0_client is not None
@@ -1393,9 +1397,34 @@ class ConveyorRuntimeV1:
                     # The staging service did not execute the policy's
                     # pregrasp arm actions.  Do not reinterpret the unused
                     # tail of that chunk as a transition-phase command.
-                    m0_staging_assist_discarded_actions += max(
+                    dropped_entries = max(
                         0, len(m0_chunk) - m0_action_index
                     )
+                    prevented_actions = max(
+                        0,
+                        min(
+                            len(m0_chunk),
+                            self.options.m0_transition_actions_per_replan,
+                        )
+                        - m0_action_index,
+                    )
+                    m0_staging_assist_dropped_chunk_entries += (
+                        dropped_entries
+                    )
+                    m0_staging_assist_prevented_transition_actions += (
+                        prevented_actions
+                    )
+                    m0_staging_handoff_metadata = {
+                        "assisted": True,
+                        "scope": "diagnostic_only",
+                        "from_phase": previous_phase,
+                        "to_phase": phase,
+                        "discarded_sequence_id": m0_chunk_sequence,
+                        "discarded_next_action_index": m0_action_index,
+                        "remaining_chunk_entries_dropped": dropped_entries,
+                        "prevented_transition_actions": prevented_actions,
+                        "fresh_inference_required": True,
+                    }
                     m0_chunk = ()
                     m0_chunk_sequence = None
                     m0_chunk_server_ms = None
@@ -1666,6 +1695,10 @@ class ConveyorRuntimeV1:
                         ] = False
                         m0_step_metadata["staging_assist"] = (
                             m0_staging_assist_metadata
+                        )
+                    if m0_staging_handoff_metadata is not None:
+                        m0_step_metadata["staging_assist_handoff"] = (
+                            m0_staging_handoff_metadata
                         )
 
                 self._apply_gripper(gripper_open)
@@ -2164,7 +2197,9 @@ class ConveyorRuntimeV1:
                     "scope": "diagnostic_only",
                     "phase": "pregrasp",
                     "frame": "world",
-                    "uses_realtime_object_state": False,
+                    "target_uses_realtime_object_state": False,
+                    "activation_uses_shadow_oracle_phase": True,
+                    "handoff_uses_shadow_oracle_phase": True,
                     "target_asset_id": resolved.target_asset.object_id,
                     "target_tcp_pose_world": {
                         "xyz": list(m0_staging_pose.xyz),
@@ -2177,8 +2212,11 @@ class ConveyorRuntimeV1:
                     "handoff_chunk_resets": (
                         m0_staging_assist_handoff_resets
                     ),
-                    "handoff_discarded_actions": (
-                        m0_staging_assist_discarded_actions
+                    "handoff_remaining_chunk_entries_dropped": (
+                        m0_staging_assist_dropped_chunk_entries
+                    ),
+                    "handoff_prevented_transition_actions": (
+                        m0_staging_assist_prevented_transition_actions
                     ),
                     "realized_tracking_error_norm_m": _latency_summary(
                         m0_staging_assist_tracking_error_norms
@@ -3453,7 +3491,9 @@ class ConveyorRuntimeV1:
             "scope": "diagnostic_only",
             "phase": "pregrasp",
             "frame": "world",
-            "uses_realtime_object_state": False,
+            "target_uses_realtime_object_state": False,
+            "activation_uses_shadow_oracle_phase": True,
+            "handoff_uses_shadow_oracle_phase": True,
             "m0_action_applied": False,
             "target_tcp_pose_world": {
                 "xyz": list(target_world.xyz),
