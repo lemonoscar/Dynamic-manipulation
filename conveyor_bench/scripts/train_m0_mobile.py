@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Train the Go2-X5 M0 action model with frozen local Qwen3-VL features."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import random
+import sys
+from contextlib import nullcontext
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+import torch  # noqa: E402
+import torch.distributed as dist  # noqa: E402
+from safetensors.torch import save_file  # noqa: E402
+from torch.nn.parallel import DistributedDataParallel  # noqa: E402
+from torch.utils.data import ConcatDataset, DataLoader, DistributedSampler  # noqa: E402
+
+from conveyor_bench.m0_dataset import M0MobileDataset  # noqa: E402
+from conveyor_bench.m0_dit import (  # noqa: E402
+    GO2_X5_REINITIALIZED_ACTION_KEYS,
+    M0DiTActionHead,
+)
+from conveyor_bench.m0_mobile import (  # noqa: E402
+    DEFAULT_CONFIG_PATH,
+    M0MobileError,
+    load_m0_mobile_config,
+    resolve_model_root,
+)
+from conveyor_bench.m0_policy import (  # noqa: E402
+    M0MobilePolicy,
+    Qwen3VLInterface,
+    m0_dit_config,
+    transfer_robocasa_policy_weights,
+)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--episode-root",
+        action="append",
+        type=Path,
+        required=True,
+        help="episode directory containing exports/m0_mobile.jsonl (repeatable)",
+    )
+    parser.add_argument("--state-statistics", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser.add_argument("--model-root", type=Path)
+    parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--batch-size-per-device", type=int)
+    parser.add_argument("--gradient-accumulation-steps", type=int)
+    parser.add_argument("--warmup-steps", type=int)
+    parser.add_argument("--num-workers", type=int)
+    parser.add_argument("--allow-fixed-base", action="store_true")
+    parser.add_argument("--all-belt-speeds", action="store_true")
+    parser.add_argument(
+        "--attention-implementation",
+        choices=("sdpa", "flash_attention_2", "eager"),
+        default="sdpa",
+    )
+    parser.add_argument("--seed", type=int, default=20260803)
+    return parser
+
+
+def _positive(value: int | None, fallback: int, name: str) -> int:
+    resolved = fallback if value is None else value
+    if isinstance(resolved, bool) or resolved <= 0:
+        raise M0MobileError(f"{name} must be positive")
+    return resolved
+
+
+def _nonnegative(value: int | None, fallback: int, name: str) -> int:
+    resolved = fallback if value is None else value
+    if isinstance(resolved, bool) or resolved < 0:
+        raise M0MobileError(f"{name} must be non-negative")
+    return resolved
+
+
+def _distributed_device() -> tuple[torch.device, int, int, int]:
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if not torch.cuda.is_available():
+        raise M0MobileError("M0-Mobile training requires CUDA")
+    if local_rank >= torch.cuda.device_count():
+        raise M0MobileError("LOCAL_RANK exceeds visible CUDA devices")
+    torch.cuda.set_device(local_rank)
+    if world_size > 1:
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    return torch.device("cuda", local_rank), rank, local_rank, world_size
+
+
+def _checkpoint_path(config: dict, root: Path) -> Path:
+    path = (root / config["checkpoint_transfer"]["relative_path"]).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as error:
+        raise M0MobileError("checkpoint path escapes model root") from error
+    if not path.is_file():
+        raise M0MobileError(f"checkpoint does not exist: {path}")
+    return path
+
+
+def _reserve_output(path: Path, rank: int, world_size: int) -> Path:
+    output = path.expanduser().resolve()
+    exists = torch.tensor(
+        [int(output.exists())],
+        device=torch.device("cuda", int(os.environ.get("LOCAL_RANK", "0"))),
+    )
+    if world_size > 1:
+        dist.broadcast(exists, src=0)
+    if exists.item():
+        raise M0MobileError(f"output directory already exists: {output}")
+    if rank == 0:
+        output.mkdir(parents=True, exist_ok=False)
+    if world_size > 1:
+        dist.barrier()
+    return output
+
+
+def _datasets(args: argparse.Namespace, config: dict) -> tuple[ConcatDataset, list[dict]]:
+    initial_filter = config["data"]["initial_training_filter"]
+    expected_speed = None if args.all_belt_speeds else initial_filter["belt_speed_mps"]
+    datasets = []
+    sources = []
+    for raw_root in args.episode_root:
+        episode_root = raw_root.expanduser().resolve()
+        jsonl = episode_root / "exports" / "m0_mobile.jsonl"
+        dataset = M0MobileDataset(
+            jsonl,
+            episode_root,
+            args.state_statistics,
+            config=config,
+            allow_fixed_base=args.allow_fixed_base,
+            expected_belt_speed_mps=expected_speed,
+        )
+        datasets.append(dataset)
+        sources.append(
+            {
+                "episode_root": str(episode_root),
+                "jsonl": str(jsonl),
+                "records": len(dataset),
+            }
+        )
+    return ConcatDataset(datasets), sources
+
+
+def _optimizer(
+    action_model: M0DiTActionHead,
+    config: dict,
+) -> torch.optim.AdamW:
+    optimizer_config = config["training"]["optimizer"]
+    boundary = []
+    core = []
+    for name, parameter in action_model.named_parameters():
+        (boundary if name in GO2_X5_REINITIALIZED_ACTION_KEYS else core).append(
+            parameter
+        )
+    if len(boundary) != len(GO2_X5_REINITIALIZED_ACTION_KEYS) or not core:
+        raise M0MobileError("action optimizer parameter groups are incomplete")
+    return torch.optim.AdamW(
+        [
+            {
+                "params": core,
+                "lr": optimizer_config["action_core_learning_rate"],
+            },
+            {
+                "params": boundary,
+                "lr": optimizer_config["boundary_learning_rate"],
+            },
+        ],
+        betas=tuple(optimizer_config["betas"]),
+        eps=optimizer_config["epsilon"],
+        weight_decay=optimizer_config["weight_decay"],
+    )
+
+
+def _scheduler(
+    optimizer: torch.optim.Optimizer,
+    max_steps: int,
+    warmup_steps: int,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    def scale(step: int) -> float:
+        if warmup_steps and step < warmup_steps:
+            return (step + 1) / warmup_steps
+        denominator = max(1, max_steps - warmup_steps)
+        progress = min(1.0, max(0.0, (step - warmup_steps) / denominator))
+        return 0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, scale)
+
+
+def _event(rank: int, event: str, **values) -> None:
+    print(json.dumps({"rank": rank, "event": event, **values}, sort_keys=True), flush=True)
+
+
+def _save_action_model(
+    action_model: M0DiTActionHead,
+    output: Path,
+) -> str:
+    destination = output / "action_model_final.safetensors"
+    temporary = output / ".action_model_final.safetensors.tmp"
+    tensors = {
+        key: value.detach().cpu().contiguous()
+        for key, value in action_model.state_dict().items()
+    }
+    save_file(
+        tensors,
+        temporary,
+        metadata={"schema_version": "conveyor-bench-m0-mobile-action-checkpoint-1"},
+    )
+    os.replace(temporary, destination)
+    digest = hashlib.sha256()
+    with destination.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    device, rank, local_rank, world_size = _distributed_device()
+    try:
+        config = load_m0_mobile_config(args.config)
+        training = config["training"]
+        max_steps = _positive(args.max_steps, training["max_train_steps"], "max_steps")
+        batch_size = _positive(
+            args.batch_size_per_device,
+            training["smoke_batch_size_per_device"],
+            "batch_size_per_device",
+        )
+        accumulation = _positive(
+            args.gradient_accumulation_steps,
+            training["gradient_accumulation_steps"],
+            "gradient_accumulation_steps",
+        )
+        warmup = _nonnegative(args.warmup_steps, training["warmup_steps"], "warmup_steps")
+        workers = _nonnegative(args.num_workers, training["dataloader_workers"], "num_workers")
+        output = _reserve_output(args.output_dir, rank, world_size)
+        random.seed(args.seed + rank)
+        torch.manual_seed(args.seed + rank)
+        torch.cuda.manual_seed_all(args.seed + rank)
+        torch.cuda.reset_peak_memory_stats(device)
+
+        dataset, sources = _datasets(args, config)
+        sampler = (
+            DistributedSampler(
+                dataset,
+                num_replicas=world_size,
+                rank=rank,
+                shuffle=True,
+                seed=args.seed,
+            )
+            if world_size > 1
+            else None
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            sampler=sampler,
+            shuffle=sampler is None,
+            num_workers=workers,
+            collate_fn=list,
+            persistent_workers=workers > 0,
+        )
+        _event(rank, "data_ready", records=len(dataset), batches=len(loader))
+
+        root = resolve_model_root(config, args.model_root)
+        qwen = Qwen3VLInterface.from_local(
+            root / config["vlm"]["relative_path"],
+            checkpoint_vocab_size=config["vlm"]["checkpoint_vocab_size"],
+            dtype=torch.bfloat16,
+            attention_implementation=args.attention_implementation,
+        )
+        policy = M0MobilePolicy(
+            qwen,
+            M0DiTActionHead(m0_dit_config(config)),
+            repeated_diffusion_steps=training["repeated_diffusion_steps"],
+        )
+        transfer = transfer_robocasa_policy_weights(
+            policy, _checkpoint_path(config, root)
+        )
+        policy.freeze_qwen()
+        policy.qwen_vl_interface.to(device)
+        policy.action_model.to(device)
+        optimizer = _optimizer(policy.action_model, config)
+        scheduler = _scheduler(optimizer, max_steps, warmup)
+        raw_action_model = policy.action_model
+        if world_size > 1:
+            policy.action_model = DistributedDataParallel(
+                raw_action_model,
+                device_ids=[local_rank],
+                output_device=local_rank,
+                broadcast_buffers=False,
+            )
+        policy.train()
+        optimizer.zero_grad(set_to_none=True)
+        _event(rank, "policy_ready")
+
+        train_step = 0
+        micro_step = 0
+        epoch = 0
+        accumulated_loss = 0.0
+        final_loss = float("nan")
+        final_gradient_norm = float("nan")
+        while train_step < max_steps:
+            if sampler is not None:
+                sampler.set_epoch(epoch)
+            for examples in loader:
+                synchronize = (micro_step + 1) % accumulation == 0
+                context = (
+                    policy.action_model.no_sync()
+                    if world_size > 1 and not synchronize
+                    else nullcontext()
+                )
+                with context:
+                    with torch.autocast("cuda", dtype=torch.bfloat16):
+                        loss = policy(examples)["action_loss"]
+                    if not torch.isfinite(loss):
+                        raise M0MobileError("training loss is not finite")
+                    (loss / accumulation).backward()
+                accumulated_loss += float(loss.detach().item())
+                micro_step += 1
+                if not synchronize:
+                    continue
+                gradient_norm = torch.nn.utils.clip_grad_norm_(
+                    raw_action_model.parameters(),
+                    training["max_gradient_norm"],
+                )
+                if not torch.isfinite(gradient_norm):
+                    raise M0MobileError("gradient norm is not finite")
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+                train_step += 1
+                mean_loss = torch.tensor(
+                    [accumulated_loss / accumulation],
+                    device=device,
+                    dtype=torch.float32,
+                )
+                if world_size > 1:
+                    dist.all_reduce(mean_loss, op=dist.ReduceOp.SUM)
+                    mean_loss /= world_size
+                accumulated_loss = 0.0
+                final_loss = float(mean_loss.item())
+                final_gradient_norm = float(gradient_norm.item())
+                if train_step == 1 or train_step % training["log_interval_steps"] == 0:
+                    _event(
+                        rank,
+                        "train_step",
+                        step=train_step,
+                        loss=float(mean_loss.item()),
+                        gradient_norm=float(gradient_norm.item()),
+                        learning_rates=[group["lr"] for group in optimizer.param_groups],
+                    )
+                if train_step >= max_steps:
+                    break
+            epoch += 1
+
+        if world_size > 1:
+            dist.barrier()
+        if rank == 0:
+            action_sha256 = _save_action_model(raw_action_model, output)
+            statistics_sha256 = hashlib.sha256(
+                args.state_statistics.expanduser().resolve().read_bytes()
+            ).hexdigest()
+            report = {
+                "schema_version": "conveyor-bench-m0-mobile-training-report-1",
+                "ok": True,
+                "world_size": world_size,
+                "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "dataset_records": len(dataset),
+                "sources": sources,
+                "max_steps": max_steps,
+                "batch_size_per_device": batch_size,
+                "gradient_accumulation_steps": accumulation,
+                "effective_batch_size": batch_size * world_size * accumulation,
+                "final_loss": final_loss,
+                "final_gradient_norm": final_gradient_norm,
+                "peak_allocated_mib_rank0": round(
+                    torch.cuda.max_memory_allocated(device) / 2**20, 2
+                ),
+                "peak_reserved_mib_rank0": round(
+                    torch.cuda.max_memory_reserved(device) / 2**20, 2
+                ),
+                "attention_implementation": args.attention_implementation,
+                "checkpoint_transfer": {
+                    "loaded_qwen_tensors": transfer.loaded_qwen_tensors,
+                    "loaded_action_tensors": transfer.loaded_action_tensors,
+                    "reinitialized_tensors": len(transfer.reinitialized_keys),
+                },
+                "state_statistics_sha256": statistics_sha256,
+                "action_model_sha256": action_sha256,
+            }
+            (output / "training_report.json").write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (output / "m0_mobile_config.json").write_text(
+                json.dumps(config, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            _event(rank, "complete", report=report)
+        if world_size > 1:
+            dist.barrier()
+        return 0
+    except (M0MobileError, OSError, RuntimeError, ValueError) as error:
+        _event(rank, "failed", error=str(error))
+        return 2
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

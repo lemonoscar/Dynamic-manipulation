@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -27,6 +28,7 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
         *,
         config: Mapping[str, Any] | None = None,
         allow_fixed_base: bool = False,
+        expected_belt_speed_mps: float | None = None,
     ) -> None:
         if not isinstance(allow_fixed_base, bool):
             raise M0MobileError("allow_fixed_base must be a boolean")
@@ -41,6 +43,18 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             raise M0MobileError("state statistics must come from the train split")
         self.normalizer = M0MobileNormalizer.from_config(self.config, statistics)
         self.allow_fixed_base = allow_fixed_base
+        if expected_belt_speed_mps is not None and (
+            isinstance(expected_belt_speed_mps, bool)
+            or not isinstance(expected_belt_speed_mps, (int, float))
+            or not math.isfinite(expected_belt_speed_mps)
+            or expected_belt_speed_mps <= 0.0
+        ):
+            raise M0MobileError("expected_belt_speed_mps must be positive and finite")
+        self.expected_belt_speed_mps = (
+            float(expected_belt_speed_mps)
+            if expected_belt_speed_mps is not None
+            else None
+        )
         self._records: list[tuple[Path, int, int]] = []
 
         paths = _jsonl_paths(jsonl_paths)
@@ -107,6 +121,19 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             raise M0MobileError(
                 f"{location} robot_mode must be one of {sorted(allowed_modes)}"
             )
+        if self.expected_belt_speed_mps is not None:
+            speed = record.get("belt_speed_mps")
+            if (
+                isinstance(speed, bool)
+                or not isinstance(speed, (int, float))
+                or not math.isclose(
+                    float(speed), self.expected_belt_speed_mps, rel_tol=0.0, abs_tol=1e-9
+                )
+            ):
+                raise M0MobileError(
+                    f"{location} belt_speed_mps must be "
+                    f"{self.expected_belt_speed_mps}"
+                )
 
 
 def make_m0_mobile_loader(

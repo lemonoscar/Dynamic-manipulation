@@ -23,6 +23,7 @@ def _record(name: str, *, mode: str = "whole_body_policy") -> dict:
         "split": "train",
         "source_task_outcome": "success",
         "robot_mode": mode,
+        "belt_speed_mps": 0.08,
         "sample_id": name,
         "instruction": "pick the moving part",
         "policy_camera_frames": [
@@ -132,3 +133,17 @@ def test_dataset_can_explicitly_allow_fixed_base(tmp_path: Path) -> None:
     )
 
     assert len(dataset) == 1
+
+
+def test_dataset_can_freeze_initial_belt_speed(tmp_path: Path) -> None:
+    record = _record("speed")
+    record["belt_speed_mps"] = 0.06
+    path = _write_source(tmp_path, "speed", record)
+
+    with pytest.raises(M0MobileError, match="belt_speed_mps"):
+        M0MobileDataset(
+            path,
+            tmp_path,
+            {"mean": [0.0] * 28, "std": [1.0] * 28},
+            expected_belt_speed_mps=0.08,
+        )
