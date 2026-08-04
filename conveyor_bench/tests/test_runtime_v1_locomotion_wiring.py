@@ -103,6 +103,12 @@ def test_runtime_locks_checkpoint_timing_and_cpu_fabric() -> None:
     assert "unexpected locomotion timing" in init_source
 
 
+def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
+
+    assert "'turn': 10.0" in source
+
+
 def test_runtime_writes_explicit_actuators_every_physics_substep() -> None:
     tree = _runtime_tree()
     run_episode = _method(tree, "_run_episode")

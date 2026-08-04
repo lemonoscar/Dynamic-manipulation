@@ -3492,7 +3492,11 @@ class ConveyorRuntimeV1:
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
             "retract": 6.0,
-            "turn": 5.0,
+            # The loaded negative-yaw turn settles more slowly than its
+            # positive-yaw counterpart.  Keep the same measured envelope as
+            # V2 so both sorting trays are reachable without weakening the
+            # heading or angular-speed gates.
+            "turn": 10.0,
             "navigate": 6.0,
             "settle": 4.0,
             "place": 15.0,
