@@ -3436,49 +3436,29 @@ class ConveyorRuntimeV1:
         return _MOBILE_NAVIGATE_SPEED_MPS
 
     def _mobile_navigation_yaw_error(self, root_pose: Pose) -> float:
-        """Return the heading error used while translating.
+        """Return the bearing error to the residual arc endpoint."""
 
-        V1 follows its audited constant-curvature arc and therefore keeps the
-        final carry yaw as the translation heading.  Remote V2 overrides this
-        hook with a closed-loop bearing to its explicit root goal.
-        """
-
-        assert self._mobile_goal_yaw_rad is not None
+        assert self._mobile_goal_root_xy is not None
+        delta_x = self._mobile_goal_root_xy[0] - root_pose.xyz[0]
+        delta_y = self._mobile_goal_root_xy[1] - root_pose.xyz[1]
+        goal_bearing = math.atan2(delta_y, delta_x)
         return _wrap_angle(
-            self._mobile_goal_yaw_rad - _yaw_from_wxyz(root_pose.wxyz)
+            goal_bearing - _yaw_from_wxyz(root_pose.wxyz)
         )
 
     def _mobile_navigate_forward_speed_mps(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> float:
-        del resolved
-        along_track, _ = self._mobile_navigation_errors(root_pose)
-        if abs(along_track) <= 0.02:
-            return 0.0
+        del resolved, root_pose
         # The loaded policy does not step reliably at the 0.16 m/s arc
         # command.  V2 validates 0.30 m/s with the same checkpoint.
-        return math.copysign(0.30, along_track)
+        return 0.30
 
     def _mobile_navigate_lateral_speed_mps(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> float:
-        del resolved
-        _, cross_track = self._mobile_navigation_errors(root_pose)
-        return max(-0.20, min(0.20, 1.5 * cross_track))
-
-    def _mobile_navigation_errors(
-        self, root_pose: Pose
-    ) -> tuple[float, float]:
-        """Project the root-goal error into the current body frame."""
-
-        assert self._mobile_goal_root_xy is not None
-        delta_x = self._mobile_goal_root_xy[0] - root_pose.xyz[0]
-        delta_y = self._mobile_goal_root_xy[1] - root_pose.xyz[1]
-        yaw = _yaw_from_wxyz(root_pose.wxyz)
-        return (
-            delta_x * math.cos(yaw) + delta_y * math.sin(yaw),
-            delta_x * -math.sin(yaw) + delta_y * math.cos(yaw),
-        )
+        del resolved, root_pose
+        return 0.0
 
     def _mobile_navigation_yaw_command(
         self,

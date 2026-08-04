@@ -120,10 +120,13 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
     lateral = ast.unparse(
         _method(_runtime_tree(), "_mobile_navigate_lateral_speed_mps")
     )
+    bearing = ast.unparse(
+        _method(_runtime_tree(), "_mobile_navigation_yaw_error")
+    )
     yaw = ast.unparse(_method(_runtime_tree(), "_mobile_navigation_yaw_command"))
-    assert "math.copysign(0.3, along_track)" in forward
-    assert "1.5 * cross_track" in lateral
-    assert "min(0.2" in lateral
+    assert "return 0.3" in forward
+    assert "return 0.0" in lateral
+    assert "math.atan2(delta_y, delta_x)" in bearing
     assert "1.5 * yaw_error_rad" in yaw
     assert "min(0.35" in yaw
 
