@@ -407,8 +407,14 @@ bulk 只补每格剩余的 `base+1 ... base+7`，共 112 条：
 python scripts/collect_v1_train_matrix.py \
   --phase bulk \
   --output-root /NEW/DATASET/v1-dynamic-train-128 \
-  --renderer-active-gpu VALIDATED_KIT_ORDINAL
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL \
+  --workers 2
 ```
+
+`--workers` 只对 bulk 生效。一个 coordinator 继续独占 `.matrix.lock`，每个 worker
+只写自己的 cell 和隔离的 TMP/XDG 运行目录；同一 wave 全部退出后，主线程才扫描、
+门禁并更新总账。首次在新服务器上固定从 2 开始，至少完成一个双 cell wave 且确认
+相机、导出、GPU UUID、显存回落都正常后才能提高；不要同时启动多个 matrix runner。
 
 中断后重复同一命令只补 canonical 中缺失的连续 seed 范围。若上次硬崩留下可见
 orphan、重复语义 seed、合同冲突或陈旧 `.matrix.lock`，runner 会停止，

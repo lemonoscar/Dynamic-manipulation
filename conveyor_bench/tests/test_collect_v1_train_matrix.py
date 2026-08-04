@@ -6,6 +6,8 @@ import json
 import random
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -301,3 +303,60 @@ def test_matrix_lock_is_cross_phase(tmp_path: Path) -> None:
     (tmp_path / ".matrix.lock").write_text("pid=1\n")
     with pytest.raises(matrix.MatrixError, match="already locked"):
         matrix.run_phase(tmp_path, "pilot", Path(sys.executable), 1)
+
+
+def test_bulk_two_worker_waves_collect_exactly_once_without_active_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for cell in matrix.cells():
+        _publish_episode(tmp_path, cell, "pilot", cell.base_seed)
+
+    real_scan = matrix.scan_phase
+    state_lock = threading.Lock()
+    state = {"active": 0, "max_active": 0}
+    commands: list[tuple[str, ...]] = []
+    worker_tmpdirs: set[str] = set()
+    cells_by_id = {cell.cell_id: cell for cell in matrix.cells()}
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "runtime"))
+
+    def fake_run(command, _log, *, env=None):
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        cell = cells_by_id[output_dir.name]
+        seed = int(command[command.index("--seed") + 1])
+        count = int(command[command.index("--episodes") + 1])
+        with state_lock:
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+            commands.append(tuple(command))
+            worker_tmpdirs.add(env["TMPDIR"])
+        time.sleep(0.01)
+        for episode_seed in range(seed, seed + count):
+            _publish_episode(tmp_path, cell, "bulk", episode_seed)
+        with state_lock:
+            state["active"] -= 1
+        return 0
+
+    def guarded_scan(root, phase):
+        with state_lock:
+            assert state["active"] == 0
+        return real_scan(root, phase)
+
+    monkeypatch.setattr(matrix, "_run", fake_run)
+    monkeypatch.setattr(matrix, "_gate_episode", lambda *_args: None)
+    monkeypatch.setattr(matrix, "scan_phase", guarded_scan)
+
+    matrix.run_phase(tmp_path, "bulk", Path(sys.executable), 3, workers=2)
+
+    observed = real_scan(tmp_path, "bulk")
+    assert len(observed) == 112
+    assert len(commands) == len(worker_tmpdirs) == 16
+    assert state["max_active"] == 2
+    assert not (tmp_path / ".matrix.lock").exists()
+
+
+def test_parallel_workers_are_bulk_only_and_positive(tmp_path: Path) -> None:
+    with pytest.raises(matrix.MatrixError, match="positive"):
+        matrix.run_phase(tmp_path, "bulk", Path(sys.executable), 1, workers=0)
+    with pytest.raises(matrix.MatrixError, match="only supported for bulk"):
+        matrix.run_phase(tmp_path, "pilot", Path(sys.executable), 1, workers=2)

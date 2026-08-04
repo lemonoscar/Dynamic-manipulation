@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import math
@@ -445,7 +446,12 @@ def _write_report(output_root: Path) -> None:
     )
 
 
-def _run(command: Sequence[str], log_path: Path) -> int:
+def _run(
+    command: Sequence[str],
+    log_path: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as log:
         log.write("$ " + " ".join(command) + "\n")
@@ -457,6 +463,7 @@ def _run(command: Sequence[str], log_path: Path) -> int:
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
+            env=env,
         )
         return completed.returncode
 
@@ -503,12 +510,115 @@ def _contiguous_ranges(values: Iterable[int]) -> tuple[tuple[int, int], ...]:
     return tuple(ranges)
 
 
+def _worker_environment(phase: str, cell: Cell) -> dict[str, str]:
+    environment = os.environ.copy()
+    suffix = Path("matrix-workers") / phase / cell.cell_id
+    for name in ("TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        base = environment.get(name)
+        if base is None:
+            continue
+        worker_root = Path(base) / suffix
+        worker_root.mkdir(parents=True, exist_ok=True)
+        environment[name] = str(worker_root)
+    return environment
+
+
+def _run_cell_ranges(
+    cell: Cell,
+    ranges: tuple[tuple[int, int], ...],
+    output_root: Path,
+    python: Path,
+    renderer_active_gpu: int,
+) -> int:
+    log = output_root / "bulk" / "logs" / f"{cell.cell_id}.log"
+    environment = _worker_environment("bulk", cell)
+    for start, count in ranges:
+        command = build_collection_command(
+            cell,
+            "bulk",
+            start,
+            count,
+            output_root,
+            python,
+            renderer_active_gpu,
+        )
+        returncode = _run(command, log, env=environment)
+        if returncode != 0:
+            return returncode
+    return 0
+
+
+def _run_bulk_parallel(
+    output_root: Path,
+    python: Path,
+    renderer_active_gpu: int,
+    workers: int,
+    observed: Mapping[int, EpisodeObservation],
+) -> None:
+    pending = [
+        (
+            cell,
+            _contiguous_ranges(set(cell.seeds("bulk")) - set(observed)),
+        )
+        for cell in cells()
+        if set(cell.seeds("bulk")) - set(observed)
+    ]
+    for offset in range(0, len(pending), workers):
+        wave = pending[offset : offset + workers]
+        with ThreadPoolExecutor(max_workers=len(wave)) as executor:
+            returncodes = tuple(
+                executor.map(
+                    lambda item: _run_cell_ranges(
+                        item[0], item[1], output_root, python, renderer_active_gpu
+                    ),
+                    wave,
+                )
+            )
+
+        # Global scans are intentionally delayed until every writer in the
+        # wave exits; an active collector owns an unpublished .inprogress dir.
+        refreshed = scan_phase(output_root, "bulk")
+        errors: list[str] = []
+        for (cell, ranges), returncode in zip(wave, returncodes, strict=True):
+            for start, count in ranges:
+                for seed in range(start, start + count):
+                    item = refreshed.get(seed)
+                    if item is None:
+                        errors.append(
+                            f"{cell.cell_id} did not publish seed {seed}"
+                        )
+                        continue
+                    if item.gated:
+                        continue
+                    try:
+                        _gate_episode(
+                            python,
+                            output_root / "bulk" / "cells" / cell.cell_id,
+                            item.path,
+                            output_root / "bulk" / "logs" / f"{cell.cell_id}.log",
+                        )
+                    except (MatrixError, OSError) as error:
+                        errors.append(f"{cell.cell_id} seed {seed}: {error}")
+            if returncode != 0:
+                errors.append(
+                    f"collector failed for {cell.cell_id} with code {returncode}"
+                )
+        _write_report(output_root)
+        if errors:
+            raise MatrixError("; ".join(errors))
+
+
 def run_phase(
     output_root: Path,
     phase: str,
     python: Path,
     renderer_active_gpu: int,
+    workers: int = 1,
 ) -> None:
+    if workers <= 0:
+        raise MatrixError("workers must be positive")
+    if phase == "pilot" and workers != 1:
+        raise MatrixError("parallel workers are only supported for bulk")
     output_root.mkdir(parents=True, exist_ok=True)
     lock_path = output_root / ".matrix.lock"
     try:
@@ -540,45 +650,54 @@ def run_phase(
                 )
         _write_report(output_root)
 
-        for cell in cells():
-            observed = scan_phase(output_root, phase)
-            missing = set(cell.seeds(phase)) - set(observed)
-            for start, count in _contiguous_ranges(missing):
-                command = build_collection_command(
-                    cell,
-                    phase,
-                    start,
-                    count,
-                    output_root,
-                    python,
-                    renderer_active_gpu,
-                )
-                log = output_root / phase / "logs" / f"{cell.cell_id}.log"
-                returncode = _run(command, log)
-                refreshed = scan_phase(output_root, phase)
-                for seed in range(start, start + count):
-                    item = refreshed.get(seed)
-                    if item is None:
-                        raise MatrixError(
-                            f"collector returned without publishing seed {seed}"
-                        )
-                    if not item.gated:
-                        _gate_episode(
-                            python,
-                            output_root / phase / "cells" / cell.cell_id,
-                            item.path,
-                            log,
-                        )
-                _write_report(output_root)
-                if returncode != 0:
-                    raise MatrixError(
-                        f"collector failed for {cell.cell_id} with code {returncode}"
+        if phase == "bulk" and workers > 1:
+            _run_bulk_parallel(
+                output_root,
+                python,
+                renderer_active_gpu,
+                workers,
+                observed,
+            )
+        else:
+            for cell in cells():
+                observed = scan_phase(output_root, phase)
+                missing = set(cell.seeds(phase)) - set(observed)
+                for start, count in _contiguous_ranges(missing):
+                    command = build_collection_command(
+                        cell,
+                        phase,
+                        start,
+                        count,
+                        output_root,
+                        python,
+                        renderer_active_gpu,
                     )
-                if phase == "pilot" and any(
-                    not refreshed[seed].success
-                    for seed in range(start, start + count)
-                ):
-                    raise MatrixError(f"pilot task failed for {cell.cell_id}")
+                    log = output_root / phase / "logs" / f"{cell.cell_id}.log"
+                    returncode = _run(command, log)
+                    refreshed = scan_phase(output_root, phase)
+                    for seed in range(start, start + count):
+                        item = refreshed.get(seed)
+                        if item is None:
+                            raise MatrixError(
+                                f"collector returned without publishing seed {seed}"
+                            )
+                        if not item.gated:
+                            _gate_episode(
+                                python,
+                                output_root / phase / "cells" / cell.cell_id,
+                                item.path,
+                                log,
+                            )
+                    _write_report(output_root)
+                    if returncode != 0:
+                        raise MatrixError(
+                            f"collector failed for {cell.cell_id} with code {returncode}"
+                        )
+                    if phase == "pilot" and any(
+                        not refreshed[seed].success
+                        for seed in range(start, start + count)
+                    ):
+                        raise MatrixError(f"pilot task failed for {cell.cell_id}")
         if phase == "pilot":
             assert_pilot_ready(output_root)
         _write_report(output_root)
@@ -593,6 +712,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--renderer-active-gpu", type=int, required=True)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -601,6 +721,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.renderer_active_gpu < 0:
         raise SystemExit("--renderer-active-gpu must be non-negative")
+    if args.workers <= 0:
+        raise SystemExit("--workers must be positive")
+    if args.phase == "pilot" and args.workers != 1:
+        raise SystemExit("--workers greater than one is only supported for bulk")
     output_root = args.output_root.expanduser().resolve()
     python = args.python.expanduser().resolve()
     if args.dry_run:
@@ -619,7 +743,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"phase": args.phase, "commands": commands}, indent=2))
         return 0
     try:
-        run_phase(output_root, args.phase, python, args.renderer_active_gpu)
+        run_phase(
+            output_root,
+            args.phase,
+            python,
+            args.renderer_active_gpu,
+            args.workers,
+        )
     except (MatrixError, OSError) as error:
         print(f"collect_v1_train_matrix: {error}", file=sys.stderr)
         return 2
