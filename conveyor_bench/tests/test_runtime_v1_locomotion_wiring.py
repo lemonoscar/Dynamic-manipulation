@@ -114,6 +114,19 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
 
     assert "return 'navigate'" in source
 
+    forward = ast.unparse(
+        _method(_runtime_tree(), "_mobile_navigate_forward_speed_mps")
+    )
+    lateral = ast.unparse(
+        _method(_runtime_tree(), "_mobile_navigate_lateral_speed_mps")
+    )
+    yaw = ast.unparse(_method(_runtime_tree(), "_mobile_navigation_yaw_command"))
+    assert "math.copysign(0.3, along_track)" in forward
+    assert "1.5 * cross_track" in lateral
+    assert "min(0.2" in lateral
+    assert "1.5 * yaw_error_rad" in yaw
+    assert "min(0.35" in yaw
+
 
 def test_runtime_writes_explicit_actuators_every_physics_substep() -> None:
     tree = _runtime_tree()

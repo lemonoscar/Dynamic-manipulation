@@ -3451,14 +3451,34 @@ class ConveyorRuntimeV1:
     def _mobile_navigate_forward_speed_mps(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> float:
-        del resolved, root_pose
-        return _MOBILE_NAVIGATE_SPEED_MPS
+        del resolved
+        along_track, _ = self._mobile_navigation_errors(root_pose)
+        if abs(along_track) <= 0.02:
+            return 0.0
+        # The loaded policy does not step reliably at the 0.16 m/s arc
+        # command.  V2 validates 0.30 m/s with the same checkpoint.
+        return math.copysign(0.30, along_track)
 
     def _mobile_navigate_lateral_speed_mps(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> float:
-        del resolved, root_pose
-        return 0.0
+        del resolved
+        _, cross_track = self._mobile_navigation_errors(root_pose)
+        return max(-0.20, min(0.20, 1.5 * cross_track))
+
+    def _mobile_navigation_errors(
+        self, root_pose: Pose
+    ) -> tuple[float, float]:
+        """Project the root-goal error into the current body frame."""
+
+        assert self._mobile_goal_root_xy is not None
+        delta_x = self._mobile_goal_root_xy[0] - root_pose.xyz[0]
+        delta_y = self._mobile_goal_root_xy[1] - root_pose.xyz[1]
+        yaw = _yaw_from_wxyz(root_pose.wxyz)
+        return (
+            delta_x * math.cos(yaw) + delta_y * math.sin(yaw),
+            delta_x * -math.sin(yaw) + delta_y * math.cos(yaw),
+        )
 
     def _mobile_navigation_yaw_command(
         self,
@@ -3466,7 +3486,7 @@ class ConveyorRuntimeV1:
         yaw_error_rad: float,
     ) -> float:
         del resolved
-        return max(-0.15, min(0.15, 0.8 * yaw_error_rad))
+        return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
 
     def _mobile_turn_angular_speed_tolerance_radps(
         self, resolved: _ResolvedTask
