@@ -109,6 +109,12 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     assert "'turn': 10.0" in source
 
 
+def test_v1_carry_closes_the_measured_arc_position_error() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_mobile_post_turn_stage"))
+
+    assert "return 'navigate'" in source
+
+
 def test_runtime_writes_explicit_actuators_every_physics_substep() -> None:
     tree = _runtime_tree()
     run_episode = _method(tree, "_run_episode")

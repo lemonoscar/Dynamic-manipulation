@@ -3400,7 +3400,10 @@ class ConveyorRuntimeV1:
 
     def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:
         del resolved
-        return "settle"
+        # The loaded locomotion policy under-travels the idealized arc,
+        # especially for negative yaw.  Close the residual root-position
+        # error before extending the arm toward either sorting tray.
+        return "navigate"
 
     def _mobile_continue_carry_before_place(
         self, resolved: _ResolvedTask, oracle_phase: str
