@@ -3020,6 +3020,9 @@ class ConveyorRuntimeV1:
                 # the part about 50 mm above the pad center and must be allowed
                 # to slide around it before the jaw closes.
                 close_on_target_contact=False,
+                release_from_high_goal=(
+                    self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
+                ),
                 pregrasp_clearance_m=0.10,
                 # The release pose is already above the tray rim.  This extra
                 # clearance keeps the lowest registered part above the

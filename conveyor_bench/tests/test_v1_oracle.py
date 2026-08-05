@@ -445,3 +445,38 @@ def test_episode_and_phase_timeouts_are_explicit_failures() -> None:
 
 def test_trace_is_deterministic_for_identical_observations() -> None:
     assert run_success_trace() == run_success_trace()
+
+
+def test_high_goal_drop_opens_without_entering_the_tray() -> None:
+    oracle = DynamicSortOracle(
+        replace(config(), release_from_high_goal=True)
+    )
+    oracle._transition(OraclePhase.PREPLACE, 0.0)
+    high_goal = oracle._goal_high_position()
+
+    command = oracle.step(
+        observation(
+            0.06,
+            tcp_position_world=high_goal,
+            target_held=True,
+        )
+    )
+
+    assert command.phase is OraclePhase.OPEN
+    assert command.gripper_command == 1.0
+    assert _position(command) == pytest.approx(high_goal)
+
+    command = oracle.step(
+        observation(
+            0.07,
+            tcp_position_world=high_goal,
+            target_held=True,
+        )
+    )
+    assert command.phase is OraclePhase.OPEN
+    assert _position(command) == pytest.approx(high_goal)
+
+
+def test_high_goal_drop_flag_requires_a_bool() -> None:
+    with pytest.raises(ValueError, match="release_from_high_goal"):
+        replace(config(), release_from_high_goal=1)

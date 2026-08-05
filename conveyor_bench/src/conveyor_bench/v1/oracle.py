@@ -62,6 +62,7 @@ class OracleConfig:
     intercept_staging_y_world: float | None = None
     intercept_entry_tolerance_m: float = 0.05
     close_on_target_contact: bool = False
+    release_from_high_goal: bool = False
     pregrasp_clearance_m: float = 0.12
     safe_carry_clearance_m: float = 0.16
     position_tolerance_m: float = 0.015
@@ -87,6 +88,8 @@ class OracleConfig:
             raise ValueError("robot_mode must be a RobotMode")
         if not isinstance(self.close_on_target_contact, bool):
             raise ValueError("close_on_target_contact must be a bool")
+        if not isinstance(self.release_from_high_goal, bool):
+            raise ValueError("release_from_high_goal must be a bool")
         _validate_vector(self.goal_center_world, 3, "goal_center_world")
         _validate_vector(self.grasp_offset_world, 3, "grasp_offset_world")
         _validate_vector(self.tcp_orientation_wxyz, 4, "tcp_orientation_wxyz")
@@ -402,6 +405,9 @@ class DynamicSortOracle:
                 self._near(observation.tcp_position_world, high_goal)
                 and phase_elapsed >= self.config.preplace_dwell_s
             ):
+                if self.config.release_from_high_goal:
+                    self._transition(OraclePhase.OPEN, observation.sim_time_s)
+                    return self._command(high_goal, gripper_command=1.0)
                 self._transition(
                     OraclePhase.PLACE_DESCEND, observation.sim_time_s
                 )
@@ -428,7 +434,10 @@ class DynamicSortOracle:
             if phase_elapsed >= self.config.release_timeout_s:
                 return self._fail(observation, "release_timeout")
             return self._command(
-                self._place_position(), gripper_command=1.0
+                high_goal
+                if self.config.release_from_high_goal
+                else self._place_position(),
+                gripper_command=1.0,
             )
 
         if self.phase is OraclePhase.RETREAT:
