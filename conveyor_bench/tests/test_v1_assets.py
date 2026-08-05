@@ -33,6 +33,17 @@ def test_object_registry_has_eight_distinct_geometry_assets() -> None:
     assert all(asset.nominal_height_m > 0.0 for asset in assets)
 
 
+def test_round_bushing_has_calibrated_rolling_resistance() -> None:
+    assets = {asset.object_id: asset for asset in load_object_registry()}
+
+    assert assets["part_yellow_bushing"].angular_damping == pytest.approx(1.0)
+    assert all(
+        asset.angular_damping == 0.0
+        for object_id, asset in assets.items()
+        if object_id != "part_yellow_bushing"
+    )
+
+
 def test_compound_geometry_extent_includes_offsets() -> None:
     assets = {asset.object_id: asset for asset in load_object_registry()}
     flange = assets["part_orange_flange"]

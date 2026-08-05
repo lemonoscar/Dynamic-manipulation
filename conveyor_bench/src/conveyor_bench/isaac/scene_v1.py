@@ -752,6 +752,7 @@ def _object_cfg(index: int, asset: ObjectAsset) -> RigidObjectCfg:
             mass_props=sim_utils.MassPropertiesCfg(mass=asset.mass_kg),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
+                angular_damping=asset.angular_damping,
                 max_linear_velocity=5.0,
                 max_angular_velocity=20.0,
                 max_depenetration_velocity=2.0,

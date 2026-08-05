@@ -23,7 +23,10 @@ then freezes three mutually exclusive curriculum partitions:
 - `val`: silver hex and orange flange;
 - `unseen`: purple bracket and cyan gear.
 
-Every entry freezes language aliases, mass, friction, stable poses and a primary
-parallel-jaw grasp affordance. All dimensions use metres and all masses use
-kilograms. Runtime manifests preserve both the coarse registry split and the
-three-way curriculum split; exporters may not reassign either.
+Every entry freezes language aliases, mass, friction, optional calibrated rigid
+body damping, stable poses and a primary parallel-jaw grasp affordance. The
+upright yellow bushing uses angular damping to model the rolling resistance
+that prevents a polymer cylinder from rolling forever after a tray drop. All
+dimensions use metres and all masses use kilograms. Runtime manifests preserve
+both the coarse registry split and the three-way curriculum split; exporters
+may not reassign either.

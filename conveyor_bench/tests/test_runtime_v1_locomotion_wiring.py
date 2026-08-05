@@ -140,6 +140,15 @@ def test_mobile_place_orientation_uses_the_live_tcp_state() -> None:
     assert "seed=self._arm_ik_seed" in source
 
 
+def test_scene_applies_registry_rigid_body_damping() -> None:
+    scene_path = (
+        PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "scene_v1.py"
+    )
+    scene_source = scene_path.read_text(encoding="utf-8")
+
+    assert "angular_damping=asset.angular_damping" in scene_source
+
+
 def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 

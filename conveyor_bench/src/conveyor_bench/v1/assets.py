@@ -121,6 +121,7 @@ class ObjectAsset:
     static_friction: float
     dynamic_friction: float
     restitution: float
+    angular_damping: float
     stable_poses_wxyz: tuple[tuple[float, float, float, float], ...]
     grasp_affordances: tuple[GraspAffordance, ...]
     split: str
@@ -173,6 +174,7 @@ class ObjectAsset:
                 physics.get("dynamic_friction"), "dynamic_friction"
             ),
             restitution=float(physics.get("restitution", 0.0)),
+            angular_damping=float(physics.get("angular_damping", 0.0)),
             stable_poses_wxyz=resolved_poses,
             grasp_affordances=tuple(
                 GraspAffordance.from_dict(affordance)
@@ -197,6 +199,11 @@ class ObjectAsset:
             raise ValueError(f"unsupported split: {asset.split}")
         if not math.isfinite(asset.restitution) or not 0.0 <= asset.restitution <= 1.0:
             raise ValueError("restitution must be in [0, 1]")
+        if (
+            not math.isfinite(asset.angular_damping)
+            or asset.angular_damping < 0.0
+        ):
+            raise ValueError("angular_damping must be finite and non-negative")
         if not all(asset.language_aliases.values()):
             raise ValueError("each language must provide at least one alias")
         return asset
