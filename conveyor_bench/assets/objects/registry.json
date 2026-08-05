@@ -103,7 +103,7 @@
         "static_friction": 1.20,
         "dynamic_friction": 1.00,
         "restitution": 0.0,
-        "angular_damping": 1.0
+        "angular_damping": 5.0
       },
       "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
       "grasp_affordances": [

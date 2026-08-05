@@ -2,7 +2,7 @@
   "schema_version": "conveyor-bench-asset-lock-v1",
   "generated_for": "conveyor-bench-v2",
   "files": {
-    "objects/registry.json": "261fcec3a42d4f7de1d0a45fe158679abff5fc23a4c73bc2f14387bd581220ac",
+    "objects/registry.json": "62105680e42add9d065d27c7e14dd33d45256b65b560a5d97b8b4f8eebcaf82a",
     "policies/go2_x5_pct_dog_only/PROVENANCE.md": "200bfc2283a9e562f222ea2290ec1371ac1299e451b06f73be66a3741318c2a5",
     "policies/go2_x5_pct_dog_only/contract.json": "3d4104d838626e53acaf1048e4f5bfe9653b7e430e9985cac8741fb98a9f3f3b",
     "policies/go2_x5_pct_dog_only/policy.pt": "f02e6467472e90671a28d97cd6dc02ed7fdeb59d2ece18e082f254314558d383",
