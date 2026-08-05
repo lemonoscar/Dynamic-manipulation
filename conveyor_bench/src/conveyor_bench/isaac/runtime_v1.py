@@ -812,7 +812,6 @@ class ConveyorRuntimeV1:
         self._last_policy_action = torch.zeros(
             (1, 12), dtype=torch.float32, device=self.sim.device
         )
-        self._mobile_stance_policy_action: torch.Tensor | None = None
         self._locomotion_policy_step_count = 0
         self._mobile_stable_since_s: float | None = None
         self.locomotion_policy = (
@@ -2819,7 +2818,6 @@ class ConveyorRuntimeV1:
         self._mobile_carry_orientation_base_wxyz: (
             tuple[float, float, float, float] | None
         ) = None
-        self._mobile_stance_policy_action = None
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
@@ -3605,18 +3603,6 @@ class ConveyorRuntimeV1:
     def _transition_mobile_carry(
         self, stage: str, sim_time_s: float
     ) -> None:
-        if (
-            stage == "place"
-            and self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
-        ):
-            # Switch from locomotion to stance manipulation only after the
-            # loaded policy has satisfied the settle dwell.  Holding that
-            # physically reached policy action prevents zero-command actor
-            # drift while the arm moves outside the locomotion checkpoint's
-            # nominal posture; the floating root remains fully simulated.
-            self._mobile_stance_policy_action = (
-                self._last_policy_action.detach().clone()
-            )
         self._mobile_carry_stage = stage
         self._mobile_carry_stage_started_s = sim_time_s
         self._mobile_carry_stable_since_s = None
@@ -4155,20 +4141,6 @@ class ConveyorRuntimeV1:
                 joint_ids=self.leg_joint_ids,
             )
             return (0.0,) * 12
-        if (
-            self._mobile_carry_stage == "place"
-            and self._mobile_stance_policy_action is not None
-        ):
-            applied_action = self._mobile_stance_policy_action
-            self.robot.set_joint_position_target(
-                leg_target(applied_action),
-                joint_ids=self.locomotion_action_joint_ids,
-            )
-            self._last_policy_action = applied_action
-            return tuple(
-                float(value)
-                for value in applied_action[0].detach().cpu().tolist()
-            )
         assert self.locomotion_policy is not None
         command_tensor = torch.tensor(
             [command], dtype=torch.float32, device=self.sim.device
@@ -4500,14 +4472,6 @@ class ConveyorRuntimeV1:
                 },
                 "base_command_body": base_command,
                 "locomotion_policy_action": policy_action,
-                "locomotion_control_mode": (
-                    "frozen_stance"
-                    if (
-                        self._mobile_carry_stage == "place"
-                        and self._mobile_stance_policy_action is not None
-                    )
-                    else "policy"
-                ),
                 "oracle_next_tcp_target_base_xyz": oracle_target_base,
                 "held_instance_id": self._held_instance_id,
                 "root_tilt_rad": state["root_tilt_rad"],

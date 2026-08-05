@@ -190,21 +190,6 @@ def test_mobile_carry_recovers_until_the_physical_fall_gate() -> None:
     )
 
 
-def test_mobile_place_holds_the_settled_policy_stance() -> None:
-    transition = ast.unparse(
-        _method(_runtime_tree(), "_transition_mobile_carry")
-    )
-    apply_base = ast.unparse(_method(_runtime_tree(), "_apply_base_command"))
-    sample = ast.unparse(_method(_runtime_tree(), "_make_sample"))
-
-    assert "stage == 'place'" in transition
-    assert "self._last_policy_action.detach().clone()" in transition
-    assert "self._mobile_carry_stage == 'place'" in apply_base
-    assert "leg_target(applied_action)" in apply_base
-    assert "'locomotion_control_mode'" in sample
-    assert "'frozen_stance'" in sample
-
-
 def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
     tree = _runtime_tree()
     arm = _literal_constant(tree, "_MOBILE_COMPACT_ARM")
