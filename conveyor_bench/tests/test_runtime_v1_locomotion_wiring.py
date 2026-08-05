@@ -130,7 +130,7 @@ def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
         arm
     )
 
-    assert arm == pytest.approx((0.0, 0.6, 0.6, 0.0, 0.0, 0.0))
+    assert arm == pytest.approx((0.0, 0.3, 0.5, 0.0, 0.0, 0.0))
     assert frozen_tcp == pytest.approx(computed_tcp, abs=1.0e-12)
 
 
@@ -158,7 +158,7 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
         )
     )
     carry = ast.unparse(_method(_runtime_tree(), "_mobile_carry_command"))
-    assert "return 0.3" in forward
+    assert "return 0.2" in forward
     assert "return 0.0" in lateral
     assert "math.atan2(delta_y, delta_x)" in bearing
     assert "_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD" in drive_tolerance

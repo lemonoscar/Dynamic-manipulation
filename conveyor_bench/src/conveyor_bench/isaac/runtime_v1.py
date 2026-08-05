@@ -151,15 +151,15 @@ _LOCOMOTION_STABLE_DWELL_S = 0.50
 _LOCOMOTION_APPROACH_TIMEOUT_S = 3.0
 _LOCOMOTION_STABILIZE_TIMEOUT_S = 2.0
 _ARM_PREPOSITION_TIMEOUT_S = 5.0
-# Deterministic joint-space carry posture.  Keep it close to the locomotion
-# checkpoint's nominal arm command (0.3, 0.5) so the loaded gait stays inside
-# its training distribution, while retaining enough forward clearance for the
-# payload.  Values and the policy-USD-root TCP pose are frozen together.
-_MOBILE_COMPACT_ARM = (0.0, 0.6, 0.6, 0.0, 0.0, 0.0)
+# Deterministic joint-space carry posture.  Match the locomotion checkpoint's
+# nominal arm command so the loaded gait stays inside its training
+# distribution.  The TCP remains above and ahead of the robot head.  Values
+# and the policy-USD-root TCP pose are frozen together.
+_MOBILE_COMPACT_ARM = (0.0, 0.3, 0.5, 0.0, 0.0, 0.0)
 _MOBILE_COMPACT_TCP_BASE = (
-    0.3887788676638449,
-    -0.0005034200000000377,
-    0.35538014297628934,
+    0.33408005978022093,
+    -0.0005034200000000335,
+    0.3754378962727706,
 )
 _MOBILE_GOAL_STANDOFF_M = 0.38
 _MOBILE_CARRY_SETTLE_S = 0.40
@@ -3471,9 +3471,9 @@ class ConveyorRuntimeV1:
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> float:
         del resolved, root_pose
-        # The loaded policy does not step reliably at the 0.16 m/s arc
-        # command.  V2 validates 0.30 m/s with the same checkpoint.
-        return 0.30
+        # Reuse the pure-forward command validated by the same episode's
+        # mobile-approach phase at the checkpoint's nominal arm posture.
+        return 0.20
 
     def _mobile_navigate_lateral_speed_mps(
         self, resolved: _ResolvedTask, root_pose: Pose
