@@ -161,11 +161,8 @@ _MOBILE_COMPACT_TCP_BASE = (
     -0.0005034200000000335,
     0.3754378962727706,
 )
-_MOBILE_GOAL_STANDOFF_M = 0.38
 _MOBILE_CARRY_SETTLE_S = 0.40
-_MOBILE_CARRY_ARC_YAW_RAD = 0.45
 _MOBILE_TURN_RATE_RADPS = 0.35
-_MOBILE_NAVIGATE_SPEED_MPS = 0.16
 # The post-turn residual is a chord to the planned arc endpoint, so its
 # bearing is not identical to the final arc yaw.  The measured negative-yaw
 # replay starts navigation at 0.193 rad heading error but only 0.030 m of
@@ -3436,25 +3433,14 @@ class ConveyorRuntimeV1:
     def _plan_mobile_carry_goal(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> tuple[float, tuple[float, float]]:
-        """Return the validated short-arc goal used by the V1 mobile task."""
+        """Face the selected tray before switching to stance manipulation."""
 
-        current_yaw = _yaw_from_wxyz(root_pose.wxyz)
-        turn_sign = math.copysign(
-            1.0,
-            resolved.target_zone.center_xyz_m[1] - root_pose.xyz[1],
+        goal_x, goal_y, _ = resolved.target_zone.center_xyz_m
+        goal_yaw = math.atan2(
+            goal_y - root_pose.xyz[1],
+            goal_x - root_pose.xyz[0],
         )
-        goal_yaw = _wrap_angle(
-            current_yaw + turn_sign * _MOBILE_CARRY_ARC_YAW_RAD
-        )
-        signed_rate = turn_sign * _MOBILE_TURN_RATE_RADPS
-        radius = _MOBILE_NAVIGATE_SPEED_MPS / signed_rate
-        goal_root_xy = (
-            root_pose.xyz[0]
-            + radius * (math.sin(goal_yaw) - math.sin(current_yaw)),
-            root_pose.xyz[1]
-            - radius * (math.cos(goal_yaw) - math.cos(current_yaw)),
-        )
-        return goal_yaw, goal_root_xy
+        return goal_yaw, (root_pose.xyz[0], root_pose.xyz[1])
 
     def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:
         del resolved
@@ -3492,7 +3478,10 @@ class ConveyorRuntimeV1:
         self, resolved: _ResolvedTask
     ) -> float:
         del resolved
-        return _MOBILE_NAVIGATE_SPEED_MPS
+        # Keep the compact loaded arm over the support polygon and rotate in
+        # place.  The same checkpoint/robot pair executes this maneuver in the
+        # validated V2 remote-delivery task.
+        return 0.0
 
     def _mobile_navigation_yaw_error(self, root_pose: Pose) -> float:
         """Return the bearing error to the residual arc endpoint."""

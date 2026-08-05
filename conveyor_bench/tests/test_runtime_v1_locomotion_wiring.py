@@ -252,6 +252,18 @@ def test_v1_carry_places_from_the_measured_loaded_turn_endpoint() -> None:
     assert "min(0.35" in yaw
 
 
+def test_v1_carry_faces_the_tray_before_stance_manipulation() -> None:
+    plan = ast.unparse(_method(_runtime_tree(), "_plan_mobile_carry_goal"))
+    turn_speed = ast.unparse(
+        _method(_runtime_tree(), "_mobile_turn_forward_speed_mps")
+    )
+
+    assert "resolved.target_zone.center_xyz_m" in plan
+    assert "math.atan2" in plan
+    assert "return goal_yaw, (root_pose.xyz[0], root_pose.xyz[1])" in plan
+    assert "return 0.0" in turn_speed
+
+
 def test_runtime_writes_explicit_actuators_every_physics_substep() -> None:
     tree = _runtime_tree()
     run_episode = _method(tree, "_run_episode")
