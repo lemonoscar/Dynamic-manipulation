@@ -149,6 +149,14 @@ def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     assert "safe_carry_clearance_m=0.025" in source
 
 
+def test_high_goal_verify_holds_the_reached_joint_target() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_run_episode"))
+
+    assert "phase == 'verify_place'" in source
+    assert "self._hold_arm_target()" in source
+    assert "last_command_target_base = state_before['tcp_base'].xyz" in source
+
+
 def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
 

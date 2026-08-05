@@ -429,7 +429,12 @@ class DynamicSortOracle:
 
         if self.phase is OraclePhase.OPEN:
             if observation.target_released:
-                self._transition(OraclePhase.RETREAT, observation.sim_time_s)
+                self._transition(
+                    OraclePhase.VERIFY_PLACE
+                    if self.config.release_from_high_goal
+                    else OraclePhase.RETREAT,
+                    observation.sim_time_s,
+                )
                 return self._command(high_goal, gripper_command=1.0)
             if phase_elapsed >= self.config.release_timeout_s:
                 return self._fail(observation, "release_timeout")

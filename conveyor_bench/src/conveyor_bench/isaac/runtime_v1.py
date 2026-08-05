@@ -1445,7 +1445,21 @@ class ConveyorRuntimeV1:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase in {"retreat", "verify_place"}
+                        and phase == "verify_place"
+                    ):
+                        # A high-goal drop is already clear of the tray.  Hold
+                        # the reached joint target while gravity and the
+                        # scorer verify the released part; resolving another
+                        # Cartesian target here can destabilize the floating
+                        # base after the task has physically succeeded.
+                        self._hold_arm_target()
+                        canonical_ee_delta = (0.0, 0.0, 0.0)
+                        canonical_rotvec = (0.0, 0.0, 0.0)
+                        last_command_target_base = state_before["tcp_base"].xyz
+                    elif (
+                        self.options.robot_mode
+                        is RobotMode.WHOLE_BODY_POLICY
+                        and phase == "retreat"
                     ):
                         (
                             canonical_ee_delta,

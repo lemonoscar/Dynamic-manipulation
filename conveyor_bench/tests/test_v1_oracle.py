@@ -477,6 +477,17 @@ def test_high_goal_drop_opens_without_entering_the_tray() -> None:
     assert command.phase is OraclePhase.OPEN
     assert _position(command) == pytest.approx(high_goal)
 
+    command = oracle.step(
+        observation(
+            0.08,
+            tcp_position_world=high_goal,
+            target_released=True,
+        )
+    )
+    assert command.phase is OraclePhase.VERIFY_PLACE
+    assert command.gripper_command == 1.0
+    assert _position(command) == pytest.approx(high_goal)
+
 
 def test_high_goal_drop_flag_requires_a_bool() -> None:
     with pytest.raises(ValueError, match="release_from_high_goal"):
