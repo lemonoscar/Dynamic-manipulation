@@ -2984,7 +2984,7 @@ class ConveyorRuntimeV1:
             resolved.target_zone.floor_top_z_m
             + resolved.target_zone.wall_height_m
             + asset.half_extents_xyz[2]
-            + 0.015
+            + 0.090
         )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
@@ -2992,8 +2992,8 @@ class ConveyorRuntimeV1:
         # enough wall clearance for the full 48 mm target, not merely its
         # center point. This avoids the X5 lateral workspace boundary after
         # the short mobile carry arc for both mirrored sorting trays.
-        reachable_release_x = zone_x + 0.06
-        reachable_release_y = zone_y - math.copysign(0.09, zone_y)
+        reachable_release_x = zone_x + 0.03
+        reachable_release_y = zone_y - math.copysign(0.10, zone_y)
         oracle = DynamicSortOracle(
             OracleConfig(
                 target_object_id=asset.object_id,
