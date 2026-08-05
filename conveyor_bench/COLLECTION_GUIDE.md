@@ -377,10 +377,11 @@ strict validator 和 quality 通过，其三路图像仍被 camera gate 判为�
 `collect_v1_train_matrix.py`，它会从 canonical manifest/summary 重建恢复状态，
 拒绝重复或冲突 seed、可见 orphan episode 和并发写入，并在每条 episode 后依次
 执行 strict validator、quality audit、temporal camera gate 与三个 profile 导出。
-runner 启动时还会冻结当前可执行源码树 SHA-256；dry-run 与 `matrix_report.json`
-都会记录该指纹，任何恢复出的 episode 指纹不完全一致都会立即停止。源码发生
-变化后，旧 output root 只保留作审计证据，必须换一个全新的 output root 重跑
-pilot，不能混用、覆盖或手工改 manifest。
+runner 启动时还会冻结当前可执行源码树 SHA-256 和 V1 资产锁 SHA-256；dry-run 与
+`matrix_report.json` 都会记录这两个指纹，任何恢复出的 episode 只要有一个指纹
+不完全一致就会立即停止。源码或动力学资产发生变化后，旧 output root 只保留作
+审计证据，必须换一个全新的 output root 重跑 pilot，不能混用、覆盖或手工改
+manifest。
 
 先查看不会启动 Isaac 的冻结命令：
 
@@ -401,7 +402,9 @@ python scripts/collect_v1_train_matrix.py \
 python scripts/collect_v1_train_matrix.py \
   --phase pilot \
   --output-root /NEW/DATASET/v1-dynamic-train-128 \
-  --renderer-active-gpu VALIDATED_KIT_ORDINAL
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL_0 \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL_1 \
+  --workers 2
 ```
 
 只有 runner 自己判定 pilot barrier 通过，才可在同一个 output root 启动 bulk；
@@ -411,14 +414,17 @@ bulk 只补每格剩余的 `base+1 ... base+7`，共 112 条：
 python scripts/collect_v1_train_matrix.py \
   --phase bulk \
   --output-root /NEW/DATASET/v1-dynamic-train-128 \
-  --renderer-active-gpu VALIDATED_KIT_ORDINAL \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL_0 \
+  --renderer-active-gpu VALIDATED_KIT_ORDINAL_1 \
   --workers 2
 ```
 
-`--workers` 只对 bulk 生效。一个 coordinator 继续独占 `.matrix.lock`，每个 worker
-只写自己的 cell 和隔离的 TMP/XDG 运行目录；同一 wave 全部退出后，主线程才扫描、
-门禁并更新总账。首次在新服务器上固定从 2 开始，至少完成一个双 cell wave 且确认
-相机、导出、GPU UUID、显存回落都正常后才能提高；不要同时启动多个 matrix runner。
+`--workers` 对 pilot 和 bulk 都生效；每个重复的 `--renderer-active-gpu` 指定一个
+经过 Compatibility Checker 核对的 Kit ordinal。一个 coordinator 继续独占
+`.matrix.lock`，每个 worker 只写自己的 cell 和隔离的 TMP/XDG 运行目录；同一 wave
+全部退出后，主线程才扫描、门禁并更新总账。首次在新服务器上固定从 2 开始，至少
+完成一个双 cell wave 且确认相机、导出、GPU UUID、显存回落都正常后才能提高；
+不要同时启动多个 matrix runner。
 
 中断后重复同一命令只补 canonical 中缺失的连续 seed 范围。若上次硬崩留下可见
 orphan、重复语义 seed、合同冲突或陈旧 `.matrix.lock`，runner 会停止，

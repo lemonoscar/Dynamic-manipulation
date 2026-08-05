@@ -143,6 +143,35 @@ compatibility 包已安装，但首次 Kit 启动要求用户明确接受 NVIDIA
 采用单一写锁，从 canonical 数据恢复，拒绝重复/orphan/inprogress，并原子维护
 `matrix_report.json` 与训练候选清单。bulk 启动前会重新跑完 16 条 pilot 的四层门禁。
 
+## 2026-08-06 生产采集正在运行
+
+最终生产代码为 `2fa2f9c`。远端完整测试套件通过，GitHub `main` 已直接同步；生产
+源码树 SHA-256 为
+`81b4031b43a8ffe8ab11fde5dc99557a68112937f00790ed908370e08b7bddb1`，V1 资产锁
+SHA-256 为
+`3351a6cf3ef7bb65fcd44245541c8cd044d5fb3e65434b18ebfb9ee488b2e075`。matrix
+coordinator 会同时拒绝源码或资产锁不一致的断点数据，不能把旧调试 root 并入生产
+root。
+
+生产数据根目录是
+`/diff/wallx_workspace/dzb/dynamic-m0-mobile-runs-20260803/datasets/v1-dynamic-train-128-2fa2f9c-20260806-r1`。
+GPU2/3 上的 `v1-bulk-2fa2f9c-r1` tmux session 正在以两个 worker 采集。pilot 已
+16/16 物理成功、16/16 完整门禁、48/48 profile 导出哈希复核通过；截至
+2026-08-06 03:55 CST，bulk 首个双 cell wave 已 14/14 物理成功并完整门禁，第二个
+wave 已自动开始。`bulk-coordinator.log` 为 0 字节，失败 seed 为空。已发布的 30 条
+episode 约 4.23 GB，按当前均值投影 128 条约 18.0 GB；剩余采集预计约 80–100 分钟，
+受后续圆柱物体 settle 时间影响可能波动。
+
+GPU0/1 上运行的不是显存占位，而是 ABot-M0.5 `CloseToasterOvenDoor` 真实推理回放：
+server sessions 为 `abot-m05-gpu0-233619`、`abot-m05-gpu1-233619`，client sessions
+为 `abot-m05-client0-233619`、`abot-m05-client1-233619`。两个 server 持续处理
+KV-cache、video diffusion 和 action diffusion chunk，只使用前两张卡。不要终止上述
+六个生产/负载 session。采集总账查看命令：
+
+```bash
+ssh 4xH20 'python3 -c '\''import json; p=json.load(open("/diff/wallx_workspace/dzb/dynamic-m0-mobile-runs-20260803/datasets/v1-dynamic-train-128-2fa2f9c-20260806-r1/matrix_report.json")); print(json.dumps(p["phases"], indent=2))'\'''
+```
+
 ## 2026-08-05 采集修正
 
 首个生产 root 的两条成功 pilot 与第三条失败 pilot 来自不同 source-tree 指纹，
