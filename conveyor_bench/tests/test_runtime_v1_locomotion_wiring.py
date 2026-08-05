@@ -144,8 +144,9 @@ def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 
     assert "asset.half_extents_xyz[2] + 0.09" in source
-    assert "reachable_release_x = zone_x + 0.03" in source
+    assert "reachable_release_x = zone_x" in source
     assert "reachable_release_y = zone_y - math.copysign(0.1, zone_y)" in source
+    assert "safe_carry_clearance_m=0.025" in source
 
 
 def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:

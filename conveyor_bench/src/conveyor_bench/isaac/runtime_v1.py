@@ -2992,7 +2992,7 @@ class ConveyorRuntimeV1:
         # enough wall clearance for the full 48 mm target, not merely its
         # center point. This avoids the X5 lateral workspace boundary after
         # the short mobile carry arc for both mirrored sorting trays.
-        reachable_release_x = zone_x + 0.03
+        reachable_release_x = zone_x
         reachable_release_y = zone_y - math.copysign(0.10, zone_y)
         oracle = DynamicSortOracle(
             OracleConfig(
@@ -3021,9 +3021,11 @@ class ConveyorRuntimeV1:
                 # to slide around it before the jaw closes.
                 close_on_target_contact=False,
                 pregrasp_clearance_m=0.10,
-                # Clears the 0.555 m far rail with the tallest registered
-                # object while staying inside the well-conditioned X5 volume.
-                safe_carry_clearance_m=0.10,
+                # The release pose is already above the tray rim.  This extra
+                # clearance keeps the lowest registered part above the
+                # 0.555 m far rail while matching the measured loaded X5
+                # high-goal workspace.
+                safe_carry_clearance_m=0.025,
                 position_tolerance_m=0.020,
                 # The TCP is the center of the usable finger grasp region.
                 # Closing too high catches only the top edges and the part
