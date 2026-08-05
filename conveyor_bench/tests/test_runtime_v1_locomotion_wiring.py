@@ -166,6 +166,22 @@ def test_high_goal_verify_holds_the_reached_joint_target() -> None:
     assert "last_command_target_base = state_before['tcp_base'].xyz" in source
 
 
+def test_terminal_oracle_tick_cannot_run_an_extra_ik_solve() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_run_episode"))
+
+    terminal_hold = source.index("if oracle_command.terminal:")
+    verify_hold = source.index(
+        "elif self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY "
+        "and phase == 'verify_place':"
+    )
+    tcp_solve = source.index("self._apply_tcp_command(", terminal_hold)
+
+    assert terminal_hold < verify_hold < tcp_solve
+    terminal_source = source[terminal_hold:verify_hold]
+    assert "canonical_ee_delta = (0.0, 0.0, 0.0)" in terminal_source
+    assert "canonical_rotvec = (0.0, 0.0, 0.0)" in terminal_source
+
+
 def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
 

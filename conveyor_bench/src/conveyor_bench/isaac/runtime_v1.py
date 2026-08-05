@@ -1439,7 +1439,20 @@ class ConveyorRuntimeV1:
                         requested_base_command
                     )
                     gripper_open = oracle_command.gripper_command > 0.5
-                    if (
+                    if oracle_command.terminal:
+                        # The oracle can transition to COMPLETE on the same
+                        # tick that the physical placement dwell succeeds.
+                        # Do not solve one more Cartesian target after that
+                        # terminal decision: floating-base drift can make the
+                        # otherwise irrelevant high-goal pose unreachable and
+                        # incorrectly turn a scored success into a runtime
+                        # failure.  Holding also gives sequential tasks a
+                        # clean state before their explicit re-arm stage.
+                        self._hold_arm_target()
+                        canonical_ee_delta = (0.0, 0.0, 0.0)
+                        canonical_rotvec = (0.0, 0.0, 0.0)
+                        last_command_target_base = state_before["tcp_base"].xyz
+                    elif (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
                         and phase == "verify_place"
