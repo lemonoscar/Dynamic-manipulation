@@ -55,6 +55,8 @@ def test_v2_runtime_wires_offline_scenes_and_remote_navigation_contract() -> Non
     assert "delivery_root_goal_xy_m" in source
     assert "delivery_goal_yaw_rad" in source
     assert "return 0.0" in source
+    assert "_mobile_navigation_drive_heading_tolerance_rad" in source
+    assert "return 0.18" in source
     assert "_remote_navigation_errors" in source
     assert "math.copysign(0.3, along_track)" in source
     assert "1.5 * cross_track" in source

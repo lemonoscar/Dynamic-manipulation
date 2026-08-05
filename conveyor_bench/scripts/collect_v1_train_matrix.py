@@ -19,7 +19,13 @@ from uuid import uuid4
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = PROJECT_ROOT / "scripts"
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from conveyor_bench.v1.assets import source_tree_fingerprint  # noqa: E402
+
+
 SCHEMA_VERSION = "conveyor-bench-v1-train-matrix-1"
+SOURCE_TREE_FINGERPRINT = source_tree_fingerprint()
 BELT_SPEED_MPS = 0.06
 MAX_DURATION_S = 35.0
 ACTIVE_OBJECTS = 3
@@ -315,6 +321,13 @@ def scan_phase(output_root: Path, phase: str) -> dict[int, EpisodeObservation]:
                 raise MatrixError(f"orphan episode {episode}: missing {missing}")
             manifest = _read_json(episode / "manifest.json")
             episode_value = _mapping(manifest.get("episode"), "manifest.episode")
+            episode_metadata = _mapping(
+                episode_value.get("metadata"), "manifest.episode.metadata"
+            )
+            if episode_metadata.get("source_tree") != SOURCE_TREE_FINGERPRINT:
+                raise MatrixError(
+                    f"{episode} source tree fingerprint does not match collector"
+                )
             task = _mapping(episode_value.get("task"), "manifest.episode.task")
             metadata = _mapping(task.get("metadata"), "manifest.episode.task.metadata")
             seeds = _mapping(episode_value.get("seeds"), "manifest.episode.seeds")
@@ -431,6 +444,7 @@ def _write_report(output_root: Path) -> None:
         )
     report = {
         "schema_version": SCHEMA_VERSION,
+        "source_tree": SOURCE_TREE_FINGERPRINT,
         "belt_speed_mps": BELT_SPEED_MPS,
         "active_objects": ACTIVE_OBJECTS,
         "cells": [cell.__dict__ for cell in cells()],
@@ -740,7 +754,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for cell in cells()
         ]
-        print(json.dumps({"phase": args.phase, "commands": commands}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "phase": args.phase,
+                    "source_tree": SOURCE_TREE_FINGERPRINT,
+                    "commands": commands,
+                },
+                indent=2,
+            )
+        )
         return 0
     try:
         run_phase(

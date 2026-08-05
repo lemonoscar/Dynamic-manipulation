@@ -142,3 +142,12 @@ compatibility 包已安装，但首次 Kit 启动要求用户明确接受 NVIDIA
 生产入口是 `conveyor_bench/scripts/collect_v1_train_matrix.py`；它冻结 seed 矩阵、
 采用单一写锁，从 canonical 数据恢复，拒绝重复/orphan/inprogress，并原子维护
 `matrix_report.json` 与训练候选清单。bulk 启动前会重新跑完 16 条 pilot 的四层门禁。
+
+## 2026-08-05 采集修正
+
+首个生产 root 的两条成功 pilot 与第三条失败 pilot 来自不同 source-tree 指纹，
+因此该 root 只保留作审计证据，不再恢复或放量。collector 现已把启动时源码树
+指纹写入 dry-run/report，并拒绝任何不同指纹的 canonical episode。V1 负向
+carry navigation 同时前进和转向时出现带载停滞，现改为 `0.06 rad` 阈值内的
+stop-turn-drive；V2 原有 `0.18 rad` 远程导航合同保持不变。尚未启动新采集；
+GPU 可用后必须在新 output root 先复跑 yellow-bin seed 10202，再重跑 16-cell pilot。

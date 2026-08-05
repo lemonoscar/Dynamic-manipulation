@@ -161,6 +161,7 @@ _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_CARRY_ARC_YAW_RAD = 0.45
 _MOBILE_TURN_RATE_RADPS = 0.35
 _MOBILE_NAVIGATE_SPEED_MPS = 0.16
+_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.06
 # With the X5 shoulder mount offset, end-effector planar bearing is about
 # 0.74 * arm_joint1 around the compact carry posture.
 _MOBILE_ARM_Q1_PLANAR_GAIN = 0.74
@@ -3312,19 +3313,29 @@ class ConveyorRuntimeV1:
             yaw_command = self._mobile_navigation_yaw_command(
                 resolved, navigation_yaw_error
             )
-            forward_command = (
-                0.0
-                if abs(navigation_yaw_error) > 0.18
-                else self._mobile_navigate_forward_speed_mps(
-                    resolved, root_pose
+            # The loaded V1 policy stalled under a combined forward/negative-
+            # yaw command while carrying.  Turn first, then drive straight.
+            drive_heading_tolerance = (
+                self._mobile_navigation_drive_heading_tolerance_rad(
+                    resolved
                 )
             )
-            lateral_command = (
-                0.0
-                if abs(navigation_yaw_error) > 0.18
-                else self._mobile_navigate_lateral_speed_mps(
+            drive_enabled = (
+                abs(navigation_yaw_error) <= drive_heading_tolerance
+            )
+            forward_command = (
+                self._mobile_navigate_forward_speed_mps(
                     resolved, root_pose
                 )
+                if drive_enabled
+                else 0.0
+            )
+            lateral_command = (
+                self._mobile_navigate_lateral_speed_mps(
+                    resolved, root_pose
+                )
+                if drive_enabled
+                else 0.0
             )
             return (
                 compact_target,
@@ -3460,12 +3471,20 @@ class ConveyorRuntimeV1:
         del resolved, root_pose
         return 0.0
 
+    def _mobile_navigation_drive_heading_tolerance_rad(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD
+
     def _mobile_navigation_yaw_command(
         self,
         resolved: _ResolvedTask,
         yaw_error_rad: float,
     ) -> float:
         del resolved
+        if abs(yaw_error_rad) <= _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD:
+            return 0.0
         return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
 
     def _mobile_turn_angular_speed_tolerance_radps(

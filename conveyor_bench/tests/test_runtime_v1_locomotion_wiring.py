@@ -124,9 +124,20 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
         _method(_runtime_tree(), "_mobile_navigation_yaw_error")
     )
     yaw = ast.unparse(_method(_runtime_tree(), "_mobile_navigation_yaw_command"))
+    drive_tolerance = ast.unparse(
+        _method(
+            _runtime_tree(),
+            "_mobile_navigation_drive_heading_tolerance_rad",
+        )
+    )
+    carry = ast.unparse(_method(_runtime_tree(), "_mobile_carry_command"))
     assert "return 0.3" in forward
     assert "return 0.0" in lateral
     assert "math.atan2(delta_y, delta_x)" in bearing
+    assert "_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD" in drive_tolerance
+    assert "drive_heading_tolerance" in carry
+    assert "else 0.0" in carry
+    assert "if abs(yaw_error_rad) <= _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD" in yaw
     assert "1.5 * yaw_error_rad" in yaw
     assert "min(0.35" in yaw
 

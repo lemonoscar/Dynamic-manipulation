@@ -532,6 +532,15 @@ class ConveyorRuntimeV2(ConveyorRuntimeV1):
             resolved, root_pose
         )
 
+    def _mobile_navigation_drive_heading_tolerance_rad(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        if self.options.scene_id is SceneId.MOBILE_REMOTE_DELIVERY_V2:
+            return 0.18
+        return super()._mobile_navigation_drive_heading_tolerance_rad(
+            resolved
+        )
+
     def _remote_navigation_errors(
         self, root_pose: Pose
     ) -> tuple[float, float]:

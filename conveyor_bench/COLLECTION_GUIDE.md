@@ -377,6 +377,10 @@ strict validator 和 quality 通过，其三路图像仍被 camera gate 判为�
 `collect_v1_train_matrix.py`，它会从 canonical manifest/summary 重建恢复状态，
 拒绝重复或冲突 seed、可见 orphan episode 和并发写入，并在每条 episode 后依次
 执行 strict validator、quality audit、temporal camera gate 与三个 profile 导出。
+runner 启动时还会冻结当前可执行源码树 SHA-256；dry-run 与 `matrix_report.json`
+都会记录该指纹，任何恢复出的 episode 指纹不完全一致都会立即停止。源码发生
+变化后，旧 output root 只保留作审计证据，必须换一个全新的 output root 重跑
+pilot，不能混用、覆盖或手工改 manifest。
 
 先查看不会启动 Isaac 的冻结命令：
 
@@ -422,5 +426,10 @@ orphan、重复语义 seed、合同冲突或陈旧 `.matrix.lock`，runner 会�
 `successful_episode_roots.txt` 只列出物理成功且完整门禁通过的训练候选。bulk 的
 普通任务失败会保留为 benchmark 负例并标为 training-ineligible；runtime error、
 数据损坏、相机或导出失败都会立即停止后续放量。
+
+V1 非完整底盘的 carry navigation 采用 stop-turn-drive：目标方位误差超过
+`0.06 rad` 时只原地转向，进入阈值后角速度归零再前进。该约束避免负向转弯后
+同时输入较大的前进和角速度，使带载 locomotion 停滞；阈值属于硬件回放前不得
+放宽的采集合同。
 
 不得把 smoke/debug 目录直接并入正式训练集，也不得绕过 16-cell pilot barrier。

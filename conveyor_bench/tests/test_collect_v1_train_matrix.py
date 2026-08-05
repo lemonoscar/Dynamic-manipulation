@@ -40,6 +40,9 @@ def _publish_episode(
     manifest = {
         "episode": {
             "episode_id": f"ep-{seed}",
+            "metadata": {
+                "source_tree": matrix.SOURCE_TREE_FINGERPRINT,
+            },
             "seeds": {"episode": seed, "layout": seed},
             "task": {
                 "task_type": "dynamic_sort",
@@ -159,7 +162,9 @@ def test_dry_run_freezes_collection_contract(tmp_path: Path, phase: str, episode
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    commands = json.loads(completed.stdout)["commands"]
+    payload = json.loads(completed.stdout)
+    assert payload["source_tree"] == matrix.SOURCE_TREE_FINGERPRINT
+    commands = payload["commands"]
     assert len(commands) == 16
     for command in commands:
         assert command[command.index("--episodes") + 1] == episodes
@@ -181,6 +186,18 @@ def test_scan_recovers_exact_contract_and_rejects_orphans(tmp_path: Path) -> Non
 
     (episode / "summary.json").unlink()
     with pytest.raises(matrix.MatrixError, match="orphan"):
+        matrix.scan_phase(tmp_path, "pilot")
+
+
+def test_scan_rejects_episode_from_another_source_tree(tmp_path: Path) -> None:
+    cell = matrix.cells()[0]
+    episode = _publish_episode(tmp_path, cell, "pilot", cell.base_seed)
+    manifest_path = episode / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["episode"]["metadata"]["source_tree"]["sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(matrix.MatrixError, match="source tree fingerprint"):
         matrix.scan_phase(tmp_path, "pilot")
 
 
