@@ -144,7 +144,8 @@
         "mass_kg": 0.085,
         "static_friction": 1.15,
         "dynamic_friction": 0.95,
-        "restitution": 0.0
+        "restitution": 0.0,
+        "angular_damping": 5.0
       },
       "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
       "grasp_affordances": [

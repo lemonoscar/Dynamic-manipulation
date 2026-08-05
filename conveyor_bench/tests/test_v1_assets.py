@@ -33,14 +33,18 @@ def test_object_registry_has_eight_distinct_geometry_assets() -> None:
     assert all(asset.nominal_height_m > 0.0 for asset in assets)
 
 
-def test_round_bushing_has_calibrated_rolling_resistance() -> None:
+def test_round_parts_have_calibrated_rolling_resistance() -> None:
     assets = {asset.object_id: asset for asset in load_object_registry()}
 
-    assert assets["part_yellow_bushing"].angular_damping == pytest.approx(5.0)
+    calibrated = {"part_yellow_bushing", "part_green_shaft"}
+    assert all(
+        assets[object_id].angular_damping == pytest.approx(5.0)
+        for object_id in calibrated
+    )
     assert all(
         asset.angular_damping == 0.0
         for object_id, asset in assets.items()
-        if object_id != "part_yellow_bushing"
+        if object_id not in calibrated
     )
 
 
