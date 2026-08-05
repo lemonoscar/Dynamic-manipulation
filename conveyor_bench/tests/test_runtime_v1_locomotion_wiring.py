@@ -175,7 +175,10 @@ def test_mobile_carry_recovers_until_the_physical_fall_gate() -> None:
     assert "if state['robot_fallen']" in source
     assert "if tilt > 0.2" in source
     assert "tilt > 0.3" not in source
-    assert "return compact_target, (0.0, 0.0, 0.0), 'carry_recover'" in source
+    assert (
+        "return (compact_target, (0.0, 0.0, 0.0), 'carry_recover')"
+        in source
+    )
 
 
 def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
