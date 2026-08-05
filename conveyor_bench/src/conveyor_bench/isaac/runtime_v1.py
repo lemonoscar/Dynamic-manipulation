@@ -3248,11 +3248,15 @@ class ConveyorRuntimeV1:
             )
         )
         tilt = float(state["root_tilt_rad"])
-        if tilt > 0.30:
+        # Use the benchmark's physical fall predicate as the terminal safety
+        # gate.  A loaded lateral reach can briefly exceed 0.30 rad while the
+        # robot is still standing; aborting there pre-empted the compact-arm
+        # recovery below and made otherwise identical episodes seed-sensitive.
+        if state["robot_fallen"]:
             raise _MobilePreconditionFailure(
                 FailureReason.ROBOT_FALLEN,
                 "mobile_carry_unstable",
-                "root tilt exceeded 0.30 rad during whole-body carry",
+                "robot crossed the physical fall gate during whole-body carry",
             )
         if tilt > 0.20:
             self._mobile_carry_stable_since_s = None

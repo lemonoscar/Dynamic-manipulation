@@ -169,6 +169,15 @@ def test_v1_oracle_phase_timeout_remains_bounded() -> None:
     assert "return 15.0" in source
 
 
+def test_mobile_carry_recovers_until_the_physical_fall_gate() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_command"))
+
+    assert "if state['robot_fallen']" in source
+    assert "if tilt > 0.2" in source
+    assert "tilt > 0.3" not in source
+    assert "return compact_target, (0.0, 0.0, 0.0), 'carry_recover'" in source
+
+
 def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
     tree = _runtime_tree()
     arm = _literal_constant(tree, "_MOBILE_COMPACT_ARM")
