@@ -116,13 +116,18 @@ def test_runtime_locks_checkpoint_timing_and_cpu_fabric() -> None:
     assert "unexpected locomotion timing" in init_source
 
     resolve_source = ast.unparse(_method(tree, "_resolve_entities"))
-    assert "orientation_tolerance=0.1" in resolve_source
+    assert "orientation_tolerance=0.08" in resolve_source
+    assert "self.place_position_kinematics = kinematics_factory" in (
+        resolve_source
+    )
+    assert "orientation_weight=0.002" in resolve_source
+    assert "orientation_tolerance=4.0" in resolve_source
 
 
-def test_loaded_arm_slew_reaches_the_tray_before_base_drift() -> None:
+def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_slew_arm_target"))
 
-    assert "(0.016, 0.02, 0.02, 0.02, 0.016, 0.02)" in source
+    assert "(0.008, 0.01, 0.01, 0.01, 0.008, 0.01)" in source
     assert "if carrying_object" in source
     assert "else (0.02,) * len(ARM_JOINT_NAMES)" in source
 

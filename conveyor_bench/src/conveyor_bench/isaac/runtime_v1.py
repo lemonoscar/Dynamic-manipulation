@@ -172,9 +172,6 @@ _MOBILE_NAVIGATE_SPEED_MPS = 0.16
 # cross-track error, inside the 0.045 m position gate.  Drive that chord
 # straight instead of asking the loaded policy for another coupled turn.
 _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
-# With the X5 shoulder mount offset, end-effector planar bearing is about
-# 0.74 * arm_joint1 around the compact carry posture.
-_MOBILE_ARM_Q1_PLANAR_GAIN = 0.74
 _MOBILE_PLACE_CARTESIAN_STEP_M = 0.008
 _MOBILE_PLACE_DESCEND_STEP_M = 0.003
 _MOBILE_PLACE_HOLD_STEP_M = 0.003
@@ -789,7 +786,17 @@ class ConveyorRuntimeV1:
             # tighter than that gate while allowing small calibration error
             # near the lateral sorting trays.
             position_tolerance_m=0.015,
-            orientation_tolerance=0.10,
+            orientation_tolerance=0.08,
+        )
+        self.place_position_kinematics = kinematics_factory(
+            # Sorting evaluates object position and settling, not wrist
+            # attitude.  Use a position-dominant auxiliary solve to choose a
+            # reachable wrist orientation for each lateral waypoint, then
+            # pass that exact FK orientation through the strict solver above.
+            orientation_weight=0.002,
+            max_iterations=120,
+            position_tolerance_m=0.015,
+            orientation_tolerance=4.0,
         )
         self._tcp_offset = torch.tensor(
             [[TCP_OFFSET_X_M, 0.0, 0.0]],
@@ -3558,29 +3565,16 @@ class ConveyorRuntimeV1:
         if waypoint_distance > waypoint_step_m:
             waypoint_delta *= waypoint_step_m / waypoint_distance
         orientation_waypoint = current_base + waypoint_delta
-        # Couple wrist yaw to the same incremental Cartesian waypoint. Asking
-        # for the final lateral orientation while position is still centred
-        # makes the redundant IK branch rotate q1/q5 in the opposite
-        # direction and destabilizes the base.
-        planar_bearing = math.atan2(
-            orientation_waypoint[1], orientation_waypoint[0]
-        )
-        shoulder_yaw = max(
-            -1.2,
-            min(
-                1.2,
-                planar_bearing / _MOBILE_ARM_Q1_PLANAR_GAIN,
-            ),
+        # Choose orientation at the same incremental Cartesian waypoint.
+        # Asking for a frozen final attitude while the position is still
+        # centred drives the redundant wrist branch into a workspace limit.
+        position_solution = self.place_position_kinematics.solve(
+            orientation_waypoint,
+            current_tcp_base.wxyz,
+            seed=self._arm_ik_seed,
         )
         _, reference_rotation = self.arm_kinematics.forward(
-            (
-                shoulder_yaw,
-                _MOBILE_COMPACT_ARM[1],
-                _MOBILE_COMPACT_ARM[2],
-                0.0,
-                0.0,
-                0.0,
-            )
+            position_solution.joint_positions
         )
         reference_base = Pose(
             target_base.xyz,
@@ -4060,7 +4054,7 @@ class ConveyorRuntimeV1:
         commanded = self._arm_target
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
             per_joint = (
-                (0.016, 0.020, 0.020, 0.020, 0.016, 0.020)
+                (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
                 if carrying_object
                 else (0.020,) * len(ARM_JOINT_NAMES)
             )
