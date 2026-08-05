@@ -166,7 +166,7 @@ GPU0/1 上运行的不是显存占位，而是 ABot-M0.5 `CloseToasterOvenDoor` 
 server sessions 为 `abot-m05-gpu0-233619`、`abot-m05-gpu1-233619`，client sessions
 为 `abot-m05-client0-233619`、`abot-m05-client1-233619`。两个 server 持续处理
 KV-cache、video diffusion 和 action diffusion chunk，只使用前两张卡。不要终止上述
-六个生产/负载 session。采集总账查看命令：
+五个生产/负载 session。采集总账查看命令：
 
 ```bash
 ssh 4xH20 'python3 -c '\''import json; p=json.load(open("/diff/wallx_workspace/dzb/dynamic-m0-mobile-runs-20260803/datasets/v1-dynamic-train-128-2fa2f9c-20260806-r1/matrix_report.json")); print(json.dumps(p["phases"], indent=2))'\'''
