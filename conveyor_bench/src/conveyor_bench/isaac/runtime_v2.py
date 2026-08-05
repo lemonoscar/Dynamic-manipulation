@@ -541,6 +541,17 @@ class ConveyorRuntimeV2(ConveyorRuntimeV1):
             resolved
         )
 
+    def _mobile_navigation_yaw_command(
+        self,
+        resolved: _ResolvedTask,
+        yaw_error_rad: float,
+    ) -> float:
+        if self.options.scene_id is SceneId.MOBILE_REMOTE_DELIVERY_V2:
+            return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
+        return super()._mobile_navigation_yaw_command(
+            resolved, yaw_error_rad
+        )
+
     def _remote_navigation_errors(
         self, root_pose: Pose
     ) -> tuple[float, float]:

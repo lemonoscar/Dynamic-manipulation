@@ -110,9 +110,11 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
 
 
 def test_v1_carry_closes_the_measured_arc_position_error() -> None:
+    runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
     source = ast.unparse(_method(_runtime_tree(), "_mobile_post_turn_stage"))
 
     assert "return 'navigate'" in source
+    assert "_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21" in runtime_source
 
     forward = ast.unparse(
         _method(_runtime_tree(), "_mobile_navigate_forward_speed_mps")

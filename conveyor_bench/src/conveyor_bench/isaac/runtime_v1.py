@@ -161,7 +161,12 @@ _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_CARRY_ARC_YAW_RAD = 0.45
 _MOBILE_TURN_RATE_RADPS = 0.35
 _MOBILE_NAVIGATE_SPEED_MPS = 0.16
-_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.06
+# The post-turn residual is a chord to the planned arc endpoint, so its
+# bearing is not identical to the final arc yaw.  The measured negative-yaw
+# replay starts navigation at 0.193 rad heading error but only 0.030 m of
+# cross-track error, inside the 0.045 m position gate.  Drive that chord
+# straight instead of asking the loaded policy for another coupled turn.
+_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
 # With the X5 shoulder mount offset, end-effector planar bearing is about
 # 0.74 * arm_joint1 around the compact carry posture.
 _MOBILE_ARM_Q1_PLANAR_GAIN = 0.74
