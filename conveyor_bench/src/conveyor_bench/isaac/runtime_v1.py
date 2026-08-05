@@ -3281,23 +3281,9 @@ class ConveyorRuntimeV1:
             ):
                 next_stage = self._mobile_post_turn_stage(resolved)
                 self._transition_mobile_carry(next_stage, sim_time_s)
-                transition_command = (0.0, 0.0, 0.0)
-                if next_stage == "navigate":
-                    # Apply the first forward action in the same control tick
-                    # as the policy-history reset performed by the stage
-                    # transition.  A zero-command tick here would immediately
-                    # repopulate the history with the loaded standing fixed
-                    # point that the following forward command cannot leave.
-                    transition_command = (
-                        self._mobile_navigate_forward_speed_mps(
-                            resolved, root_pose
-                        ),
-                        0.0,
-                        0.0,
-                    )
                 return (
                     compact_target,
-                    transition_command,
+                    (0.0, 0.0, 0.0),
                     f"carry_{next_stage}",
                 )
             yaw_command = (
@@ -3435,10 +3421,11 @@ class ConveyorRuntimeV1:
 
     def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:
         del resolved
-        # The loaded locomotion policy under-travels the idealized arc,
-        # especially for negative yaw.  Close the residual root-position
-        # error before extending the arm toward either sorting tray.
-        return "navigate"
+        # The checkpoint can execute the loaded turn, but every audited pure-
+        # forward continuation converges to a standing fixed point.  Both V1
+        # trays remain in the calibrated arm workspace at the measured turn
+        # endpoint, so continue directly to the stable placement controller.
+        return "settle"
 
     def _mobile_continue_carry_before_place(
         self, resolved: _ResolvedTask, oracle_phase: str
@@ -3605,15 +3592,6 @@ class ConveyorRuntimeV1:
     def _transition_mobile_carry(
         self, stage: str, sim_time_s: float
     ) -> None:
-        if (
-            stage == "navigate"
-            and self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
-        ):
-            # The feed-forward checkpoint observes its previous leg action.
-            # The audited loaded turn converges to a standing action-history
-            # fixed point that ignores a later pure-forward command.  Reset
-            # that one-step controller history at the maneuver boundary.
-            self._last_policy_action.zero_()
         self._mobile_carry_stage = stage
         self._mobile_carry_stage_started_s = sim_time_s
         self._mobile_carry_stable_since_s = None

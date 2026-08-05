@@ -134,11 +134,11 @@ def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
     assert frozen_tcp == pytest.approx(computed_tcp, abs=1.0e-12)
 
 
-def test_v1_carry_closes_the_measured_arc_position_error() -> None:
+def test_v1_carry_places_from_the_measured_loaded_turn_endpoint() -> None:
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
     source = ast.unparse(_method(_runtime_tree(), "_mobile_post_turn_stage"))
 
-    assert "return 'navigate'" in source
+    assert "return 'settle'" in source
     assert "_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21" in runtime_source
 
     forward = ast.unparse(
@@ -158,9 +158,6 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
         )
     )
     carry = ast.unparse(_method(_runtime_tree(), "_mobile_carry_command"))
-    transition = ast.unparse(
-        _method(_runtime_tree(), "_transition_mobile_carry")
-    )
     assert "return 0.2" in forward
     assert "return 0.0" in lateral
     assert "math.atan2(delta_y, delta_x)" in bearing
@@ -170,9 +167,6 @@ def test_v1_carry_closes_the_measured_arc_position_error() -> None:
     assert "if abs(yaw_error_rad) <= _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD" in yaw
     assert "1.5 * yaw_error_rad" in yaw
     assert "min(0.35" in yaw
-    assert "stage == 'navigate'" in transition
-    assert "self._last_policy_action.zero_()" in transition
-    assert "transition_command" in carry
 
 
 def test_runtime_writes_explicit_actuators_every_physics_substep() -> None:
