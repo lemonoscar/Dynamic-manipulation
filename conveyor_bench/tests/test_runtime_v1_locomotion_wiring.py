@@ -260,7 +260,9 @@ def test_v1_carry_faces_the_tray_before_stance_manipulation() -> None:
 
     assert "resolved.target_zone.center_xyz_m" in plan
     assert "math.atan2" in plan
-    assert "return goal_yaw, (root_pose.xyz[0], root_pose.xyz[1])" in plan
+    assert (
+        "return (goal_yaw, (root_pose.xyz[0], root_pose.xyz[1]))" in plan
+    )
     assert "return 0.0" in turn_speed
 
 
