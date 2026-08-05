@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
 from conveyor_bench.v1.protocol import FailureReason, Pose
 from conveyor_bench.v1.stationary import (
     STATIONARY_DESTINATION_ZONE_ID,
@@ -60,6 +61,18 @@ def _constants(tree: ast.Module) -> dict[str, object]:
     return values
 
 
+def _literal_constant(tree: ast.Module, name: str) -> object:
+    node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == name
+    )
+    return ast.literal_eval(node.value)
+
+
 def _load_mobile_preoracle_contract():
     tree = _runtime_tree()
     exception_node = next(
@@ -107,6 +120,18 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
 
     assert "'turn': 10.0" in source
+
+
+def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
+    tree = _runtime_tree()
+    arm = _literal_constant(tree, "_MOBILE_COMPACT_ARM")
+    frozen_tcp = _literal_constant(tree, "_MOBILE_COMPACT_TCP_BASE")
+    computed_tcp, _ = CalibratedArmKinematics.in_policy_usd_root_frame().forward(
+        arm
+    )
+
+    assert arm == pytest.approx((0.0, 0.6, 0.6, 0.0, 0.0, 0.0))
+    assert frozen_tcp == pytest.approx(computed_tcp, abs=1.0e-12)
 
 
 def test_v1_carry_closes_the_measured_arc_position_error() -> None:

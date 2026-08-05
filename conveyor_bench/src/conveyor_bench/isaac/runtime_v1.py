@@ -151,11 +151,16 @@ _LOCOMOTION_STABLE_DWELL_S = 0.50
 _LOCOMOTION_APPROACH_TIMEOUT_S = 3.0
 _LOCOMOTION_STABILIZE_TIMEOUT_S = 2.0
 _ARM_PREPOSITION_TIMEOUT_S = 5.0
-# Deterministic joint-space carry posture.  It keeps the payload high and
-# close to the trunk while avoiding the low-reach Cartesian IK branch used at
-# the conveyor.  Values and TCP pose are frozen together.
-_MOBILE_COMPACT_ARM = (0.0, 1.0, 0.8, 0.0, 0.0, 0.0)
-_MOBILE_COMPACT_TCP_BASE = (0.46590005, -0.00050342, 0.33512429)
+# Deterministic joint-space carry posture.  Keep it close to the locomotion
+# checkpoint's nominal arm command (0.3, 0.5) so the loaded gait stays inside
+# its training distribution, while retaining enough forward clearance for the
+# payload.  Values and the policy-USD-root TCP pose are frozen together.
+_MOBILE_COMPACT_ARM = (0.0, 0.6, 0.6, 0.0, 0.0, 0.0)
+_MOBILE_COMPACT_TCP_BASE = (
+    0.3887788676638449,
+    -0.0005034200000000377,
+    0.35538014297628934,
+)
 _MOBILE_GOAL_STANDOFF_M = 0.38
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_CARRY_ARC_YAW_RAD = 0.45
