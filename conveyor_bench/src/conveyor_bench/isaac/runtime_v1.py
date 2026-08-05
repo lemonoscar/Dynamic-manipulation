@@ -3570,7 +3570,7 @@ class ConveyorRuntimeV1:
         # centred drives the redundant wrist branch into a workspace limit.
         position_solution = self.place_position_kinematics.solve(
             orientation_waypoint,
-            current_tcp_base.wxyz,
+            state["tcp_base"].wxyz,
             seed=self._arm_ik_seed,
         )
         _, reference_rotation = self.arm_kinematics.forward(

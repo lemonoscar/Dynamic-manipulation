@@ -132,6 +132,14 @@ def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
     assert "else (0.02,) * len(ARM_JOINT_NAMES)" in source
 
 
+def test_mobile_place_orientation_uses_the_live_tcp_state() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_mobile_place_target"))
+
+    assert "self.place_position_kinematics.solve" in source
+    assert "state['tcp_base'].wxyz" in source
+    assert "seed=self._arm_ik_seed" in source
+
+
 def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
 
