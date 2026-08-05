@@ -789,7 +789,7 @@ class ConveyorRuntimeV1:
             # tighter than that gate while allowing small calibration error
             # near the lateral sorting trays.
             position_tolerance_m=0.015,
-            orientation_tolerance=0.08,
+            orientation_tolerance=0.10,
         )
         self._tcp_offset = torch.tensor(
             [[TCP_OFFSET_X_M, 0.0, 0.0]],
@@ -4060,7 +4060,7 @@ class ConveyorRuntimeV1:
         commanded = self._arm_target
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
             per_joint = (
-                (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
+                (0.016, 0.020, 0.020, 0.020, 0.016, 0.020)
                 if carrying_object
                 else (0.020,) * len(ARM_JOINT_NAMES)
             )
