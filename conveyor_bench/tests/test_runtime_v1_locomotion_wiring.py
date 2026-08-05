@@ -143,8 +143,8 @@ def test_mobile_place_orientation_uses_the_live_tcp_state() -> None:
 def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 
-    assert "asset.half_extents_xyz[2] + 0.09" in source
-    assert "reachable_release_x = zone_x" in source
+    assert "asset.half_extents_xyz[2] + 0.05" in source
+    assert "zone_x - (0.04 if zone_y < 0.0 else 0.0)" in source
     assert "reachable_release_y = zone_y - math.copysign(0.1, zone_y)" in source
     assert "safe_carry_clearance_m=0.025" in source
 
@@ -155,10 +155,10 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     assert "'turn': 10.0" in source
 
 
-def test_v1_oracle_timeout_covers_the_loaded_place_transient() -> None:
+def test_v1_oracle_phase_timeout_remains_bounded() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_oracle_phase_timeout_s"))
 
-    assert "return 20.0" in source
+    assert "return 15.0" in source
 
 
 def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:

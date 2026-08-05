@@ -453,6 +453,7 @@ def test_high_goal_drop_opens_without_entering_the_tray() -> None:
     )
     oracle._transition(OraclePhase.PREPLACE, 0.0)
     high_goal = oracle._goal_high_position()
+    assert high_goal == pytest.approx(oracle._place_position())
 
     command = oracle.step(
         observation(

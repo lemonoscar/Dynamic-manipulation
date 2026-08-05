@@ -604,6 +604,13 @@ class DynamicSortOracle:
 
     def _goal_high_position(self) -> Vec3:
         place = self._place_position()
+        # Some runtimes provide a release center that already includes the
+        # full object-height and obstacle-clearance calculation.  Re-applying
+        # ``_safe_carry_z`` here double-counts that clearance and can create an
+        # unreachable floating-base target.  The ordinary descend path still
+        # uses the independent carry height.
+        if self.config.release_from_high_goal:
+            return place
         return (place[0], place[1], self._carry_height_m)
 
     def _place_position(self) -> Vec3:

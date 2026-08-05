@@ -2984,7 +2984,7 @@ class ConveyorRuntimeV1:
             resolved.target_zone.floor_top_z_m
             + resolved.target_zone.wall_height_m
             + asset.half_extents_xyz[2]
-            + 0.090
+            + 0.050
         )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
@@ -2992,7 +2992,12 @@ class ConveyorRuntimeV1:
         # enough wall clearance for the full 48 mm target, not merely its
         # center point. This avoids the X5 lateral workspace boundary after
         # the short mobile carry arc for both mirrored sorting trays.
-        reachable_release_x = zone_x
+        # The loaded negative-yaw placement has a measured floating-base
+        # equilibrium about 44 mm short of the tray center in world X.  Move
+        # that tray's release point into the robot-facing half of the opening
+        # instead of commanding an unreachable extension.  The 40 mm bias is
+        # still well inside the 105 mm goal half-width for every train asset.
+        reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.0)
         reachable_release_y = zone_y - math.copysign(0.10, zone_y)
         oracle = DynamicSortOracle(
             OracleConfig(
@@ -3056,13 +3061,7 @@ class ConveyorRuntimeV1:
 
     def _oracle_phase_timeout_s(self, resolved: _ResolvedTask) -> float:
         del resolved
-        # A loaded negative-yaw turn reaches ``place`` near 14.6 s, but the
-        # long blue bar needs about 9.6 s more for the position-dominant X5
-        # placement transient.  The former 15 s oracle deadline interrupted
-        # that reachable motion roughly 5 cm below the high goal.  Keep a
-        # bounded five-second margin; the 35 s episode deadline remains the
-        # authoritative end-to-end guard.
-        return 20.0
+        return 15.0
 
     def _mobile_preoracle_command(
         self,
