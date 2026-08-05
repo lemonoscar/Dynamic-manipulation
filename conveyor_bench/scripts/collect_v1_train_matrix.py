@@ -543,13 +543,14 @@ def _run_cell_ranges(
     output_root: Path,
     python: Path,
     renderer_active_gpu: int,
+    phase: str,
 ) -> int:
-    log = output_root / "bulk" / "logs" / f"{cell.cell_id}.log"
-    environment = _worker_environment("bulk", cell)
+    log = output_root / phase / "logs" / f"{cell.cell_id}.log"
+    environment = _worker_environment(phase, cell)
     for start, count in ranges:
         command = build_collection_command(
             cell,
-            "bulk",
+            phase,
             start,
             count,
             output_root,
@@ -562,36 +563,42 @@ def _run_cell_ranges(
     return 0
 
 
-def _run_bulk_parallel(
+def _run_phase_parallel(
     output_root: Path,
+    phase: str,
     python: Path,
-    renderer_active_gpu: int,
+    renderer_active_gpus: tuple[int, ...],
     workers: int,
     observed: Mapping[int, EpisodeObservation],
 ) -> None:
     pending = [
         (
             cell,
-            _contiguous_ranges(set(cell.seeds("bulk")) - set(observed)),
+            _contiguous_ranges(set(cell.seeds(phase)) - set(observed)),
         )
         for cell in cells()
-        if set(cell.seeds("bulk")) - set(observed)
+        if set(cell.seeds(phase)) - set(observed)
     ]
     for offset in range(0, len(pending), workers):
         wave = pending[offset : offset + workers]
         with ThreadPoolExecutor(max_workers=len(wave)) as executor:
-            returncodes = tuple(
-                executor.map(
-                    lambda item: _run_cell_ranges(
-                        item[0], item[1], output_root, python, renderer_active_gpu
-                    ),
-                    wave,
+            futures = tuple(
+                executor.submit(
+                    _run_cell_ranges,
+                    cell,
+                    ranges,
+                    output_root,
+                    python,
+                    renderer_active_gpus[index % len(renderer_active_gpus)],
+                    phase,
                 )
+                for index, (cell, ranges) in enumerate(wave)
             )
+            returncodes = tuple(future.result() for future in futures)
 
         # Global scans are intentionally delayed until every writer in the
         # wave exits; an active collector owns an unpublished .inprogress dir.
-        refreshed = scan_phase(output_root, "bulk")
+        refreshed = scan_phase(output_root, phase)
         errors: list[str] = []
         for (cell, ranges), returncode in zip(wave, returncodes, strict=True):
             for start, count in ranges:
@@ -607,9 +614,9 @@ def _run_bulk_parallel(
                     try:
                         _gate_episode(
                             python,
-                            output_root / "bulk" / "cells" / cell.cell_id,
+                            output_root / phase / "cells" / cell.cell_id,
                             item.path,
-                            output_root / "bulk" / "logs" / f"{cell.cell_id}.log",
+                            output_root / phase / "logs" / f"{cell.cell_id}.log",
                         )
                     except (MatrixError, OSError) as error:
                         errors.append(f"{cell.cell_id} seed {seed}: {error}")
@@ -617,6 +624,13 @@ def _run_bulk_parallel(
                 errors.append(
                     f"collector failed for {cell.cell_id} with code {returncode}"
                 )
+            if phase == "pilot" and any(
+                refreshed[seed].success is False
+                for start, count in ranges
+                for seed in range(start, start + count)
+                if seed in refreshed
+            ):
+                errors.append(f"pilot task failed for {cell.cell_id}")
         _write_report(output_root)
         if errors:
             raise MatrixError("; ".join(errors))
@@ -626,13 +640,18 @@ def run_phase(
     output_root: Path,
     phase: str,
     python: Path,
-    renderer_active_gpu: int,
+    renderer_active_gpu: int | Sequence[int],
     workers: int = 1,
 ) -> None:
     if workers <= 0:
         raise MatrixError("workers must be positive")
-    if phase == "pilot" and workers != 1:
-        raise MatrixError("parallel workers are only supported for bulk")
+    renderer_active_gpus = (
+        (renderer_active_gpu,)
+        if isinstance(renderer_active_gpu, int)
+        else tuple(renderer_active_gpu)
+    )
+    if not renderer_active_gpus or any(gpu < 0 for gpu in renderer_active_gpus):
+        raise MatrixError("renderer GPU indices must be non-negative")
     output_root.mkdir(parents=True, exist_ok=True)
     lock_path = output_root / ".matrix.lock"
     try:
@@ -664,11 +683,12 @@ def run_phase(
                 )
         _write_report(output_root)
 
-        if phase == "bulk" and workers > 1:
-            _run_bulk_parallel(
+        if workers > 1:
+            _run_phase_parallel(
                 output_root,
+                phase,
                 python,
-                renderer_active_gpu,
+                renderer_active_gpus,
                 workers,
                 observed,
             )
@@ -684,7 +704,7 @@ def run_phase(
                         count,
                         output_root,
                         python,
-                        renderer_active_gpu,
+                        renderer_active_gpus[0],
                     )
                     log = output_root / phase / "logs" / f"{cell.cell_id}.log"
                     returncode = _run(command, log)
@@ -725,7 +745,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phase", choices=("pilot", "bulk"), required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
-    parser.add_argument("--renderer-active-gpu", type=int, required=True)
+    parser.add_argument(
+        "--renderer-active-gpu",
+        type=int,
+        action="append",
+        required=True,
+        help="Renderer GPU ordinal; repeat to distribute parallel workers.",
+    )
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
     return parser
@@ -733,12 +759,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.renderer_active_gpu < 0:
+    if any(gpu < 0 for gpu in args.renderer_active_gpu):
         raise SystemExit("--renderer-active-gpu must be non-negative")
     if args.workers <= 0:
         raise SystemExit("--workers must be positive")
-    if args.phase == "pilot" and args.workers != 1:
-        raise SystemExit("--workers greater than one is only supported for bulk")
     output_root = args.output_root.expanduser().resolve()
     python = args.python.expanduser().resolve()
     if args.dry_run:
@@ -750,9 +774,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 len(cell.seeds(args.phase)),
                 output_root,
                 python,
-                args.renderer_active_gpu,
+                args.renderer_active_gpu[
+                    index % len(args.renderer_active_gpu)
+                    if args.workers > 1
+                    else 0
+                ],
             )
-            for cell in cells()
+            for index, cell in enumerate(cells())
         ]
         print(
             json.dumps(

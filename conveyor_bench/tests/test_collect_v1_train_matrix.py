@@ -322,11 +322,16 @@ def test_matrix_lock_is_cross_phase(tmp_path: Path) -> None:
         matrix.run_phase(tmp_path, "pilot", Path(sys.executable), 1)
 
 
-def test_bulk_two_worker_waves_collect_exactly_once_without_active_scan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(("phase", "expected"), (("pilot", 16), ("bulk", 112)))
+def test_two_worker_waves_collect_exactly_once_without_active_scan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    phase: str,
+    expected: int,
 ) -> None:
-    for cell in matrix.cells():
-        _publish_episode(tmp_path, cell, "pilot", cell.base_seed)
+    if phase == "bulk":
+        for cell in matrix.cells():
+            _publish_episode(tmp_path, cell, "pilot", cell.base_seed)
 
     real_scan = matrix.scan_phase
     state_lock = threading.Lock()
@@ -349,7 +354,7 @@ def test_bulk_two_worker_waves_collect_exactly_once_without_active_scan(
             worker_tmpdirs.add(env["TMPDIR"])
         time.sleep(0.01)
         for episode_seed in range(seed, seed + count):
-            _publish_episode(tmp_path, cell, "bulk", episode_seed)
+            _publish_episode(tmp_path, cell, phase, episode_seed)
         with state_lock:
             state["active"] -= 1
         return 0
@@ -363,17 +368,57 @@ def test_bulk_two_worker_waves_collect_exactly_once_without_active_scan(
     monkeypatch.setattr(matrix, "_gate_episode", lambda *_args: None)
     monkeypatch.setattr(matrix, "scan_phase", guarded_scan)
 
-    matrix.run_phase(tmp_path, "bulk", Path(sys.executable), 3, workers=2)
+    matrix.run_phase(tmp_path, phase, Path(sys.executable), (2, 3), workers=2)
 
-    observed = real_scan(tmp_path, "bulk")
-    assert len(observed) == 112
+    observed = real_scan(tmp_path, phase)
+    assert len(observed) == expected
     assert len(commands) == len(worker_tmpdirs) == 16
     assert state["max_active"] == 2
+    assert {
+        command[command.index("--kit_args") + 1].split()[0]
+        for command in commands
+    } == {"--/renderer/activeGpu=2", "--/renderer/activeGpu=3"}
     assert not (tmp_path / ".matrix.lock").exists()
 
 
-def test_parallel_workers_are_bulk_only_and_positive(tmp_path: Path) -> None:
+def test_worker_and_renderer_gpu_arguments_are_validated(tmp_path: Path) -> None:
     with pytest.raises(matrix.MatrixError, match="positive"):
         matrix.run_phase(tmp_path, "bulk", Path(sys.executable), 1, workers=0)
-    with pytest.raises(matrix.MatrixError, match="only supported for bulk"):
-        matrix.run_phase(tmp_path, "pilot", Path(sys.executable), 1, workers=2)
+    with pytest.raises(matrix.MatrixError, match="GPU indices"):
+        matrix.run_phase(tmp_path, "pilot", Path(sys.executable), (), workers=2)
+    with pytest.raises(matrix.MatrixError, match="GPU indices"):
+        matrix.run_phase(tmp_path, "pilot", Path(sys.executable), (2, -1), workers=2)
+
+
+def test_dry_run_distributes_repeated_renderer_gpus(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--phase",
+            "pilot",
+            "--output-root",
+            str(tmp_path),
+            "--renderer-active-gpu",
+            "2",
+            "--renderer-active-gpu",
+            "3",
+            "--workers",
+            "2",
+            "--dry-run",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    commands = json.loads(completed.stdout)["commands"]
+    assert [
+        command[command.index("--kit_args") + 1].split()[0]
+        for command in commands[:4]
+    ] == [
+        "--/renderer/activeGpu=2",
+        "--/renderer/activeGpu=3",
+        "--/renderer/activeGpu=2",
+        "--/renderer/activeGpu=3",
+    ]
