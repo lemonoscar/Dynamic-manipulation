@@ -155,6 +155,12 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     assert "'turn': 10.0" in source
 
 
+def test_v1_oracle_timeout_covers_the_loaded_place_transient() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_oracle_phase_timeout_s"))
+
+    assert "return 20.0" in source
+
+
 def test_v1_compact_carry_tcp_is_frozen_to_policy_usd_kinematics() -> None:
     tree = _runtime_tree()
     arm = _literal_constant(tree, "_MOBILE_COMPACT_ARM")

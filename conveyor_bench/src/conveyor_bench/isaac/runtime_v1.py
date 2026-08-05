@@ -3056,7 +3056,13 @@ class ConveyorRuntimeV1:
 
     def _oracle_phase_timeout_s(self, resolved: _ResolvedTask) -> float:
         del resolved
-        return 15.0
+        # A loaded negative-yaw turn reaches ``place`` near 14.6 s, but the
+        # long blue bar needs about 9.6 s more for the position-dominant X5
+        # placement transient.  The former 15 s oracle deadline interrupted
+        # that reachable motion roughly 5 cm below the high goal.  Keep a
+        # bounded five-second margin; the 35 s episode deadline remains the
+        # authoritative end-to-end guard.
+        return 20.0
 
     def _mobile_preoracle_command(
         self,
