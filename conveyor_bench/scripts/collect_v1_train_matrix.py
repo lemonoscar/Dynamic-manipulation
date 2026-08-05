@@ -146,12 +146,14 @@ def build_collection_command(
         item for item in cell.seeds(phase) if seed <= item < seed + episodes
     ):
         raise MatrixError("collection range must be contiguous and phase-local")
+    kit_log = output_root / phase / "logs" / f"{cell.cell_id}.kit.log"
     kit_args = " ".join(
         (
             f"--/renderer/activeGpu={renderer_active_gpu}",
             "--/renderer/multiGpu/enabled=false",
             "--/renderer/multiGpu/autoEnable=false",
             "--/renderer/multiGpu/maxGpuCount=1",
+            f"--/log/file={kit_log}",
         )
     )
     command = [

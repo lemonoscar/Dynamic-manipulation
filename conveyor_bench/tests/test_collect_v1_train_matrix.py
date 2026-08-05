@@ -174,7 +174,9 @@ def test_dry_run_freezes_collection_contract(tmp_path: Path, phase: str, episode
         assert command[command.index("--belt-speed") + 1] == "0.06"
         assert "--enable_cameras" in command
         assert "--save-camera-frames" in command
-        assert "--/renderer/activeGpu=1" in command[command.index("--kit_args") + 1]
+        kit_args = command[command.index("--kit_args") + 1]
+        assert "--/renderer/activeGpu=1" in kit_args
+        assert f"--/log/file={tmp_path}/{phase}/logs/" in kit_args
         assert ("--require-all-success" in command) == (phase == "pilot")
 
 
