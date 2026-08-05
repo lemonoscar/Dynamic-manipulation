@@ -21,11 +21,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = PROJECT_ROOT / "scripts"
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from conveyor_bench.v1.assets import source_tree_fingerprint  # noqa: E402
+from conveyor_bench.v1.assets import (  # noqa: E402
+    ASSET_LOCK_PATH,
+    sha256_file,
+    source_tree_fingerprint,
+)
 
 
 SCHEMA_VERSION = "conveyor-bench-v1-train-matrix-1"
 SOURCE_TREE_FINGERPRINT = source_tree_fingerprint()
+ASSET_LOCK_SHA256 = sha256_file(ASSET_LOCK_PATH)
 BELT_SPEED_MPS = 0.06
 MAX_DURATION_S = 35.0
 ACTIVE_OBJECTS = 3
@@ -330,6 +335,10 @@ def scan_phase(output_root: Path, phase: str) -> dict[int, EpisodeObservation]:
                 raise MatrixError(
                     f"{episode} source tree fingerprint does not match collector"
                 )
+            if episode_metadata.get("asset_lock_sha256") != ASSET_LOCK_SHA256:
+                raise MatrixError(
+                    f"{episode} asset lock fingerprint does not match collector"
+                )
             task = _mapping(episode_value.get("task"), "manifest.episode.task")
             metadata = _mapping(task.get("metadata"), "manifest.episode.task.metadata")
             seeds = _mapping(episode_value.get("seeds"), "manifest.episode.seeds")
@@ -447,6 +456,7 @@ def _write_report(output_root: Path) -> None:
     report = {
         "schema_version": SCHEMA_VERSION,
         "source_tree": SOURCE_TREE_FINGERPRINT,
+        "asset_lock_sha256": ASSET_LOCK_SHA256,
         "belt_speed_mps": BELT_SPEED_MPS,
         "active_objects": ACTIVE_OBJECTS,
         "cells": [cell.__dict__ for cell in cells()],
@@ -789,6 +799,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "phase": args.phase,
                     "source_tree": SOURCE_TREE_FINGERPRINT,
+                    "asset_lock_sha256": ASSET_LOCK_SHA256,
                     "commands": commands,
                 },
                 indent=2,

@@ -42,6 +42,7 @@ def _publish_episode(
             "episode_id": f"ep-{seed}",
             "metadata": {
                 "source_tree": matrix.SOURCE_TREE_FINGERPRINT,
+                "asset_lock_sha256": matrix.ASSET_LOCK_SHA256,
             },
             "seeds": {"episode": seed, "layout": seed},
             "task": {
@@ -164,6 +165,7 @@ def test_dry_run_freezes_collection_contract(tmp_path: Path, phase: str, episode
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)
     assert payload["source_tree"] == matrix.SOURCE_TREE_FINGERPRINT
+    assert payload["asset_lock_sha256"] == matrix.ASSET_LOCK_SHA256
     commands = payload["commands"]
     assert len(commands) == 16
     for command in commands:
@@ -200,6 +202,18 @@ def test_scan_rejects_episode_from_another_source_tree(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest))
 
     with pytest.raises(matrix.MatrixError, match="source tree fingerprint"):
+        matrix.scan_phase(tmp_path, "pilot")
+
+
+def test_scan_rejects_episode_from_another_asset_lock(tmp_path: Path) -> None:
+    cell = matrix.cells()[0]
+    episode = _publish_episode(tmp_path, cell, "pilot", cell.base_seed)
+    manifest_path = episode / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["episode"]["metadata"]["asset_lock_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(matrix.MatrixError, match="asset lock fingerprint"):
         matrix.scan_phase(tmp_path, "pilot")
 
 
