@@ -493,3 +493,40 @@ renderer ordinal；每张卡最多一个 worker。每个仿真进程最多 8 条
 原子总账和成功根列表支持精确恢复。production 完成条件是
 `collection_report.json` 中 production 的 `training_eligible_episodes=384`，
 而不是启动次数达到 384。
+
+### 4xH20 当前正式运行
+
+2026-08-06 已冻结并启动以下实例：
+
+```text
+source commit: d7b6f0963bef0864b8101571981b7d02e40c3122
+source root:   /diff/wallx_workspace/dzb/conveyorvla-al0-34318e3-20260806-r1
+environment:   /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804
+run root:      /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806
+dataset root:  /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1
+tmux:          al0-production-d7b6f09-r1
+```
+
+总账只在一个双 cell wave 完整结束时原子更新；一个 cell 正在生成或逐条门禁时，
+总账落后于 canonical 目录是预期行为。以下只读命令同时观察即时产出和正式总账：
+
+```bash
+DATA_ROOT=/diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1
+
+tmux has-session -t al0-production-d7b6f09-r1
+find "$DATA_ROOT/production" -type f -name summary.json | wc -l
+find "$DATA_ROOT/production" -type f -name quality_report.json | wc -l
+find "$DATA_ROOT/production" -type f -name camera_gate_report.json | wc -l
+find "$DATA_ROOT/production" -type f \
+  -path '*/exports/conveyorvla_al0_temporal.jsonl' | wc -l
+find "$DATA_ROOT/production" -type d -name '*.inprogress' -print
+python -m json.tool "$DATA_ROOT/collection_report.json"
+nvidia-smi
+```
+
+正常状态是在仿真阶段看到 GPU 2/3 各一个 `run_benchmark_v1.py`，在批间门禁阶段
+短暂只看到 CPU validator/audit/export 子进程；GPU 0/1 不属于本任务。锁文件存在
+且 PID 存活、tmux pane 未死亡、没有 coordinator exit 文件时，不得再启动第二个
+collector，也不得删除锁。只有精确确认原 coordinator 已退出、审计无 orphan 或
+残留 `.inprogress` 后，才能用完全相同的 source commit、dataset root、环境参数和
+production 命令恢复；采集器会跳过已发布 seed 并继续补足成功配额。

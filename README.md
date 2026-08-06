@@ -152,5 +152,9 @@ V1 框架已经覆盖任务配置、动态场景、固定机身与全身模式�
 primitive 存在，但无辅助回合仍在底盘靠近阶段失败，辅助隔离回合也会提前开爪，
 因此旧 checkpoint 仍不能产生 policy-only 成功轨迹；当前正式采集使用严格门禁的
 oracle teacher，为新的时序 AL0 训练准备成功示教，不能把两者混为一谈。
+生产源码固定为 `d7b6f0963bef0864b8101571981b7d02e40c3122`：8/8 pilot 与首批
+16/16 production 已全部成功并通过数据门禁，第二批正在 4xH20 的物理 GPU 2/3
+持续采集。这里的成功描述的是 teacher 数据生成链路，不代表时序策略已经训练或
+达到闭环成功率。
 完整证据见
 [ConveyorVLA AL0 在线闭环与验收](conveyor_bench/CONVEYORVLA_AL0_GUIDE.md)。

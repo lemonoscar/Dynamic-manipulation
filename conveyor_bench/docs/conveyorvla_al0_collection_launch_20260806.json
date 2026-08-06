@@ -1,0 +1,245 @@
+{
+  "schema_version": "conveyorvla-al0-launch-evidence-1",
+  "captured_at_utc": "2026-08-06T12:01:22.584202+00:00",
+  "claim": "formal_collection_started_and_observed_stable",
+  "claim_limit": "the 384-episode production quota was still running at capture time",
+  "architecture": {
+    "name": "ConveyorVLA AL0 temporal v1",
+    "profile": "conveyorvla_al0_temporal_v1",
+    "policy_cameras": [
+      "head_rgb",
+      "wrist_rgb"
+    ],
+    "observer_camera_excluded": "overview_rgb",
+    "history_offsets_model_ticks": [
+      -2,
+      0
+    ],
+    "state_dimension": 28,
+    "action_shape": [
+      20,
+      10
+    ],
+    "model_hz": 25,
+    "control_hz": 50,
+    "action_horizon_s": 0.8,
+    "stream_identity": [
+      "episode_id",
+      "generation_id",
+      "observation_model_tick",
+      "observation_control_tick"
+    ]
+  },
+  "source": {
+    "remote_root": "/diff/wallx_workspace/dzb",
+    "repository": "/diff/wallx_workspace/dzb/conveyorvla-al0-34318e3-20260806-r1",
+    "commit": "d7b6f0963bef0864b8101571981b7d02e40c3122",
+    "worktree_clean": true,
+    "source_tree": {
+      "schema_version": "conveyor-bench-source-tree-v1",
+      "file_count": 89,
+      "sha256": "4b353a1bd247c913daa096a762c2e54ad5a0a3af168f65151c44948cc0245a2e"
+    },
+    "asset_lock_sha256": "3351a6cf3ef7bb65fcd44245541c8cd044d5fb3e65434b18ebfb9ee488b2e075",
+    "implementation_commits": [
+      "34318e33d927264ace0f824150ef8247637eb1fd",
+      "eea2de93fc212ae283e19fe133bb8edd42474dbe",
+      "d7b6f0963bef0864b8101571981b7d02e40c3122"
+    ]
+  },
+  "runtime": {
+    "environment_root": "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804",
+    "python": "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311/bin/python",
+    "isaaclab_source": "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/source/IsaacLab/source/isaaclab",
+    "prewarmed_kit_cache": "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/kit-portable/cache",
+    "runtime_library_dir": "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/system-libs/root/usr/lib/x86_64-linux-gnu",
+    "omniverse_eula_accepted": true
+  },
+  "tests": {
+    "local_full": {
+      "passed": 431,
+      "failed": 0,
+      "duration_s": 13.0
+    },
+    "remote_full_before_runtime_cache_fix": {
+      "passed": 430,
+      "failed": 0,
+      "duration_s": 56.35
+    },
+    "remote_targeted_after_runtime_cache_fix": {
+      "passed": 12,
+      "failed": 0,
+      "duration_s": 2.09
+    }
+  },
+  "single_episode_gate": {
+    "physical_gpu": 3,
+    "root": "/diff/wallx_workspace/dzb/conveyorvla-al0-runs-34318e3-20260806/gates/g1-single-red-speed010-gpu3-r3",
+    "episode_id": "run-20260806T112908429861Z-42a5a8a6-ep0000-seed200000-whole_body_policy",
+    "success": true,
+    "control_steps": 976,
+    "object_records": 976,
+    "png_files": 1464,
+    "camera_ticks": 488,
+    "temporal_records": 300,
+    "gates": {
+      "strict": true,
+      "quality": true,
+      "camera": true,
+      "dynamicvla_export": true,
+      "m0_export": true,
+      "m0_mobile_export": true,
+      "conveyorvla_al0_temporal_export": true
+    }
+  },
+  "pilot": {
+    "tmux_session": "al0-pilot-d7b6f09-r1",
+    "coordinator_exit_code": 0,
+    "cells": 8,
+    "observed_episodes": 8,
+    "successful_episodes": 8,
+    "fully_gated_episodes": 8,
+    "training_eligible_episodes": 8,
+    "failed_task_seeds": [],
+    "png_files": 12321,
+    "temporal_records": 2438,
+    "bytes": 1140410825,
+    "duration_s": {
+      "min": 19.52,
+      "mean": 20.545,
+      "max": 21.8
+    }
+  },
+  "production": {
+    "target_training_eligible_episodes": 384,
+    "target_per_cell": 48,
+    "maximum_attempts_per_cell": 72,
+    "cells": 8,
+    "belt_speeds_mps": [
+      0.01,
+      0.02
+    ],
+    "objects": [
+      "part_red_block",
+      "part_blue_bar",
+      "part_yellow_bushing",
+      "part_green_shaft"
+    ],
+    "run_root": "/diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806",
+    "dataset_root": "/diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1",
+    "tmux_session": "al0-production-d7b6f09-r1",
+    "coordinator_pid_at_capture": 159863,
+    "lock_contents_at_capture": "pid=159863",
+    "coordinator_exit_marker_present": false,
+    "published_at_capture": 26,
+    "successful_at_capture": 26,
+    "failed_at_capture": 0,
+    "fully_gated_at_capture": 16,
+    "cell_published_at_capture": {
+      "blue_bar-speed-010": 12,
+      "red_block-speed-010": 14
+    },
+    "duration_s_at_capture": {
+      "min": 19.52,
+      "mean": 20.12923076923077,
+      "max": 20.84
+    },
+    "first_completed_at_utc": "2026-08-06T11:45:28.418521+00:00",
+    "last_completed_at_utc": "2026-08-06T12:01:20.474698+00:00",
+    "fatal_log_matches": 0,
+    "estimated_no_failure_runtime_h": 4.8,
+    "conservative_runtime_h": [
+      5.0,
+      6.0
+    ],
+    "reserve_consumption_upper_window_h": 7.5,
+    "estimated_final_dataset_gb": [
+      55,
+      60
+    ]
+  },
+  "first_batch_independent_verification": {
+    "episodes": 16,
+    "successful": 16,
+    "fully_gated": 16,
+    "profile_hashes_verified": 64,
+    "temporal_records": 4816,
+    "real_samples_loaded": 9,
+    "sample_positions": [
+      "first",
+      "middle",
+      "last"
+    ],
+    "validated_sample_shape": {
+      "state": [
+        28
+      ],
+      "action": [
+        20,
+        10
+      ],
+      "head_clip": [
+        2,
+        224,
+        224,
+        3
+      ],
+      "wrist_clip": [
+        2,
+        224,
+        224,
+        3
+      ]
+    }
+  },
+  "gpu_snapshot": {
+    "allowed_for_this_task": [
+      2,
+      3
+    ],
+    "workers": [
+      {
+        "physical_gpu": 2,
+        "uuid": "GPU-0b4f9aa0-7c5b-0aa1-3652-51b7ec9fc8b7",
+        "pid_at_capture": 166544,
+        "seed_start": 200009,
+        "object": "part_red_block"
+      },
+      {
+        "physical_gpu": 3,
+        "uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+        "pid_at_capture": 167911,
+        "seed_start": 201009,
+        "object": "part_blue_bar"
+      }
+    ],
+    "gpu_0_1_used_by_this_task": false,
+    "gpu_0_1_existing_processes_left_untouched": [
+      14877,
+      14885
+    ]
+  },
+  "production_command": [
+    "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311/bin/python",
+    "-B",
+    "scripts/collect_conveyorvla_al0_grasp.py",
+    "--phase",
+    "production",
+    "--output-root",
+    "/diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1",
+    "--python",
+    "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311/bin/python",
+    "--isaaclab-source",
+    "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/source/IsaacLab/source/isaaclab",
+    "--kit-cache-root",
+    "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/kit-portable/cache",
+    "--runtime-library-dir",
+    "/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/system-libs/root/usr/lib/x86_64-linux-gnu",
+    "--physical-gpu",
+    "2",
+    "--physical-gpu",
+    "3",
+    "--workers",
+    "2"
+  ]
+}

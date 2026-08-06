@@ -507,5 +507,6 @@ Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策�
 为 `a5c2802447abd4e4c50365549b7b0cc83db313f01800cb26d734fc8fc695f39c`。
 fixed 和三物体语言烟测尚未保存相机，所以不能据此宣称这两个配置的视觉门禁
 已通过。当前时序 AL0 已另行冻结 8 条 pilot 和 384 条成功配额的低速单物体课程；
-它必须通过自己的 pilot barrier 后才会正式放量。证据路径、负例和逐项状态见
-采集手册与 [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
+8/8 pilot 与正式首批 16/16 均已通过完整门禁，第二批已在 4xH20 的物理 GPU 2/3
+自动接续。证据路径、恢复规则和逐项状态见采集手册与
+[CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。

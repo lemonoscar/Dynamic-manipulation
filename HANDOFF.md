@@ -1,4 +1,4 @@
-# Dynamic Manipulation handoff — 2026-08-04
+# Dynamic Manipulation handoff — 2026-08-06
 
 > 2026-08-06 命名更新：当前策略基线的正式名称为 **ConveyorVLA AL0**。
 > 本文早期记录中的 M0/M1/M2、`m0_*` 路径和 schema 是历史实验或冻结兼容标识。
@@ -10,9 +10,97 @@
 - 本地仓库：`/home/lemon/research/Issac/Dynamic`
 - 分支：`main`
 - 远端：`https://github.com/lemonoscar/Dynamic-manipulation.git`
-- 本轮基线提交：`fddcb1affb445b6557243074885a6a99c35eecf7`
+- 当前 production 运行提交：`d7b6f0963bef0864b8101571981b7d02e40c3122`
 - 本文档对应的正式提交和远端状态以 `git log -1`、`git status -sb` 为准；全程
   直接推送 `main`，没有 PR。
+
+## 最新状态：ConveyorVLA AL0 temporal v1 已正式采集
+
+本节是当前操作真值；后文 2026-08-03 至 2026-08-05 的服务、旧矩阵和进程信息
+只保留为历史证据，不再作为运行指令。
+
+DynamicVLA 的代码级调研已经转化为 AL0 的兼容增量：head/wrist 各使用
+`[t-2,t]` 双帧，当前 `state28` 对齐未来 `20×10@25 Hz` 独立动作目标；TCP 采用
+观测时刻 root/TCP 下可跳行的 SE(3) 目标，在线 buffer 用 episode/generation/tick
+拒绝旧块并只保留最新结果。旧 `m0_*` schema、checkpoint key 和三种 legacy
+profile 没有改写；结构只有在闭环相对旧 AL0 确认提升后才允许命名为 AL1。
+
+代码与文档已通过以下门禁：
+
+- 本地完整测试：431 passed；
+- 远端完整测试（首个正式提交）：430 passed；生产运行修正后定向测试：12 passed；
+- G1 单回合在物理 GPU 3 成功：976 control steps、1464 PNG、300 temporal records；
+- G2 8-cell pilot：8/8 success、8/8 fully gated、2438 temporal records；
+- G3 首批 production：16/16 success、16/16 fully gated；四 profile 共 64 个哈希
+  全部独立复核；另加载 9 个真实首/中/末时序 sample，均为 `state28`、
+  `20×10` action、head/wrist 共四张 `224×224 RGB` 图。
+
+### 远端冻结身份
+
+```text
+SSH alias:       4xH20
+allowed root:    /diff/wallx_workspace/dzb
+source root:     /diff/wallx_workspace/dzb/conveyorvla-al0-34318e3-20260806-r1
+source commit:   d7b6f0963bef0864b8101571981b7d02e40c3122
+source tree SHA: 4b353a1bd247c913daa096a762c2e54ad5a0a3af168f65151c44948cc0245a2e
+asset lock SHA:  3351a6cf3ef7bb65fcd44245541c8cd044d5fb3e65434b18ebfb9ee488b2e075
+environment:     /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804
+run root:        /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806
+dataset root:    /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1
+tmux session:    al0-production-d7b6f09-r1
+coordinator log: /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/logs/production-coordinator.log
+exit marker:     /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/logs/production-coordinator.exit
+```
+
+生产命令固定为：
+
+```bash
+cd /diff/wallx_workspace/dzb/conveyorvla-al0-34318e3-20260806-r1/conveyor_bench
+PY=/diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311/bin/python
+
+PYTHONDONTWRITEBYTECODE=1 "$PY" -B scripts/collect_conveyorvla_al0_grasp.py \
+  --phase production \
+  --output-root /diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1 \
+  --python "$PY" \
+  --isaaclab-source /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/source/IsaacLab/source/isaaclab \
+  --kit-cache-root /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/kit-portable/cache \
+  --runtime-library-dir /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/system-libs/root/usr/lib/x86_64-linux-gnu \
+  --physical-gpu 2 \
+  --physical-gpu 3 \
+  --workers 2
+```
+
+`2026-08-06T12:01:22Z` 的稳定快照为 26 条 production、26 success、0 failure、
+16 fully gated；第二批 seed `200009…` 与 `201009…` 已分别在物理 GPU 2/3 自动
+接续，两个进程各约 3.7 GB 显存。GPU 0/1 仍是用户已有的 ABot-M0.5 进程
+PID 14877/14885，本任务没有修改或复用。采集锁为 coordinator PID 159863，tmux
+pane 存活，没有 exit marker；全部日志扫描为 0 条 traceback/OOM/runtime fatal。
+
+首个双 worker 批次的 16 条仿真加门禁约 11–12 分钟。384 条无失败投影约
+4.8 小时，保守预计从 2026-08-06 19:44 CST 启动后 5–6 小时完成；预留 seed
+被消耗时可能延长到约 7.5 小时。按实测均值，最终 pilot 加 production 约
+55–60 GB。这里只声明正式采集已稳定启动，不声明 384 条已经完成。
+
+### 监控与恢复
+
+```bash
+DATA_ROOT=/diff/wallx_workspace/dzb/conveyorvla-al0-runs-d7b6f09-20260806/datasets/grasp-temporal-v1-d7b6f09-r1
+tmux has-session -t al0-production-d7b6f09-r1
+find "$DATA_ROOT/production" -type f -name summary.json | wc -l
+find "$DATA_ROOT/production" -type f -name quality_report.json | wc -l
+find "$DATA_ROOT/production" -type f -name camera_gate_report.json | wc -l
+find "$DATA_ROOT/production" -type f \
+  -path '*/exports/conveyorvla_al0_temporal.jsonl' | wc -l
+find "$DATA_ROOT/production" -type d -name '*.inprogress' -print
+nvidia-smi
+```
+
+总账按完整双 cell wave 原子更新，所以一个 cell 尚未达到 48 条时可能落后于即时
+目录计数。锁 PID 存活或 tmux 仍在时，绝不能启动第二个 coordinator 或删除锁。
+若意外中断，先确认精确 PID 已退出，再审计 orphan、`.inprogress`、源码/资产
+指纹和已发布 seed；只有全部一致时才使用上述同一命令和同一 dataset root 恢复。
+机器可读启动证据在
+`conveyor_bench/docs/conveyorvla_al0_collection_launch_20260806.json`。
 
 ## 已完成的主体工作
 
