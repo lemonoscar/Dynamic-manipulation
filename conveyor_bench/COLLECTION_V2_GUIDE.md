@@ -1,7 +1,7 @@
 # ConveyorBench V2 数据采集与验收手册
 
-本文给出从本地资产检查、场景预览、最小物理 smoke、严格校验到 M0/
-DynamicVLA 离线导出的操作顺序。V2 当前交付目标是“可开启采集的框架”，不是
+本文给出从本地资产检查、场景预览、最小物理 smoke、严格校验到 ConveyorVLA
+AL0/DynamicVLA 离线导出的操作顺序。V2 当前交付目标是“可开启采集的框架”，不是
 大规模轨迹集。先逐条关闭门禁，再扩大 seed 和物体覆盖；不要用协议测试或 SVG
 预览代替 Isaac 物理与 RTX 相机证据。
 
@@ -32,7 +32,7 @@ remote whole-body 在同一冻结指纹下完成了蓝/黄双方向物理正例�
 
 RTX 三相机也各保留一条成功正例。near fixed single 记录 294 个同步 tick、
 882 张 PNG，strict validator 与 temporal camera gate 通过，并导出 294 条
-DynamicVLA 和 294 条 M0 记录；remote whole-body 记录 600 个同步 tick、1800 张
+DynamicVLA 和 294 条 AL0 记录；remote whole-body 记录 600 个同步 tick、1800 张
 PNG，同样通过两级校验，并各导出 600 条记录。episode ID 分别为
 `run-20260731T144222799582Z-20b7af64-ep0000-seed0-fixed_base` 与
 `run-20260731T144429166398Z-50776f40-ep0000-seed0-whole_body_policy`。overview
@@ -40,7 +40,7 @@ PNG，同样通过两级校验，并各导出 600 条记录。episode ID 分别�
 
 另有一条 synthetic data-plane smoke 通过
 `EpisodeRecorder → continuous 两目标成功 episode → V2 strict validator →
-DynamicVLA/M0 iterator`，且 canonical 6 个源文件哈希未变化。它只补充证明数据
+DynamicVLA/AL0 iterator`，且 canonical 6 个源文件哈希未变化。它只补充证明数据
 平面接线，不能替代上述物理证据或实际 RTX 门禁。
 
 ## 2. 环境、测试与资产预检
@@ -335,7 +335,7 @@ outputs/gate/v2_<profile>/
    displacement；
 3. V1 quality audit：把物理任务失败与数据损坏分开；
 4. temporal camera gate：三路图像时变、head/wrist 目标证据和 overview 权限；
-5. V2 M0/DynamicVLA exporter：仅生成派生视图，并复核 canonical 哈希未变化。
+5. V2 AL0/DynamicVLA exporter：仅生成派生视图，并复核 canonical 哈希未变化。
 
 例如验收 remote 相机 smoke；把 `EPISODE_ID` 替换为 run summary 中发布的实际
 目录名：
@@ -385,10 +385,10 @@ supervision_only_fields
 `current_target_id` 和 `current_subtask_index` 是 teacher/evaluator 监督，不是
 在线策略可见观测。抽查导出首尾记录时，至少确认：
 
-- DynamicVLA 与 M0 的记录数和 model tick 对齐；
+- DynamicVLA 与 AL0 的记录数和 model tick 对齐；
 - continuous 的 current target 顺序只从目标 0 前进到目标 1；
 - canonical 10D action 和有效位 mask 仍存在；
-- M0/DynamicVLA 的坐标系与 chunk 长度继续遵循 V1；
+- AL0/DynamicVLA 的坐标系与 chunk 长度继续遵循 V1；
 - `export_manifest.json` 记录源与输出哈希，canonical 文件导出前后不变。
 
 ## 8. 从 smoke 到正式采集的清单

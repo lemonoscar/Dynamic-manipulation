@@ -3,7 +3,8 @@
 本文定义 ConveyorBench V2 的任务、场景、资产、记录、评价与放量边界。V2 的
 目标是为“移动机器人在横向传送带上动态抓取零件，并按指令把零件投放到指定
 位置”的新 VLA 策略提供可采集、可复现、可严格验收的仿真接口。它服务于
-ABot-Manipulation M0 风格的动作建模与 DynamicVLA 风格的视觉—语言—动作学习，
+ConveyorVLA AL0（继承 ABot-Manipulation M0 checkpoint 结构）的动作建模与
+DynamicVLA 风格的视觉—语言—动作学习，
 但本交付不包含训练好的策略，也不把尚未执行的仿真门禁写成已通过结果。
 
 机器可读的 suite 快照为 [configs/v2.json](configs/v2.json)，采集步骤见
@@ -195,14 +196,14 @@ V1 strict validator 先检查 canonical 协议、时间、引用、图像、未�
 `summary.success=true` 时强制，但 canonical 结构与 suite metadata 对成功和
 失败都必须合法。运行异常、流损坏或版本不一致不是任务失败，而是数据损坏。
 
-## 9. M0 与 DynamicVLA 投影
+## 9. ConveyorVLA AL0 与 DynamicVLA 投影
 
 V2 exporter 包装 V1 的 lossless 离线投影，不改变 canonical 文件，也不把
 模型专用动作写回原始流：
 
 - DynamicVLA 保留 V1 的 base-frame state/action、视觉历史、未来 TCP 标签和
   20-step action chunk；
-- M0 保留 V1 的 world-frame state/arm delta、右臂 14D 适配、base 3D 和
+- AL0 的 legacy `m0` 视图保留 V1 的 world-frame state/arm delta、右臂 14D 适配、base 3D 和
   16-step action chunk；
 - 两种投影都增加 `scene_id`、`task_family`、`target_sequence_ids`、
   `destination_zone_by_target`、`current_target_id` 和
@@ -215,7 +216,7 @@ observer-only overview 是否存在不决定训练资格。
 
 ### 9.1 算法可见性边界
 
-为了让 M0 风格的分层控制和 DynamicVLA 风格的视觉 action chunk 在同一数据上
+为了让 AL0 的分层控制和 DynamicVLA 风格的视觉 action chunk 在同一数据上
 公平对比，输入、监督和评价信息必须分层：
 
 | 信息 | teacher/记录 | 在线 VLA |
@@ -252,7 +253,7 @@ V2 strict validation。远端托盘高度 `0.46 m` 和 `x=-0.16 m` 携物走廊�
 
 RTX 4060 上的 near fixed single 与 remote whole-body 三相机正例分别记录
 294/600 个同步 tick、882/1800 张 PNG，均通过 temporal camera gate、V2 strict
-validation 和 DynamicVLA/M0 双导出。全部最终正例携带同一 source-tree SHA-256
+validation 和 DynamicVLA/AL0 双导出。全部最终正例携带同一 source-tree SHA-256
 `0a2fd7c20f2ef62e1ab8c13ef6d871f779b5871088fb46093f994753a291514b`。早期 Isaac
 默认 ground 的远程 USD 依赖已由 V2 本地程序化地面消除；near whole-body、near
 continuous 相机、语言条件与其余物体/seed/速度矩阵仍未通过。

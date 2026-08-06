@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Overfit a synthetic M0-Mobile batch and verify AML checkpoint inference."""
+"""Overfit a synthetic AL0 batch and verify AML checkpoint inference."""
 
 from __future__ import annotations
 
@@ -199,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     report = {
         "passed": passed,
-        "scope": "AML objective/sampler smoke; not a full M0 DiT-B reproduction",
+        "scope": "AML objective/sampler smoke; not the full AL0 DiT-B policy",
         "python": platform.python_version(),
         "torch": torch.__version__,
         "device": str(device),

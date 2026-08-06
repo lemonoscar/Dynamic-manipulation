@@ -5,7 +5,7 @@ ConveyorBench 现在同时保留 V0 单目标固定机身基线、冻结的 V1 �
 持物移动到远端投放”组织：共有 8 类本地程序化零件、2 个场景和 7 个允许的
 scene/task/mode 组合，包含首版双目标连续分拣与强制 whole-body 的远端交付。
 V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五个预注册场景先
-隔离 M0 的移动、抓取与投放能力；它不会计入动态 benchmark 分数。
+隔离 ConveyorVLA AL0 的移动、抓取与投放能力；它不会计入动态 benchmark 分数。
 
 - V2 规范：[BENCHMARK_V2_SPEC.md](BENCHMARK_V2_SPEC.md)
 - V2 可机读快照：[configs/v2.json](configs/v2.json)
@@ -14,7 +14,12 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
 - V1 冻结规范：[BENCHMARK_V1_SPEC.md](BENCHMARK_V1_SPEC.md)
 - V1 可机读快照：[configs/v1.json](configs/v1.json)
 - V1 采集与验收手册：[COLLECTION_GUIDE.md](COLLECTION_GUIDE.md)
-- M0-Mobile 在线闭环与验收：[M0_ONLINE_GUIDE.md](M0_ONLINE_GUIDE.md)
+- ConveyorVLA AL0 在线闭环与验收：
+  [CONVEYORVLA_AL0_GUIDE.md](CONVEYORVLA_AL0_GUIDE.md)
+- ConveyorVLA AL0 时序架构与正式采集：
+  [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)
+- 下一代动态抓取结构：
+  [CONVEYORVLA_AL1_DESIGN.md](CONVEYORVLA_AL1_DESIGN.md)
 - V0 冻结规范：[BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
 - V0 可机读快照：[configs/v0.json](configs/v0.json)
 - 阶段状态：[ROADMAP.md](ROADMAP.md)
@@ -25,7 +30,7 @@ V2 是复用 `conveyor-bench-v1` canonical 数据协议的 suite 增量，不另
 双目标 continuous，以及 remote whole-body 蓝/黄双向单目标投放；连续持物位移
 分别为 `0.735903 m` 和 `0.778166 m`。本机 RTX 4060 上的 near fixed single 与
 remote whole-body 三相机正例均通过 V2 strict validator、temporal camera gate
-和 DynamicVLA/M0 双导出。near whole-body、语言条件、near continuous 相机及
+和 DynamicVLA/AL0 双导出。near whole-body、语言条件、near continuous 相机及
 其余物体/速度/seed 矩阵仍必须按采集手册逐条验收。
 
 所有项目代码、资产与本地策略权重都在 `Dynamic/conveyor_bench/`；采集运行不
@@ -76,7 +81,7 @@ python scripts/run_benchmark_v2.py \
 V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 `mobile_remote_delivery_v2`。near 支持单目标、语言条件和 fixed-base 双目标
 连续分拣；remote 只支持 whole-body 单目标或语言条件交付，成功还要求连续持物
-底盘位移至少 `0.65 m`。完整的 smoke、严格校验、相机门禁和 M0/DynamicVLA
+底盘位移至少 `0.65 m`。完整的 smoke、严格校验、相机门禁和 AL0/DynamicVLA
 导出顺序见 [COLLECTION_V2_GUIDE.md](COLLECTION_V2_GUIDE.md)。
 
 ## V0 使用说明
@@ -94,13 +99,15 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── configs/v1.json             # V1 冻结快照
 ├── configs/v2.json             # V2 场景、任务矩阵与门槛快照
 ├── COLLECTION_GUIDE.md         # V1 门禁、采集、验收与导出操作手册
-├── M0_ONLINE_GUIDE.md          # M0 服务、离线阶段门禁与 Isaac 在线闭环
+├── CONVEYORVLA_AL0_GUIDE.md    # AL0 服务、离线阶段门禁与 Isaac 在线闭环
+├── CONVEYORVLA_AL0_EXECUTION_PLAN.md # 时序架构、低速课程与正式采集门槛
+├── CONVEYORVLA_AL1_DESIGN.md   # DynamicVLA 时序分析与动态抓取升级方案
 ├── COLLECTION_V2_GUIDE.md      # V2 从 smoke 到正式采集的操作手册
 ├── BENCHMARK_V2_SPEC.md        # V2 benchmark 规范
 ├── scripts/render_v2_layout.py # 不启动 Isaac 的本地 SVG 场景预览
 ├── scripts/run_benchmark_v2.py # V2 任务预检与仿真采集入口
 ├── scripts/validate_v2_dataset.py # V1 canonical + V2 语义严格校验
-├── scripts/export_v2.py        # V2 到 DynamicVLA/M0 的离线投影
+├── scripts/export_v2.py        # V2 到 DynamicVLA/AL0 的离线投影
 ├── scripts/check_environment.py # 本地资产与依赖预检
 ├── scripts/run_conveyor.py     # C0/C1 仿真与采集入口
 ├── scripts/run_benchmark_v1.py # V1 fixed/whole-body 采集入口
@@ -108,15 +115,19 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── scripts/validate_v1_dataset.py # V1 严格数据校验
 ├── scripts/audit_v1_episode.py # V1 episode 数据质量审计
 ├── scripts/check_v1_camera_gate.py # V1 相机时变与策略可见性门禁
-├── scripts/export_v1.py        # V1 到 DynamicVLA/M0 的离线投影
-├── scripts/smoke_m0_aml.py     # M0-Mobile AML loss/采样/checkpoint 烟测
+├── scripts/export_v1.py        # V1 到 DynamicVLA/AL0 的离线投影
+├── scripts/collect_conveyorvla_al0_grasp.py # AL0 低速成功配额采集器
+├── scripts/smoke_m0_aml.py     # AL0 legacy-profile AML 烟测
+├── scripts/train_conveyorvla_al0.py
+├── scripts/serve_conveyorvla_al0.py
+├── scripts/run_conveyorvla_al0_closed_loop.py
 ├── scripts/probe_kinematics.py # 机械臂位姿探针
 ├── scripts/probe_scene.py      # 传送带接触与运动探针
 ├── scripts/probe_v1_scene.py   # V1 工作站与三相机探针
 ├── scripts/probe_mobile_locomotion.py # V1 浮动根移动策略门禁
 ├── src/conveyor_bench/
 │   ├── isaac/                  # 场景、机器人配置和单一物理主循环
-│   ├── m0_aml.py               # 最小纯 PyTorch AML action head
+│   ├── m0_aml.py               # legacy ABI：最小纯 PyTorch AML action head
 │   ├── v1/                     # V1 配置、协议、记录、审计与导出
 │   ├── v2/                     # V2 task context、连续协调、校验与导出注解
 │   ├── config.py               # 运行时 V0 常量
@@ -460,11 +471,11 @@ exports/
 ```
 
 DynamicVLA 视图为 25 Hz、历史 `[-2,0]`、未来 TCP 偏移 `+5` tick、20-step
-chunk；M0 视图把 TCP delta 投影到 world frame，形成左臂 7 个零加右臂 7D
+chunk；legacy `m0` 视图把 TCP delta 投影到 world frame，形成左臂 7 个零加右臂 7D
 的 14D、16-step chunk。两者都单独保留 body-frame base 3D、原始 canonical
 10D 和有效位 mask，且不会改写 canonical episode。
 
-面向移动底盘策略训练，使用因果 `m0_mobile` profile，而不是上述 legacy M0
+面向 AL0 移动底盘策略训练，使用因果 `m0_mobile` profile，而不是上述 legacy `m0`
 同 tick 视图：
 
 ```bash
@@ -484,7 +495,7 @@ PYTHONPATH=src python scripts/smoke_m0_aml.py \
 
 训练后的 action head 可通过本仓库内的服务端接入同一 Go2-X5 任务；部署顺序、
 SHA 身份校验、阶段 fail-closed 门禁、闭环命令和最新实测结果见
-[M0_ONLINE_GUIDE.md](M0_ONLINE_GUIDE.md)。当前 checkpoint 已跑通在线传输与
+[CONVEYORVLA_AL0_GUIDE.md](CONVEYORVLA_AL0_GUIDE.md)。当前 checkpoint 已跑通在线传输与
 Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策略抓取成功。
 
 当前本地物理烟测已经观察到 fixed 单目标约 `10.48 s` 成功、whole-body
@@ -492,8 +503,9 @@ Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策�
 成功；对应 canonical 输出通过 strict validator 和 quality audit。Fabric
 修复后的 whole-body 单目标 release `outputs/gate/v1_release_camera` 包含
 540 个同步 tick、1620 张 PNG，temporal camera gate 已实际通过，并完成各
-540 条的 M0/DynamicVLA 双导出且 canonical 哈希未改变；对应源码树 SHA-256
+540 条的 AL0/DynamicVLA 双导出且 canonical 哈希未改变；对应源码树 SHA-256
 为 `a5c2802447abd4e4c50365549b7b0cc83db313f01800cb26d734fc8fc695f39c`。
 fixed 和三物体语言烟测尚未保存相机，所以不能据此宣称这两个配置的视觉门禁
-已通过；下一步仍是小批量回归，而不是大规模采集。证据路径、负例和逐项状态
-见采集手册。
+已通过。当前时序 AL0 已另行冻结 8 条 pilot 和 384 条成功配额的低速单物体课程；
+它必须通过自己的 pilot barrier 后才会正式放量。证据路径、负例和逐项状态见
+采集手册与 [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。

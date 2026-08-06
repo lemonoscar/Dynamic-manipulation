@@ -13,6 +13,7 @@ from conveyor_bench.v1.exporters import (
     export_dynamicvla_episode,
     export_m0_episode,
     iter_dynamicvla_records,
+    iter_conveyorvla_al0_temporal_records,
     iter_m0_records,
     load_model_tick_steps,
     validate_episode_for_export,
@@ -162,9 +163,9 @@ def make_episode(
                     "wxyz": [1.0, 0.0, 0.0, 0.0],
                 },
                 "joints": {
-                    "names": ["joint-1"],
-                    "positions": [0.0],
-                    "velocities": [0.0],
+                    "names": [f"arm_joint{index}" for index in range(1, 9)],
+                    "positions": [0.0] * 8,
+                    "velocities": [0.0] * 8,
                 },
                 "action": {
                     "values": [
@@ -380,6 +381,36 @@ def test_dynamicvla_projection_uses_model_ticks_history_and_future_offset(
     assert sum(records[10]["action_valid_mask"]) == 15
     assert sum(records[10]["canonical_valid_mask"]) == 20
     assert first["base_action3_chunk"][0] == (0.1, 0.2, 0.3)
+
+
+def test_al0_temporal_projection_has_history_and_random_access_targets(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+
+    records = list(iter_conveyorvla_al0_temporal_records(episode))
+    first = records[0]
+
+    assert len(records) == 8
+    assert first["profile"] == "conveyorvla_al0_temporal_v1"
+    assert first["observation_model_tick"] == 2
+    assert first["observation_control_tick"] == 5
+    assert first["history_model_ticks"] == (0, 2)
+    assert first["history_sim_times_s"][1] - first["history_sim_times_s"][0] == pytest.approx(0.08)
+    assert [clip["camera_id"] for clip in first["camera_clips"]] == [
+        "head_rgb",
+        "wrist_rgb",
+    ]
+    assert all(len(clip["frames"]) == 2 for clip in first["camera_clips"])
+    assert len(first["model_action10_chunk"]) == 20
+    assert first["model_action10_chunk"][0][:3] == pytest.approx((0.1, 0.2, 0.3))
+    assert first["model_action10_chunk"][0][3] == pytest.approx(0.01)
+    assert first["model_action10_chunk"][5][3] == pytest.approx(0.06)
+    assert first["future_offsets_model_ticks"] == tuple(range(1, 21))
+    assert first["object_state_is_model_input"] is False
 
 
 def test_m0_projection_right_pads_and_preserves_canonical_source(tmp_path) -> None:

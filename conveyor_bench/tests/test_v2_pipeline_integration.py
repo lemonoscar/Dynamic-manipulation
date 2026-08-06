@@ -126,7 +126,7 @@ def _deduplicate(values: list[object]) -> tuple[object, ...]:
 def test_synthetic_continuous_episode_crosses_the_v2_data_pipeline(
     tmp_path: Path,
 ) -> None:
-    """Recorder -> validator -> DynamicVLA/M0, with no Isaac/GPU claims."""
+    """Recorder -> validator -> DynamicVLA/AL0, with no Isaac/GPU claims."""
 
     context = build_task_context(
         seed=7,

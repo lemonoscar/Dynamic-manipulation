@@ -26,6 +26,7 @@ RUNTIME_V2_PATH = (
     PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "runtime_v2.py"
 )
 RUN_M0_PATH = PROJECT_ROOT / "scripts" / "run_m0_closed_loop.py"
+RUN_V1_PATH = PROJECT_ROOT / "scripts" / "run_benchmark_v1.py"
 V1_CONFIG_PATH = PROJECT_ROOT / "configs" / "v1.json"
 
 
@@ -38,6 +39,14 @@ def _runtime_class(tree: ast.Module) -> ast.ClassDef:
         node
         for node in tree.body
         if isinstance(node, ast.ClassDef) and node.name == "ConveyorRuntimeV1"
+    )
+
+
+def _class(tree: ast.Module, name: str) -> ast.ClassDef:
+    return next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == name
     )
 
 
@@ -188,10 +197,22 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
     assert "'turn': 10.0" in source
 
 
-def test_v1_oracle_phase_timeout_remains_bounded() -> None:
+def test_v1_oracle_phase_timeout_covers_slow_belt_travel() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_oracle_phase_timeout_s"))
 
-    assert "return 15.0" in source
+    assert "return max(15.0, travel_s + 5.0)" in source
+    assert "(spawn_y - intercept_y) / speed" in source
+
+
+def test_v1_training_lead_time_is_explicit_and_recorded() -> None:
+    options_source = ast.unparse(_class(_runtime_tree(), "RuntimeOptionsV1"))
+    resolve_source = ast.unparse(_method(_runtime_tree(), "_make_task"))
+    cli_source = RUN_V1_PATH.read_text(encoding="utf-8")
+
+    assert "target_intercept_lead_time_s: float | None = None" in options_source
+    assert "target_intercept_lead_time_s requires a moving conveyor" in options_source
+    assert "target_intercept_lead_time_s" in resolve_source
+    assert "--target-intercept-lead-time" in cli_source
 
 
 def test_mobile_carry_recovers_until_the_physical_fall_gate() -> None:
@@ -409,7 +430,7 @@ def test_m0_pregrasp_workspace_guard_is_explicit_and_diagnostic_only() -> None:
     cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
 
     assert "m0_pregrasp_workspace_guard: bool = False" in options_source
-    assert "requires online M0" in options_source
+    assert "requires online AL0" in options_source
     assert "self.options.m0_pregrasp_workspace_guard and phase == 'pregrasp'" in (
         episode_source
     )
@@ -435,7 +456,7 @@ def test_m0_mobile_approach_assist_is_audited_and_default_off() -> None:
     cli_source = RUN_M0_PATH.read_text(encoding="utf-8")
 
     assert "m0_mobile_approach_assist: bool = False" in options_source
-    assert "m0_mobile_approach_assist requires online M0" in options_source
+    assert "m0_mobile_approach_assist requires online AL0" in options_source
     assert "diagnostic_mobile_approach_assist" in episode_source
     assert "approach_assist_active" in episode_source
     assert "policy_requests_before_object_spawn" in episode_source
@@ -468,7 +489,7 @@ def test_m0_pregrasp_staging_assist_is_static_audited_and_default_off() -> None:
 
     assert "m0_pregrasp_staging_assist: bool = False" in options_source
     assert "mutually exclusive diagnostics" in options_source
-    assert "m0_pregrasp_staging_assist requires online M0" in options_source
+    assert "m0_pregrasp_staging_assist requires online AL0" in options_source
     assert "previous_phase == 'pregrasp'" in episode_source
     assert "phase in _M0_TRANSITION_CHUNK_PHASES" in episode_source
     assert "diagnostic_pregrasp_staging_assist" in episode_source
@@ -548,7 +569,7 @@ def test_m0_carry_teacher_uses_the_cartesian_policy_executor() -> None:
         in options_source
     )
     assert (
-        "m0_carry_retract_teacher_executor requires online M0"
+        "m0_carry_retract_teacher_executor requires online AL0"
         in options_source
     )
     assert "phase == 'carry_retract'" in episode_source

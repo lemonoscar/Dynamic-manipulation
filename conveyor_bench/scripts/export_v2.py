@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export V2 episodes to local DynamicVLA and ABot-M0 JSONL views."""
+"""Export V2 episodes to local DynamicVLA and AL0-compatible JSONL views."""
 
 from __future__ import annotations
 

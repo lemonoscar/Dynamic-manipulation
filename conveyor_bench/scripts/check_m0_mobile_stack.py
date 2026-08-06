@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit local M0-Mobile artifacts, checkpoint shapes, and one exported sample."""
+"""Audit local ConveyorVLA AL0 artifacts and one legacy-profile sample."""
 
 from __future__ import annotations
 
@@ -161,12 +161,12 @@ def _qwen_processor(config: dict, root: Path) -> dict:
     hidden_size = model_config.text_config.hidden_size
     vocab_size = model_config.text_config.vocab_size
     if hidden_size != config["vlm"]["hidden_size"]:
-        raise M0MobileError("Qwen hidden size disagrees with M0-Mobile config")
+        raise M0MobileError("Qwen hidden size disagrees with ConveyorVLA AL0 config")
     if vocab_size != config["vlm"]["base_vocab_size"]:
-        raise M0MobileError("Qwen vocabulary size disagrees with M0-Mobile config")
+        raise M0MobileError("Qwen vocabulary size disagrees with ConveyorVLA AL0 config")
     tokenizer_size = len(processor.tokenizer)
     if tokenizer_size != config["vlm"]["processor_tokenizer_size"]:
-        raise M0MobileError("Qwen tokenizer size disagrees with M0-Mobile config")
+        raise M0MobileError("Qwen tokenizer size disagrees with ConveyorVLA AL0 config")
     try:
         from PIL import Image
     except ImportError as error:

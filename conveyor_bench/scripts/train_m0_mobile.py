@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the Go2-X5 M0 action model with frozen local Qwen3-VL features."""
+"""Train ConveyorVLA AL0 with frozen local Qwen3-VL features."""
 
 from __future__ import annotations
 
@@ -30,12 +30,15 @@ from conveyor_bench.m0_dit import (  # noqa: E402
 )
 from conveyor_bench.m0_mobile import (  # noqa: E402
     DEFAULT_CONFIG_PATH,
+    MODEL_FAMILY,
+    MODEL_NAME,
+    MODEL_VARIANT,
     M0MobileError,
     load_m0_mobile_config,
     resolve_model_root,
 )
 from conveyor_bench.m0_policy import (  # noqa: E402
-    M0MobilePolicy,
+    ConveyorVLAAL0Policy,
     Qwen3VLInterface,
     m0_dit_config,
     transfer_robocasa_policy_weights,
@@ -107,7 +110,7 @@ def _distributed_device() -> tuple[torch.device, int, int, int]:
     rank = int(os.environ.get("RANK", "0"))
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     if not torch.cuda.is_available():
-        raise M0MobileError("M0-Mobile training requires CUDA")
+        raise M0MobileError(f"{MODEL_NAME} training requires CUDA")
     if local_rank >= torch.cuda.device_count():
         raise M0MobileError("LOCAL_RANK exceeds visible CUDA devices")
     torch.cuda.set_device(local_rank)
@@ -255,7 +258,12 @@ def _save_action_model(
     save_file(
         tensors,
         temporary,
-        metadata={"schema_version": "conveyor-bench-m0-mobile-action-checkpoint-1"},
+        metadata={
+            "schema_version": "conveyor-bench-m0-mobile-action-checkpoint-1",
+            "model_family": MODEL_FAMILY,
+            "model_variant": MODEL_VARIANT,
+            "model_name": MODEL_NAME,
+        },
     )
     os.replace(temporary, destination)
     digest = hashlib.sha256()
@@ -361,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
             dtype=torch.bfloat16,
             attention_implementation=args.attention_implementation,
         )
-        policy = M0MobilePolicy(
+        policy = ConveyorVLAAL0Policy(
             qwen,
             M0DiTActionHead(m0_dit_config(config)),
             repeated_diffusion_steps=training["repeated_diffusion_steps"],
@@ -462,6 +470,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             report = {
                 "schema_version": "conveyor-bench-m0-mobile-training-report-1",
+                "model_identity": {
+                    "family": MODEL_FAMILY,
+                    "variant": MODEL_VARIANT,
+                    "name": MODEL_NAME,
+                },
                 "ok": True,
                 "world_size": world_size,
                 "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
@@ -489,12 +502,13 @@ def main(argv: list[str] | None = None) -> int:
                 "state_statistics_relative_path": "state_statistics.json",
                 "action_model_sha256": action_sha256,
                 "initial_action_model_sha256": initial_action_sha256,
+                "config_relative_path": "conveyorvla_al0_config.json",
             }
             (output / "training_report.json").write_text(
                 json.dumps(report, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            (output / "m0_mobile_config.json").write_text(
+            (output / "conveyorvla_al0_config.json").write_text(
                 json.dumps(config, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )

@@ -24,6 +24,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--belt-speed", type=float, default=0.06)
+    parser.add_argument(
+        "--target-intercept-lead-time",
+        type=float,
+        help=(
+            "Training curriculum only: spawn the target this many belt-seconds "
+            "upstream of the fixed intercept point."
+        ),
+    )
     parser.add_argument("--max-duration", type=float, default=20.0)
     parser.add_argument("--active-objects", type=int, default=3)
     parser.add_argument(
@@ -99,6 +107,9 @@ def main() -> int:
                 episodes=args.episodes,
                 seed=args.seed,
                 belt_speed_mps=args.belt_speed,
+                target_intercept_lead_time_s=(
+                    args.target_intercept_lead_time
+                ),
                 max_duration_s=args.max_duration,
                 active_object_count=args.active_objects,
                 target_asset_id=args.target_asset,

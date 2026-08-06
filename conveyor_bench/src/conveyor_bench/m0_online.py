@@ -1,4 +1,4 @@
-"""Minimal localhost transport contract for online M0-Mobile inference."""
+"""Minimal localhost transport contract for ConveyorVLA AL0 inference."""
 
 from __future__ import annotations
 
@@ -19,6 +19,9 @@ from uuid import uuid4
 
 from conveyor_bench.m0_mobile import (
     DEFAULT_CONFIG_PATH,
+    MODEL_FAMILY,
+    MODEL_NAME,
+    MODEL_VARIANT,
     M0MobileError,
     M0MobileNormalizer,
     load_m0_mobile_config,
@@ -79,7 +82,7 @@ def build_state28(
     tcp_rotation_vector_base: Sequence[float],
     gripper_open_fraction: float,
 ) -> tuple[float, ...]:
-    """Build the frozen M0 state in the same order as the dataset exporter."""
+    """Build the frozen AL0 state in the same order as the dataset exporter."""
 
     gripper = _finite_number(gripper_open_fraction, "gripper_open_fraction")
     if not 0.0 <= gripper <= 1.0:
@@ -95,7 +98,7 @@ def build_state28(
         + (gripper,)
     )
     if len(state) != len(M0_MOBILE_STATE_LAYOUT):
-        raise AssertionError("M0-Mobile state layout and builder disagree")
+        raise AssertionError("ConveyorVLA AL0 state layout and builder disagree")
     return state
 
 
@@ -322,7 +325,7 @@ def quantize_go2_forward_intent(
     activation_mps: float = 0.08,
     audited_minimum_mps: float = 0.16,
 ) -> tuple[float, float, float]:
-    """Map a clear M0 forward intent onto the tested Go2 speed primitive."""
+    """Map a clear AL0 forward intent onto the tested Go2 speed primitive."""
 
     vx, _vy, wz = _finite_vector(command, 3, "Go2 base command")
     activation = _finite_number(activation_mps, "activation_mps")
@@ -369,7 +372,9 @@ def load_state_statistics(path: str | Path) -> Mapping[str, Any]:
         or statistics["state_dimension"] != STATE_DIM
         or statistics["state_layout"] != list(M0_MOBILE_STATE_LAYOUT)
     ):
-        raise M0OnlineError("state statistics do not match the M0-Mobile train contract")
+        raise M0OnlineError(
+            "state statistics do not match the ConveyorVLA AL0 train contract"
+        )
     _finite_vector(statistics["mean"], STATE_DIM, "state statistics mean")
     std = _finite_vector(statistics["std"], STATE_DIM, "state statistics std")
     if any(component < 0.0 for component in std):
@@ -464,7 +469,9 @@ class M0OnlineClient:
             "action_dim": ACTION_DIM,
         }
         if any(health[key] != value for key, value in expected.items()):
-            raise M0OnlineError("health response does not match the M0-Mobile contract")
+            raise M0OnlineError(
+                "health response does not match the ConveyorVLA AL0 contract"
+            )
         return {**expected, "model": _model_identity(health["model"])}
 
     def infer(
@@ -594,17 +601,30 @@ def health_payload(model: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _model_identity(value: Any) -> dict[str, Any]:
-    identity = _exact_object(
-        value,
-        {
-            "action_model_sha256",
-            "state_statistics_sha256",
-            "training_report_sha256",
-            "training_steps",
-            "dataset_records",
-        },
-        "model identity",
-    )
+    legacy_keys = {
+        "action_model_sha256",
+        "state_statistics_sha256",
+        "training_report_sha256",
+        "training_steps",
+        "dataset_records",
+    }
+    canonical_keys = legacy_keys | {"family", "variant", "name"}
+    if not isinstance(value, Mapping) or set(value) not in (
+        legacy_keys,
+        canonical_keys,
+    ):
+        actual = sorted(value) if isinstance(value, Mapping) else type(value).__name__
+        raise M0OnlineError(
+            "model identity fields must match the legacy or ConveyorVLA AL0 "
+            f"contract; got {actual}"
+        )
+    identity = dict(value)
+    if set(identity) == canonical_keys and (
+        identity["family"] != MODEL_FAMILY
+        or identity["variant"] != MODEL_VARIANT
+        or identity["name"] != MODEL_NAME
+    ):
+        raise M0OnlineError(f"model identity must identify {MODEL_NAME!r}")
     for key in (
         "action_model_sha256",
         "state_statistics_sha256",
@@ -621,7 +641,12 @@ def _model_identity(value: Any) -> dict[str, Any]:
         count = identity[key]
         if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
             raise M0OnlineError(f"model identity {key} must be a positive integer")
-    return dict(identity)
+    return {
+        "family": MODEL_FAMILY,
+        "variant": MODEL_VARIANT,
+        "name": MODEL_NAME,
+        **{key: identity[key] for key in legacy_keys},
+    }
 
 
 def _exact_object(value: Any, keys: set[str], name: str) -> Mapping[str, Any]:

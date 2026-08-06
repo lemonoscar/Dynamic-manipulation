@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the first online M0-Mobile gate on the matched Go2-X5 task."""
+"""Run the ConveyorVLA AL0 online gate on the matched Go2-X5 task."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--endpoint",
         default="http://127.0.0.1:18765",
-        help="SSH-forwarded localhost M0 inference endpoint.",
+        help="SSH-forwarded localhost ConveyorVLA AL0 inference endpoint.",
     )
     parser.add_argument("--state-statistics", required=True, type=Path)
     parser.add_argument("--policy-timeout", type=float, default=30.0)
@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--actions-per-replan",
         type=int,
         default=2,
-        help="Execute this prefix of each 16-step M0 chunk before replanning.",
+        help="Execute this prefix of each 16-step AL0 chunk before replanning.",
     )
     parser.add_argument(
         "--transition-actions-per-replan",
@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Diagnostic only: use the frozen service approach command, then "
-            "return base, arm, and gripper control to M0."
+            "return base, arm, and gripper control to AL0."
         ),
     )
     pregrasp_diagnostics = parser.add_mutually_exclusive_group()
@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Diagnostic only: service-hold the fixed world-frame pregrasp "
-            "station before handing control back to M0."
+            "station before handing control back to AL0."
         ),
     )
     parser.add_argument(
@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Diagnostic only: execute the shadow teacher carry-retract "
-            "physical action through the same Cartesian IK path as M0."
+            "physical action through the same Cartesian IK path as AL0."
         ),
     )
     parser.add_argument("--episodes", type=int, default=1)
@@ -74,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "outputs" / "m0_closed_loop",
+        default=PROJECT_ROOT / "outputs" / "conveyorvla_al0_closed_loop",
     )
     parser.add_argument(
         "--no-save-camera-frames",
@@ -91,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not args.enable_cameras:
-        parser.error("online M0 requires cameras; do not pass --disable_cameras")
+        parser.error(
+            "online ConveyorVLA AL0 requires cameras; do not pass --disable_cameras"
+        )
     app = AppLauncher(args)
     simulation_app = app.app
     try:

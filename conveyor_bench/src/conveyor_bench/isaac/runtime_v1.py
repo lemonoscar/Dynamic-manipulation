@@ -213,6 +213,7 @@ class RuntimeOptionsV1:
     episodes: int = 1
     seed: int = 0
     belt_speed_mps: float = 0.06
+    target_intercept_lead_time_s: float | None = None
     max_duration_s: float = 20.0
     active_object_count: int = 3
     target_asset_id: str = "part_red_block"
@@ -251,6 +252,14 @@ class RuntimeOptionsV1:
             raise ValueError("belt_speed_mps must be finite and non-negative")
         if self.max_duration_s <= 0.0:
             raise ValueError("max_duration_s must be positive")
+        if self.target_intercept_lead_time_s is not None and (
+            isinstance(self.target_intercept_lead_time_s, bool)
+            or not math.isfinite(self.target_intercept_lead_time_s)
+            or self.target_intercept_lead_time_s <= 0.0
+        ):
+            raise ValueError(
+                "target_intercept_lead_time_s must be positive when provided"
+            )
         if self.device != "cpu":
             raise ValueError(
                 "V1 currently requires --device cpu: its validated "
@@ -353,6 +362,10 @@ class RuntimeOptionsV1:
                 "the stationary-belt diagnostic requires active_object_count=1"
             )
         if self.belt_speed_mps == 0.0:
+            if self.target_intercept_lead_time_s is not None:
+                raise ValueError(
+                    "target_intercept_lead_time_s requires a moving conveyor"
+                )
             if resolved_family is not TaskFamily.SINGLE_TARGET:
                 raise ValueError(
                     "the stationary-belt diagnostic requires single_target"
@@ -404,31 +417,31 @@ class RuntimeOptionsV1:
             if not isinstance(self.m0_policy_endpoint, str):
                 raise TypeError("m0_policy_endpoint must be a string")
             if self.robot_mode is not RobotMode.WHOLE_BODY_POLICY:
-                raise ValueError("online M0 requires whole_body_policy")
+                raise ValueError("online ConveyorVLA AL0 requires whole_body_policy")
             if not self.enable_cameras:
-                raise ValueError("online M0 requires enable_cameras")
+                raise ValueError("online ConveyorVLA AL0 requires enable_cameras")
             if resolved_family is not TaskFamily.SINGLE_TARGET:
-                raise ValueError("the first online M0 gate requires single_target")
+                raise ValueError("the first online AL0 gate requires single_target")
             if self.m0_state_statistics is None:
-                raise ValueError("online M0 requires m0_state_statistics")
+                raise ValueError("online AL0 requires m0_state_statistics")
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
             )
         elif self.m0_mobile_approach_assist:
             raise ValueError(
-                "m0_mobile_approach_assist requires online M0"
+                "m0_mobile_approach_assist requires online AL0"
             )
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
-                "m0_pregrasp_workspace_guard requires online M0"
+                "m0_pregrasp_workspace_guard requires online AL0"
             )
         elif self.m0_pregrasp_staging_assist:
             raise ValueError(
-                "m0_pregrasp_staging_assist requires online M0"
+                "m0_pregrasp_staging_assist requires online AL0"
             )
         elif self.m0_carry_retract_teacher_executor:
             raise ValueError(
-                "m0_carry_retract_teacher_executor requires online M0"
+                "m0_carry_retract_teacher_executor requires online AL0"
             )
 
 
@@ -1648,7 +1661,7 @@ class ConveyorRuntimeV1:
                     if not scripted_preposition:
                         # The oracle remains a shadow task evaluator.  Its
                         # candidate actuation is discarded before physics;
-                        # only the service-gated M0 preposition below is kept.
+                        # only the service-gated AL0 preposition below is kept.
                         self._arm_target = shadow_arm_target
                         self._arm_ik_seed = shadow_arm_ik_seed
                         self._last_ik_error_m = shadow_ik_error
@@ -2680,6 +2693,13 @@ class ConveyorRuntimeV1:
             spawn_y_by_id[target.object_id] = (
                 _STATIONARY_SPAWN_ORIGIN_XY_M[1] + object_offset_y
             )
+        elif self.options.target_intercept_lead_time_s is not None:
+            spawn_y_by_id[target.object_id] = (
+                _MOBILE_INTERCEPT_Y_WORLD_M
+                - TRANSPORT_DIRECTION_WORLD[1]
+                * self.options.belt_speed_mps
+                * self.options.target_intercept_lead_time_s
+            )
         task_type = (
             TaskType.STATIONARY_SORT
             if stationary
@@ -2754,6 +2774,9 @@ class ConveyorRuntimeV1:
                     stationary_scenario.object_xy_offset_m[1]
                     if stationary_scenario is not None
                     else None
+                ),
+                "target_intercept_lead_time_s": (
+                    self.options.target_intercept_lead_time_s
                 ),
                 "stationary_scenario": (
                     {
@@ -3084,8 +3107,18 @@ class ConveyorRuntimeV1:
         return oracle
 
     def _oracle_phase_timeout_s(self, resolved: _ResolvedTask) -> float:
-        del resolved
-        return 15.0
+        if resolved.manifest.task_type is TaskType.STATIONARY_SORT:
+            return 15.0
+        speed = resolved.manifest.belt_speed_mps
+        if speed is None or speed <= 0.0:
+            return 15.0
+        spawn_y = resolved.spawn_y_by_id[resolved.target_asset.object_id]
+        intercept_y = self._intercept_y_world(resolved)
+        travel_s = max(
+            0.0,
+            (spawn_y - intercept_y) / speed,
+        )
+        return max(15.0, travel_s + 5.0)
 
     def _mobile_preoracle_command(
         self,
@@ -3989,12 +4022,12 @@ class ConveyorRuntimeV1:
         bool,
         dict[str, Any] | None,
     ]:
-        """Project one physical M0 action through existing robot guards."""
+        """Project one physical AL0 action through existing robot guards."""
 
         if len(action) != 10 or any(
             not math.isfinite(float(value)) for value in action
         ):
-            raise ValueError("online M0 action must be finite canonical10")
+            raise ValueError("online AL0 action must be finite canonical10")
         values = tuple(float(value) for value in action)
         base_command = self._guard_locomotion_command(values[:3])
         current_tcp: Pose = state["tcp_base"]

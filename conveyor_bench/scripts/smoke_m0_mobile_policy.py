@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a two-camera, full-checkpoint M0-Mobile GPU smoke without collecting data."""
+"""Run a two-camera, full-checkpoint AL0 GPU smoke without collecting data."""
 
 from __future__ import annotations
 

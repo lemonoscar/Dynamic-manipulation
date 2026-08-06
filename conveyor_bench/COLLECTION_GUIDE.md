@@ -1,6 +1,7 @@
 # ConveyorBench V1 数据采集交付手册
 
-本文给出从环境预检、物理任务门禁到 M0/DynamicVLA 离线投影的可执行流程。
+本文给出从环境预检、物理任务门禁到 ConveyorVLA AL0/DynamicVLA 离线投影的
+可执行流程。`m0` 与 `m0_mobile` 是冻结的旧数据 profile 名，不再是模型名称。
 V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件、携带并释放到
 指定分拣盘；`fixed_base` 只作为机械臂消融对照。当前交付是可开启小批量采集
 的框架，但必须先关闭本文列出的全部门禁；它不包含训练好的 VLA，也没有进行
@@ -227,8 +228,8 @@ python scripts/export_v1.py \
 3. temporal camera gate 检查物理发生位移时三相机画面确实变化，并要求
    head/wrist 中存在目标变化证据；overview 不计入策略可见性；
 4. exporter 再次 fail-closed 校验 canonical episode，训练投影必须实际包含
-   `head_rgb` 和 `wrist_rgb`，然后才生成 DynamicVLA、legacy M0 与因果
-   M0-Mobile 视图。
+   `head_rgb` 和 `wrist_rgb`，然后才生成 DynamicVLA、legacy `m0` 与因果
+   AL0 视图。
 
 导出只在 episode 内创建：
 
@@ -242,11 +243,11 @@ exports/
 
 `export_manifest.json` 记录 canonical 文件哈希和派生文件哈希；导出前后不得
 改变 canonical 源流。DynamicVLA 视图使用历史 `[-2,0]`、未来 TCP `+5`
-model tick、20-step chunk 和 base-frame state/action；M0 视图使用 world-frame
+model tick、20-step chunk 和 base-frame state/action；legacy `m0` 视图使用 world-frame
 state/arm delta、16-step chunk 和右臂填充的 14D action。两者都保留 canonical
 10D、body-frame base 3D 与有效位 mask。
 
-### 4.1 M0-Mobile 因果训练视图
+### 4.1 ConveyorVLA AL0 因果训练视图
 
 运行时每个 canonical step 都是“动作已经执行、物理已经推进”后的状态，因此
 legacy `m0.jsonl` 的同 tick action 只用于兼容既有分析消费端，不能直接训练
@@ -281,10 +282,10 @@ canonical 六个事实源仍受到哈希保护，不会被覆盖。
 训练加载器默认拒绝非 train 记录。静态专用烟测应显式 fail-closed：
 
 ```bash
-python scripts/train_m0_mobile.py \
+python scripts/train_conveyorvla_al0.py \
   --episode-root TRAIN_EPISODE_ROOT \
   --state-statistics TRAIN_STATE_STATISTICS \
-  --initial-action-checkpoint ACCEPTED_M1_ACTION_MODEL \
+  --initial-action-checkpoint ACCEPTED_AL0_ACTION_MODEL \
   --model-root LOCAL_MODEL_ROOT \
   --output-dir NEW_STATIC_EXPERIMENT_ROOT \
   --belt-speed 0 \
@@ -301,9 +302,9 @@ episode 当作成功示教。训练加载器会无条件核对 `source_task_type
 `source_task_type` 会被拒绝，必须从 canonical episode 使用当前 exporter 重新
 生成，不能在 JSONL 中手工补字段。
 
-最小 AML action head 是纯 PyTorch 实现，复现 ABot-M0 的 clean-action
+最小 AML action head 是纯 PyTorch 实现，复现 AL0 上游 ABot-M0 的 clean-action
 velocity-matching loss 与四步 Euler 方程。它使用轻量 Transformer decoder，
-并不声称复现完整 M0 DiT-B 架构。先在 CPU 做可重复过拟合烟测：
+并不声称复现完整 AL0 DiT-B 架构。先在 CPU 做可重复过拟合烟测：
 
 ```bash
 PYTHONPATH=src python scripts/smoke_m0_aml.py \
@@ -330,7 +331,7 @@ python scripts/smoke_m0_aml.py \
 VLA 任务性能、视觉语言骨干训练或四卡扩展已经通过。
 
 训练后不要直接扩大在线采集。先按
-[M0_ONLINE_GUIDE.md](M0_ONLINE_GUIDE.md) 启动本地回环服务、核对模型与状态
+[CONVEYORVLA_AL0_GUIDE.md](CONVEYORVLA_AL0_GUIDE.md) 启动本地回环服务、核对模型与状态
 统计 SHA、运行移动意图/抓取阶段门禁，再执行单 seed Isaac 闭环。门禁或闭环
 失败都必须保留为负例，不得通过 oracle TCP 修正或强制闭爪改写成成功轨迹。
 
@@ -341,9 +342,9 @@ VLA 任务性能、视觉语言骨干训练或四卡扩展已经通过。
 | 路径 | 已观察结果 |
 | --- | --- |
 | `outputs/gate/v1_fixed_single_current_v5` | fixed 单目标成功；`10.48 s`、524 control 样本；strict validator 通过、quality 为 clean；该条未保存相机 |
-| `outputs/gate/v1_release_camera` | whole-body 单目标 release 成功；`21.60 s`、1080 control 样本、540 个同步相机 tick、1620 张 PNG；strict validator、quality 和 temporal camera gate 均通过；M0/DynamicVLA 各导出 540 条，canonical 哈希未改变 |
+| `outputs/gate/v1_release_camera` | whole-body 单目标 release 成功；`21.60 s`、1080 control 样本、540 个同步相机 tick、1620 张 PNG；strict validator、quality 和 temporal camera gate 均通过；AL0/DynamicVLA 各导出 540 条，canonical 哈希未改变 |
 | `outputs/gate/v1_mobile_multi_current` | whole-body 三物体、双语目标选择成功；`21.58 s`、1079 control 样本、3237 条物体记录；strict validator 通过、quality 为 clean；该条未保存相机 |
-| `outputs/gate/v1_stationary_train_oracle_final_1101_1103` | 零速 whole-body 静态诊断 3/3 成功；2906 control 样本、4356 张三相机 PNG、1428 条 M0-Mobile train 记录；strict validator 与 camera gate 均 3/3 通过 |
+| `outputs/gate/v1_stationary_train_oracle_final_1101_1103` | 零速 whole-body 静态诊断 3/3 成功；2906 control 样本、4356 张三相机 PNG、1428 条 AL0 train 记录；strict validator 与 camera gate 均 3/3 通过 |
 | `outputs/gate/v1_stationary_val_oracle_2101` / `v1_stationary_test_oracle_3101` | val/test 各 1/1 成功并通过 strict/camera gate；导出分别标记为 `val`/`test`，不能进入训练 |
 
 最终 release 正例的 episode ID 为
@@ -370,7 +371,7 @@ strict validator 和 quality 通过，其三路图像仍被 camera gate 判为�
 
 预览用于观察构图；时变合格性仍以对应 episode 的 camera-gate 报告为准。
 
-## 6. 放量边界
+## 6. 历史 V1 分拣矩阵
 
 正式第一批动态训练矩阵已经冻结为 4 个 train 目标 × 2 个分拣盘 × 2 种语言 ×
 每格 8 个 seed，共 128 条。不要用裸 shell 循环放量；统一使用
@@ -440,3 +441,46 @@ V1 非完整底盘的 carry navigation 采用 stop-turn-drive：目标方位误�
 使带载 locomotion 停滞；不得在没有新 canonical 回放证据时改动该合同。
 
 不得把 smoke/debug 目录直接并入正式训练集，也不得绕过 16-cell pilot barrier。
+该 128 条矩阵是历史多物体分拣数据，不是当前 ConveyorVLA AL0 时序抓取课程。
+
+## 7. ConveyorVLA AL0 时序抓取采集
+
+当前主线只采单活动物体、低速动态抓取，不训练分类。新 profile
+`conveyorvla_al0_temporal_v1` 为 head/wrist 各两帧 `[t-2,t]`、当前
+`state28` 和未来 `20×10@25 Hz` 独立目标；overview、物体真值及投放目标均不
+作为模型输入。完整架构合同见
+[CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
+
+正式矩阵为四种 train 零件 × `0.01/0.02 m/s`，每格目标 48 条成功且通过全部
+门禁的轨迹，共 384 条。每格有 72 个冻结 seed 的预留池；失败 episode 留作诊断，
+采集器自动补 seed，绝不计入训练配额。先运行 8-cell pilot：
+
+```bash
+python scripts/collect_conveyorvla_al0_grasp.py \
+  --phase pilot \
+  --output-root NEW_AL0_DATASET_ROOT \
+  --python ISAAC_PYTHON \
+  --physical-gpu 2 \
+  --physical-gpu 3 \
+  --workers 2
+```
+
+只有 pilot 8/8 物理成功且 strict、quality、camera、legacy export 和 temporal
+export 全部通过，production 才可启动：
+
+```bash
+python scripts/collect_conveyorvla_al0_grasp.py \
+  --phase production \
+  --output-root NEW_AL0_DATASET_ROOT \
+  --python ISAAC_PYTHON \
+  --physical-gpu 2 \
+  --physical-gpu 3 \
+  --workers 2
+```
+
+脚本只接受物理 GPU 2/3，并同时设置 worker 的 CUDA 可见域和 Kit/Vulkan 的物理
+renderer ordinal；每张卡最多一个 worker。每个仿真进程最多 8 条并在批间回收。
+它以独占锁、源码/资产指纹、语义 seed、
+原子总账和成功根列表支持精确恢复。production 完成条件是
+`collection_report.json` 中 production 的 `training_eligible_episodes=384`，
+而不是启动次数达到 384。

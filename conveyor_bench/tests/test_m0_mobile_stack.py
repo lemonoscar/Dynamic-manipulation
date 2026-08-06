@@ -6,10 +6,14 @@ from pathlib import Path
 import pytest
 
 from conveyor_bench.m0_mobile import (
+    CANONICAL_MODEL_ROOT_ENV,
+    LEGACY_MODEL_ROOT_ENV,
+    MODEL_NAME,
     M0MobileError,
     M0MobileNormalizer,
     audit_model_artifacts,
     load_m0_mobile_config,
+    resolve_model_root,
     sample_from_record,
 )
 
@@ -63,11 +67,31 @@ def _record() -> dict:
 def test_default_m0_mobile_config_freezes_go2_x5_contract() -> None:
     config = load_m0_mobile_config()
 
+    assert config["model_identity"]["name"] == MODEL_NAME
+    assert config["model_root_env"] == CANONICAL_MODEL_ROOT_ENV
+    assert LEGACY_MODEL_ROOT_ENV in config["legacy_model_root_envs"]
     assert config["action_model"]["state_dim"] == 28
     assert config["action_model"]["action_dim"] == 10
     assert config["action_model"]["action_horizon"] == 16
     assert config["data"]["camera_order"] == ["head_rgb", "wrist_rgb"]
     assert config["spatial_model"]["enabled"] is False
+
+
+def test_model_root_prefers_canonical_env_and_supports_legacy_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_m0_mobile_config()
+    canonical = tmp_path / "canonical"
+    legacy = tmp_path / "legacy"
+    canonical.mkdir()
+    legacy.mkdir()
+    monkeypatch.delenv(CANONICAL_MODEL_ROOT_ENV, raising=False)
+    monkeypatch.setenv(LEGACY_MODEL_ROOT_ENV, str(legacy))
+
+    assert resolve_model_root(config) == legacy.resolve()
+
+    monkeypatch.setenv(CANONICAL_MODEL_ROOT_ENV, str(canonical))
+    assert resolve_model_root(config) == canonical.resolve()
 
 
 def test_sample_adapter_exposes_only_policy_inputs(tmp_path: Path) -> None:

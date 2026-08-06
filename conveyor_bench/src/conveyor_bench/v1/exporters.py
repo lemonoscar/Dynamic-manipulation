@@ -15,6 +15,17 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 from uuid import uuid4
 
+from conveyor_bench.conveyorvla.temporal import (
+    ACTION_HORIZON as AL0_TEMPORAL_ACTION_HORIZON,
+    CAMERA_IDS as AL0_TEMPORAL_CAMERA_IDS,
+    GRASP_TRAINING_PHASES,
+    HISTORY_OFFSETS_MODEL_TICKS,
+    MODEL_HZ as AL0_TEMPORAL_ACTION_RATE_HZ,
+    TEMPORAL_PROFILE as AL0_TEMPORAL_PROFILE,
+    TEMPORAL_SCHEMA_VERSION as AL0_TEMPORAL_SCHEMA_VERSION,
+    relative_tcp_target,
+)
+
 from .config import PROTOCOL_VERSION, BenchmarkConfig
 from .quality import audit_episode
 from .stationary import validate_stationary_episode_contract
@@ -106,6 +117,12 @@ class SourceTaskResult:
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ExportError(f"{name} must be a JSON object")
+    return value
+
+
+def _sequence(value: Any, name: str) -> Sequence[Any]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ExportError(f"{name} must be a sequence")
     return value
 
 
@@ -511,9 +528,9 @@ def m0_mobile_to_canonical_action(
 ) -> tuple[float, ...]:
     """Invert :func:`canonical_to_m0_mobile_action`."""
 
-    model_action = _vector(action, 10, "M0-Mobile action")
+    model_action = _vector(action, 10, "AL0 legacy-profile action")
     if not 0.0 <= model_action[9] <= 1.0:
-        raise ExportError("M0-Mobile gripper must be within [0, 1]")
+        raise ExportError("AL0 gripper must be within [0, 1]")
     return model_action[:9] + (model_action[9] * 2.0 - 1.0,)
 
 
@@ -575,7 +592,7 @@ def _joint_vectors(
     missing = tuple(name for name in required if name not in by_name)
     if missing:
         raise ExportError(
-            "M0-Mobile state requires joint(s): " + ", ".join(missing)
+            "AL0 state requires joint(s): " + ", ".join(missing)
         )
     arm_names = required[:6]
     arm_positions = tuple(by_name[name][0] for name in arm_names)
@@ -611,7 +628,7 @@ def _m0_mobile_state28(step: Mapping[str, Any]) -> tuple[float, ...]:
         + (gripper_open_fraction,)
     )
     if len(state) != len(M0_MOBILE_STATE_LAYOUT):
-        raise AssertionError("M0-Mobile state layout and values disagree")
+        raise AssertionError("AL0 state layout and values disagree")
     return state
 
 
@@ -636,7 +653,7 @@ def _reject_m0_diagnostic_assist(
     episode: Mapping[str, Any],
     control_steps: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
-    """Keep diagnostic intervention out of standard M0-Mobile exports."""
+    """Keep diagnostic intervention out of standard AL0 exports."""
 
     metadata = _mapping(episode.get("metadata"), "manifest.episode.metadata")
     for key in _M0_DIAGNOSTIC_ASSIST_KEYS:
@@ -653,7 +670,7 @@ def _reject_m0_diagnostic_assist(
         if enabled or assisted:
             raise ExportError(
                 "diagnostic-assisted episodes cannot be exported for "
-                f"standard M0-Mobile training ({key})"
+                f"standard AL0 training ({key})"
             )
 
     for step in control_steps or ():
@@ -666,7 +683,7 @@ def _reject_m0_diagnostic_assist(
         if online_action.get("control_layer") in _M0_DIAGNOSTIC_CONTROL_LAYERS:
             raise ExportError(
                 "diagnostic-assisted episodes cannot be exported for "
-                "standard M0-Mobile training (recorded control intervention)"
+                "standard AL0 training (recorded control intervention)"
             )
 
 
@@ -826,7 +843,7 @@ def iter_m0_records(
     episode_directory: str | Path,
     config: BenchmarkConfig | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield ABot-M0 right-arm-padded world-frame action chunks."""
+    """Yield legacy right-arm-padded world-frame action chunks."""
 
     benchmark = config or BenchmarkConfig.v1()
     episode_path, episode, task, source_result = _episode_context(
@@ -901,11 +918,11 @@ def iter_m0_mobile_records(
     episode_directory: str | Path,
     config: BenchmarkConfig | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield causal 50 Hz whole-body chunks for M0-Mobile training."""
+    """Yield causal 50 Hz whole-body chunks for AL0 training."""
 
     benchmark = config or BenchmarkConfig.v1()
     if benchmark.control_hz != 50:
-        raise ExportError("M0-Mobile v1 requires a 50 Hz control stream")
+        raise ExportError("AL0 legacy profile requires a 50 Hz control stream")
     episode_path, episode, task, source_result = _episode_context(
         episode_directory
     )
@@ -916,7 +933,7 @@ def iter_m0_mobile_records(
     object_curriculum_split = task_metadata.get("curriculum_split")
     if object_curriculum_split not in {"train", "val", "unseen"}:
         raise ExportError(
-            "M0-Mobile curriculum_split must be explicitly train, val, or unseen"
+            "AL0 curriculum_split must be explicitly train, val, or unseen"
         )
     split = object_curriculum_split
     if task.get("task_type") == "stationary_sort":
@@ -934,7 +951,7 @@ def iter_m0_mobile_records(
         split = stationary_scenario.split
     robot_mode = task.get("robot_mode", "unspecified")
     if not isinstance(robot_mode, str) or not robot_mode:
-        raise ExportError("M0-Mobile robot_mode must be a non-empty string")
+        raise ExportError("AL0 robot_mode must be a non-empty string")
     raw_belt_speed = task.get("belt_speed_mps")
     belt_speed_mps = (
         _number(raw_belt_speed, "task.belt_speed_mps")
@@ -947,7 +964,7 @@ def iter_m0_mobile_records(
     required_camera_ids = tuple(sorted(_REQUIRED_POLICY_CAMERA_IDS))
     if policy_camera_ids != required_camera_ids:
         raise ExportError(
-            "M0-Mobile policy cameras must be exactly "
+            "AL0 policy cameras must be exactly "
             f"{required_camera_ids}; got {policy_camera_ids}"
         )
 
@@ -1015,6 +1032,234 @@ def iter_m0_mobile_records(
             "model_action10_chunk": model_chunk,
             "model_gripper_convention": "0=close,1=open",
             "action_frame": "body_base_canonical",
+            "action_dimension_mask": M0_MOBILE_ACTION_DIMENSION_MASK,
+        }
+
+
+def _mean_base_action_for_tick(
+    tick: Mapping[str, Any],
+    control_by_sim_step: Mapping[int, Mapping[str, Any]],
+) -> tuple[float, float, float]:
+    source_steps = _sequence(
+        tick.get("_source_control_sim_steps"), "_source_control_sim_steps"
+    )
+    actions = []
+    for raw_sim_step in source_steps:
+        sim_step = _integer(raw_sim_step, "source control sim_step")
+        try:
+            actions.append(_canonical_action(control_by_sim_step[sim_step])[:3])
+        except KeyError as error:
+            raise ExportError(
+                f"model tick references missing control sim_step {sim_step}"
+            ) from error
+    if not actions:
+        raise ExportError("model tick has no control actions to average")
+    return tuple(
+        sum(action[index] for action in actions) / len(actions)
+        for index in range(3)
+    )
+
+
+def _camera_clip(
+    history_steps: Sequence[Mapping[str, Any]], camera_id: str
+) -> dict[str, Any]:
+    frames = []
+    for step in history_steps:
+        matching = tuple(
+            frame
+            for frame in _select_camera_frames(step, (camera_id,))
+            if frame.get("camera_id") == camera_id
+        )
+        if len(matching) != 1:
+            raise ExportError(
+                f"temporal history requires one {camera_id} frame per tick"
+            )
+        frames.append(matching[0])
+    return {
+        "camera_id": camera_id,
+        "history_offsets_model_ticks": HISTORY_OFFSETS_MODEL_TICKS,
+        "frames": tuple(frames),
+    }
+
+
+def iter_conveyorvla_al0_temporal_records(
+    episode_directory: str | Path,
+    config: BenchmarkConfig | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield grasp-only two-frame observations and 25 Hz future-pose targets."""
+
+    benchmark = config or BenchmarkConfig.v1()
+    if benchmark.control_hz != 50 or benchmark.model_hz != 25:
+        raise ExportError("AL0 temporal v1 requires 50 Hz control and 25 Hz model clocks")
+    episode_path, episode, task, source_result = _episode_context(
+        episode_directory
+    )
+    _reject_m0_diagnostic_assist(episode)
+    if source_result.outcome != "success":
+        return
+
+    task_metadata = _mapping(task.get("metadata"), "manifest.episode.task.metadata")
+    if task_metadata.get("active_object_count") != 1:
+        raise ExportError("AL0 temporal grasp data requires exactly one active object")
+    policy_camera_ids = _camera_ids_for_role(episode, "policy_observation")
+    if policy_camera_ids != AL0_TEMPORAL_CAMERA_IDS:
+        raise ExportError(
+            f"AL0 temporal cameras must be {AL0_TEMPORAL_CAMERA_IDS}; "
+            f"got {policy_camera_ids}"
+        )
+
+    model_ticks = _training_source_ticks(load_model_tick_steps(episode_path))
+    by_model_tick = {
+        _integer(step.get("model_tick"), "model_tick"): step
+        for step in model_ticks
+    }
+    control_steps = _load_control_steps(episode_path, benchmark)
+    _reject_m0_diagnostic_assist(episode, control_steps)
+    control_by_sim_step = {
+        _integer(step.get("sim_step"), "sim_step"): step for step in control_steps
+    }
+    control_index_by_sim_step = {
+        _integer(step.get("sim_step"), "sim_step"): index
+        for index, step in enumerate(control_steps)
+    }
+    belt_speed = _number(task.get("belt_speed_mps"), "task.belt_speed_mps")
+    instruction = (
+        "Grasp the moving conveyor part and lift it safely."
+        if belt_speed > 0.0
+        else "Grasp the stationary conveyor part and lift it safely."
+    )
+
+    for source in model_ticks:
+        source_tick = _integer(source.get("model_tick"), "model_tick")
+        source_phase = source.get("phase")
+        if source_phase not in GRASP_TRAINING_PHASES:
+            continue
+        history_steps = tuple(
+            by_model_tick.get(source_tick + offset)
+            for offset in HISTORY_OFFSETS_MODEL_TICKS
+        )
+        future_steps = tuple(
+            by_model_tick.get(source_tick + offset)
+            for offset in range(1, AL0_TEMPORAL_ACTION_HORIZON + 1)
+        )
+        if any(step is None for step in history_steps + future_steps):
+            continue
+        history = tuple(step for step in history_steps if step is not None)
+        future = tuple(step for step in future_steps if step is not None)
+        if any(step.get("phase") not in GRASP_TRAINING_PHASES for step in future):
+            continue
+
+        source_root_xyz, source_root_wxyz = _pose(source, "robot_root_world")
+        source_tcp_xyz, source_tcp_wxyz = _pose(source, "tcp_base")
+        action_chunk = []
+        for target in future:
+            future_root_xyz, future_root_wxyz = _pose(
+                target, "robot_root_world"
+            )
+            future_tcp_xyz, future_tcp_wxyz = _pose(target, "tcp_base")
+            base_action = _mean_base_action_for_tick(
+                target, control_by_sim_step
+            )
+            tcp_target = relative_tcp_target(
+                source_root_xyz,
+                source_root_wxyz,
+                source_tcp_xyz,
+                source_tcp_wxyz,
+                future_root_xyz,
+                future_root_wxyz,
+                future_tcp_xyz,
+                future_tcp_wxyz,
+            )
+            gripper = canonical_to_m0_mobile_action(
+                _canonical_action(target)
+            )[9]
+            action_chunk.append(base_action + tcp_target + (gripper,))
+
+        observation_sim_step = _integer(source.get("sim_step"), "sim_step")
+        try:
+            observation_control_tick = control_index_by_sim_step[
+                observation_sim_step
+            ]
+        except KeyError as error:
+            raise ExportError(
+                "temporal observation is absent from the control stream"
+            ) from error
+        yield {
+            "schema_version": AL0_TEMPORAL_SCHEMA_VERSION,
+            "profile": AL0_TEMPORAL_PROFILE,
+            "source_episode_id": episode.get("episode_id"),
+            "source_task_id": task.get("task_id"),
+            "source_task_type": task.get("task_type"),
+            "source_task_outcome": source_result.outcome,
+            "source_failure_reason": source_result.failure_reason,
+            "source_assisted": False,
+            "source_steps_path": "steps.jsonl",
+            "source_instruction": task.get("instruction"),
+            "instruction": instruction,
+            "policy_task_scope": "grasp_only",
+            "sample_id": (
+                f"{episode.get('episode_id')}:model-tick-{source_tick}"
+            ),
+            "phase": source_phase,
+            "belt_speed_mps": belt_speed,
+            "observation_model_tick": source_tick,
+            "observation_control_tick": observation_control_tick,
+            "observation_sim_step": observation_sim_step,
+            "observation_time_s": _number(
+                source.get("sim_time_s"), "sim_time_s"
+            ),
+            "history_offsets_model_ticks": HISTORY_OFFSETS_MODEL_TICKS,
+            "history_model_ticks": tuple(
+                _integer(step.get("model_tick"), "history model_tick")
+                for step in history
+            ),
+            "history_sim_times_s": tuple(
+                _number(step.get("sim_time_s"), "history sim_time_s")
+                for step in history
+            ),
+            "camera_clips": tuple(
+                _camera_clip(history, camera_id)
+                for camera_id in AL0_TEMPORAL_CAMERA_IDS
+            ),
+            "observer_cameras_excluded": True,
+            "state28": _m0_mobile_state28(source),
+            "state_layout": M0_MOBILE_STATE_LAYOUT,
+            "state_frame": "robot_root/body_and_base",
+            "object_state_is_model_input": False,
+            "observation_reference": {
+                "robot_root_world": {
+                    "xyz": source_root_xyz,
+                    "wxyz": source_root_wxyz,
+                },
+                "tcp_base": {
+                    "xyz": source_tcp_xyz,
+                    "wxyz": source_tcp_wxyz,
+                },
+                "model_input": False,
+            },
+            "action_rate_hz": AL0_TEMPORAL_ACTION_RATE_HZ,
+            "control_rate_hz": benchmark.control_hz,
+            "action_horizon": AL0_TEMPORAL_ACTION_HORIZON,
+            "future_offsets_model_ticks": tuple(
+                range(1, AL0_TEMPORAL_ACTION_HORIZON + 1)
+            ),
+            "future_model_ticks": tuple(
+                _integer(step.get("model_tick"), "future model_tick")
+                for step in future
+            ),
+            "future_target_control_ticks": tuple(
+                control_index_by_sim_step[
+                    _integer(step.get("sim_step"), "future sim_step")
+                ]
+                for step in future
+            ),
+            "model_action10_chunk": tuple(action_chunk),
+            "action_semantics": (
+                "future mean base velocity plus independent future TCP pose "
+                "relative to observation root/TCP plus absolute gripper"
+            ),
+            "tcp_target_frame": "observation_robot_root",
+            "model_gripper_convention": "0=close,1=open",
             "action_dimension_mask": M0_MOBILE_ACTION_DIMENSION_MASK,
         }
 
@@ -1126,22 +1371,51 @@ def export_m0_mobile_episode(
     )
 
 
+def export_conveyorvla_al0_temporal_episode(
+    episode_directory: str | Path,
+    output_path: str | Path,
+    config: BenchmarkConfig | None = None,
+) -> ExportSummary:
+    episode_path = Path(episode_directory)
+    destination = Path(output_path)
+    _guard_output_path(episode_path, destination)
+    source_result = validate_episode_for_export(episode_path)
+    count = _write_jsonl_atomic(
+        iter_conveyorvla_al0_temporal_records(episode_path, config),
+        destination,
+    )
+    if source_result.outcome == "success" and count == 0:
+        raise ExportError("successful episode produced no AL0 temporal grasp records")
+    return ExportSummary(
+        AL0_TEMPORAL_PROFILE,
+        episode_path,
+        destination,
+        count,
+        source_result.outcome,
+        source_result.failure_reason,
+    )
+
+
 __all__ = [
     "EXPORT_SCHEMA_VERSION",
     "M0_MOBILE_ACTION_DIMENSION_MASK",
     "M0_MOBILE_ACTION_HORIZON",
     "M0_MOBILE_SCHEMA_VERSION",
     "M0_MOBILE_STATE_LAYOUT",
+    "AL0_TEMPORAL_PROFILE",
+    "AL0_TEMPORAL_SCHEMA_VERSION",
     "ExportError",
     "ExportSummary",
     "SourceTaskResult",
     "export_dynamicvla_episode",
     "export_m0_episode",
     "export_m0_mobile_episode",
+    "export_conveyorvla_al0_temporal_episode",
     "canonical_to_m0_mobile_action",
     "iter_dynamicvla_records",
     "iter_m0_records",
     "iter_m0_mobile_records",
+    "iter_conveyorvla_al0_temporal_records",
     "load_model_tick_steps",
     "m0_mobile_to_canonical_action",
     "validate_episode_for_export",

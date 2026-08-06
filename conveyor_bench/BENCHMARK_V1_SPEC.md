@@ -76,7 +76,7 @@
 | test | 3101 | `(-0.010, +0.025)` |
 
 物体所属的 `curriculum_split=train` 与诊断场景的 `scenario_split` 是两个不同
-概念。M0-Mobile 导出字段 `split` 必须采用后者，并把前者另存为
+概念。AL0 的 legacy `m0_mobile` 导出字段 `split` 必须采用后者，并把前者另存为
 `object_curriculum_split`，否则 val/test 会因红色方块属于 train 资产而泄漏。
 strict validator 逐步核对实测带速，exporter 还会复核固定 target/destination
 合同。
@@ -222,7 +222,7 @@ episodes/EPISODE_ID/
 成功要求目标释放后位于指定 goal zone，线速度不高于 `0.02 m/s`、角速度
 不高于 `0.10 rad/s`，并连续保持 `0.50 s`。任务失败与数据损坏必须分开报告。
 
-## 9. M0 与 DynamicVLA 离线导出
+## 9. ConveyorVLA AL0 与 DynamicVLA 离线导出
 
 canonical episode 永远是事实源。导出器只在 episode 的 `exports/` 新建文件，
 并在 `export_manifest.json` 中记录 canonical 哈希；不得改写六个原始流。
@@ -239,7 +239,7 @@ DynamicVLA 契约：
 - action chunk 长度 20，base 3D body action 单独输出；
 - 历史、canonical 与未来动作分别携带有效位 mask。
 
-M0 契约：
+AL0 的 legacy `m0` 契约：
 
 - 输出 `exports/m0.jsonl`，25 Hz，每条记录保留 `canonical_action10_chunk`；
 - `state6_world` 与 7D arm delta action 使用 world frame；
@@ -271,7 +271,7 @@ python scripts/export_v1.py \
   --profile all
 ```
 
-`both` 保留原 DynamicVLA/M0 两个 profile；`all` 额外生成因果
+`both` 保留原 DynamicVLA/legacy `m0` 两个 profile；`all` 额外生成 AL0 因果
 `m0_mobile.jsonl`。已有导出默认拒绝覆盖。只有明确需要重建派生文件时才加
 `--force`；该选项仍不会覆盖 canonical 文件。
 
@@ -433,7 +433,7 @@ head/wrist 训练相机的 episode。
 4. fixed 与 whole-body 各至少一个 `--require-all-success` episode 通过；
 5. 对应输出根目录通过 V1 validator，episode 通过 quality audit；
 6. 相机 episode 通过 temporal camera gate，且 overview 没有被当作策略证据；
-7. M0 与 DynamicVLA 导出生成且 canonical 哈希未变化；
+7. AL0 与 DynamicVLA 导出生成且 canonical 哈希未变化；
 8. 无遗留 `.inprogress`，同一 seed 的 task/资产选择可复现。
 
 本规范冻结的是“可采集框架”的接口和验收方法。当前本地烟测已经观察到：
@@ -446,7 +446,7 @@ head/wrist 训练相机的 episode。
 whole-body 单目标 release 输出 `v1_release_camera` 包含 540 个同步 tick 和
 1620 张 PNG，已实际通过 temporal camera gate；head/wrist/overview 最大结构
 变化率分别为 `0.704164/0.688824/0.039858`，策略相机目标证据为
-`0.760409`。同一 episode 已生成各 540 条的 M0/DynamicVLA 导出，
+`0.760409`。同一 episode 已生成各 540 条的 AL0/DynamicVLA 导出，
 `export_manifest.json` 记录 `canonical_files_modified=false`。
 该 release 的源码树 SHA-256 为
 `a5c2802447abd4e4c50365549b7b0cc83db313f01800cb26d734fc8fc695f39c`。

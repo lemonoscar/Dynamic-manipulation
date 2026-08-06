@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES.
 # SPDX-License-Identifier: Apache-2.0
-"""Offline Qwen3-VL + ABot-M0 policy assembly for the Go2-X5 benchmark."""
+"""ConveyorVLA AL0 policy assembly for the Go2-X5 benchmark."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class Qwen3VLInterface(nn.Module):
             from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
         except ImportError as error:
             raise M0MobileError(
-                "Transformers with Qwen3-VL support is required for M0-Mobile"
+                "Transformers with Qwen3-VL support is required for ConveyorVLA AL0"
             ) from error
 
         path = Path(model_dir).expanduser().resolve()
@@ -89,7 +89,9 @@ class Qwen3VLInterface(nn.Module):
         messages = []
         for sample_images, instruction in zip(images, instructions, strict=True):
             if len(sample_images) != 2:
-                raise ValueError("M0-Mobile expects head and wrist images in that order")
+                raise ValueError(
+                    "ConveyorVLA AL0 expects head and wrist images in that order"
+                )
             content = [
                 {"type": "image", "image": _rgb_image(image)}
                 for image in sample_images
@@ -110,11 +112,54 @@ class Qwen3VLInterface(nn.Module):
             for key, value in inputs.items()
         }
 
+    def build_temporal_inputs(
+        self,
+        videos: Sequence[Sequence[Sequence[Any]]],
+        instructions: Sequence[str],
+    ) -> Mapping[str, torch.Tensor]:
+        """Build two ordered-frame clips: head first, then wrist."""
+
+        if len(videos) != len(instructions) or not videos:
+            raise ValueError("videos and instructions must be non-empty equal batches")
+        messages = []
+        for sample_clips, instruction in zip(videos, instructions, strict=True):
+            if len(sample_clips) != 2 or any(len(clip) != 2 for clip in sample_clips):
+                raise ValueError(
+                    "AL0 temporal input expects two frames for head and wrist"
+                )
+            content = [
+                {"type": "text", "text": "Head camera, oldest to newest:"},
+                {
+                    "type": "video",
+                    "video": [_rgb_image(frame) for frame in sample_clips[0]],
+                },
+                {"type": "text", "text": "Wrist camera, oldest to newest:"},
+                {
+                    "type": "video",
+                    "video": [_rgb_image(frame) for frame in sample_clips[1]],
+                },
+                {"type": "text", "text": _instruction(instruction)},
+            ]
+            messages.append([{"role": "user", "content": content}])
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            padding=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        device = next(self.model.parameters()).device
+        return {
+            key: value.to(device) if isinstance(value, torch.Tensor) else value
+            for key, value in inputs.items()
+        }
+
     def forward(self, **inputs: torch.Tensor) -> Any:
         return self.model(**inputs)
 
 
-class M0MobilePolicy(nn.Module):
+class ConveyorVLAAL0Policy(nn.Module):
     """Qwen visual-language encoder followed by the checkpoint-compatible DiT."""
 
     def __init__(
@@ -137,7 +182,7 @@ class M0MobilePolicy(nn.Module):
         self.qwen_vl_interface.requires_grad_(False)
         self.qwen_vl_interface.eval()
 
-    def train(self, mode: bool = True) -> M0MobilePolicy:
+    def train(self, mode: bool = True) -> ConveyorVLAAL0Policy:
         super().train(mode)
         if self._qwen_frozen:
             self.qwen_vl_interface.eval()
@@ -209,6 +254,11 @@ class M0MobilePolicy(nn.Module):
             [example["image"] for example in examples],
             [_instruction(example["lang"]) for example in examples],
         )
+        return self._encode_inputs(inputs)
+
+    def _encode_inputs(
+        self, inputs: Mapping[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         outputs = self.qwen_vl_interface(
             **inputs,
             output_attentions=False,
@@ -224,6 +274,22 @@ class M0MobilePolicy(nn.Module):
         device = next(self.action_model.parameters()).device
         dtype = next(self.action_model.parameters()).dtype
         return hidden.to(device=device, dtype=dtype), attention_mask.to(device)
+
+
+class ConveyorVLAAL0TemporalPolicy(ConveyorVLAAL0Policy):
+    """AL0 DiT with Qwen ordered-frame clips and a 20-step action head."""
+
+    def _encode(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not examples:
+            raise ValueError("examples must be non-empty")
+        inputs = self.qwen_vl_interface.build_temporal_inputs(
+            [example["video"] for example in examples],
+            [_instruction(example["lang"]) for example in examples],
+        )
+        return self._encode_inputs(inputs)
 
 
 def m0_dit_config(config: Mapping[str, Any]) -> M0DiTConfig:
@@ -254,7 +320,7 @@ def m0_dit_config(config: Mapping[str, Any]) -> M0DiTConfig:
 
 
 def transfer_robocasa_policy_weights(
-    policy: M0MobilePolicy,
+    policy: ConveyorVLAAL0Policy,
     checkpoint: str | Path | Mapping[str, torch.Tensor],
 ) -> PolicyCheckpointReport:
     """Transfer the released Qwen/DiT trunk and reject every unknown difference."""
@@ -270,7 +336,7 @@ def transfer_robocasa_policy_weights(
         else checkpoint
     )
     if not isinstance(source, Mapping):
-        raise RuntimeError("M0 checkpoint must contain a tensor mapping")
+        raise RuntimeError("upstream ABot-M0 checkpoint must contain a tensor mapping")
     target = policy.state_dict()
     reinitialized = {
         f"action_model.{key}" for key in GO2_X5_REINITIALIZED_ACTION_KEYS
@@ -353,7 +419,14 @@ def _integer(mapping: Mapping[str, Any], key: str) -> int:
     return value
 
 
+# Frozen alias for older imports and checkpoints. New code should use the
+# ConveyorVLA name; the implementation remains tensor-compatible.
+M0MobilePolicy = ConveyorVLAAL0Policy
+
+
 __all__ = [
+    "ConveyorVLAAL0Policy",
+    "ConveyorVLAAL0TemporalPolicy",
     "M0MobilePolicy",
     "PolicyCheckpointReport",
     "Qwen3VLInterface",

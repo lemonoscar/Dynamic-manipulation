@@ -1,8 +1,9 @@
-# M0-Mobile 在线闭环与验收
+# ConveyorVLA AL0 在线闭环与验收
 
-本文说明如何把本仓库的 M0-Mobile action head 接入 Go2-X5 横向传送带任务，
+本文说明如何把本仓库的 ConveyorVLA AL0 action head 接入 Go2-X5 横向传送带任务，
 以及当前已经验证到哪里。模型权重不提交到 Git；训练、服务、离线门禁和 Isaac
-闭环入口都在本仓库内。
+闭环入口都在本仓库内。`m0_mobile_v1`、`m0_*` 字段和旧脚本文件名是已有数据与
+远端运行的冻结兼容层，不代表当前模型名称。
 
 ## 控制边界
 
@@ -11,14 +12,14 @@
 oracle 目标不会发送给模型。
 
 当前运行时属于可审计的 hybrid baseline：服务层负责起步前的底盘稳定、机械臂
-预置、终止保持和 Go2 前向速度量化；M0 负责移动阶段的前向意图，以及抓取阶段
+预置、终止保持和 Go2 前向速度量化；AL0 负责移动阶段的前向意图，以及抓取阶段
 的 TCP、姿态和夹爪动作。oracle 仅用于阶段与成败评价。抓取测试不得通过实时
-oracle 目标修正 M0 的 TCP，也不得强制下降或闭爪；否则只能标记为
+oracle 目标修正 AL0 的 TCP，也不得强制下降或闭爪；否则只能标记为
 `oracle-assisted`，不能记作 policy-only 结果。
 
 默认每次重规划执行动作块前 2 步；进入 `track/descend/close/lift` 后可执行前
 12 步，避免阶段切换只存在于动作块尾部。run summary 会分别记录配置的前缀、
-实际 M0/service 控制步、请求数和时延。
+实际 AL0/service 控制步、请求数和时延。
 
 ## 运行顺序
 
@@ -45,7 +46,7 @@ python scripts/build_m0_window_booster.py \
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc-per-node=2 \
-  scripts/train_m0_mobile.py \
+  scripts/train_conveyorvla_al0.py \
   --episode-root EPISODE_ROOT \
   --episode-root BOOSTER_ROOT \
   --state-statistics STATE_STATISTICS_JSON \
@@ -60,7 +61,7 @@ CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc-per-node=2 \
 服务端严格校验 action checkpoint、状态统计和训练报告的 SHA，并只监听回环地址：
 
 ```bash
-CUDA_VISIBLE_DEVICES=2 python scripts/serve_m0_mobile.py \
+CUDA_VISIBLE_DEVICES=2 python scripts/serve_conveyorvla_al0.py \
   --action-checkpoint EXPERIMENT_ROOT/action_model_final.safetensors \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --model-root LOCAL_MODEL_ROOT \
@@ -83,7 +84,7 @@ python scripts/check_m0_grasp_transition.py \
 门禁通过后再运行一个 seed 的在线闭环：
 
 ```bash
-python scripts/run_m0_closed_loop.py \
+python scripts/run_conveyorvla_al0_closed_loop.py \
   --endpoint http://127.0.0.1:18765 \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --actions-per-replan 2 \
@@ -99,10 +100,10 @@ python scripts/run_m0_closed_loop.py \
 
 若零速任务在 `mobile_approach` 就超时，可只辅助这一前置阶段，隔离判断静态
 抓取 primitive。该诊断用冻结的 `0.20 m/s` service command 完成靠近，在物体
-生成前抑制所有 M0 请求，并从 object-visible `sequence 0` 开始推理：
+生成前抑制所有 AL0 请求，并从 object-visible `sequence 0` 开始推理：
 
 ```bash
-python scripts/run_m0_closed_loop.py \
+python scripts/run_conveyorvla_al0_closed_loop.py \
   --endpoint http://127.0.0.1:18765 \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --actions-per-replan 2 \
@@ -126,7 +127,7 @@ manifest 只记录开关是否 `enabled`；每步 metadata 和 run summary 另�
 增加一次诊断性 A/B：
 
 ```bash
-python scripts/run_m0_closed_loop.py \
+python scripts/run_conveyorvla_al0_closed_loop.py \
   --endpoint http://127.0.0.1:18765 \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --actions-per-replan 2 \
@@ -149,10 +150,10 @@ guard-on 只用于区分预抓取漂移与下游抓取能力，即使成功也�
 `assisted diagnostic`，不能混入正式训练集或计作 policy-only 成功。
 
 若位置 guard 仍不能进入 `track`，第二级诊断可固定世界坐标下的公开工位
-位姿，进一步隔离 M0 的下探、闭爪和抬升能力：
+位姿，进一步隔离 AL0 的下探、闭爪和抬升能力：
 
 ```bash
-python scripts/run_m0_closed_loop.py \
+python scripts/run_conveyorvla_al0_closed_loop.py \
   --endpoint http://127.0.0.1:18765 \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --actions-per-replan 2 \
@@ -171,7 +172,7 @@ python scripts/run_m0_closed_loop.py \
 注册表计算出的固定 world-frame 工位。固定目标本身不读取实时物体状态，也不
 复用 shadow oracle 的 TCP 目标；但辅助的启停与交接明确使用 shadow oracle
 的阶段判定，因此仍属于 privileged diagnostic。交接到 `track` 时会丢弃未实际
-执行的旧 pregrasp action chunk，再从当前观测重新推理。原始 M0 action、实际
+执行的旧 pregrasp action chunk，再从当前观测重新推理。原始 AL0 action、实际
 控制来源、固定目标、world-frame 位置/姿态误差和交接丢弃数都会被记录。该
 模式比 workspace guard 更强，结果只能用于定位故障，绝不能计作 policy-only
 成功或写入正式训练集。两个诊断开关互斥，且都默认关闭。
@@ -180,7 +181,7 @@ python scripts/run_m0_closed_loop.py \
 时，可再做一次 executor 可实现性诊断：
 
 ```bash
-python scripts/run_m0_closed_loop.py \
+python scripts/run_conveyorvla_al0_closed_loop.py \
   --endpoint http://127.0.0.1:18765 \
   --state-statistics EXPERIMENT_ROOT/state_statistics.json \
   --actions-per-replan 2 \
@@ -196,8 +197,8 @@ python scripts/run_m0_closed_loop.py \
   --device cpu
 ```
 
-该开关只在 `carry_retract` 将 shadow oracle 动作投影成 M0 physical10（夹爪为
-`0/1`）后执行，但丢弃专家的直接 joint target，并通过与 M0 相同的 Cartesian
+该开关只在 `carry_retract` 将 shadow oracle 动作投影成 AL0 physical10（夹爪为
+`0/1`）后执行，但丢弃专家的直接 joint target，并通过与 AL0 相同的 Cartesian
 IK 执行器落地。现有
 `0.060 rad` joint error、`0.35 rad/s`、`0.30 s` dwell 和 `6 s` timeout 均不
 改变。若该诊断也失败，才有证据说明 Cartesian action 与 joint gate 合同可能
@@ -229,36 +230,36 @@ outputs/gate/m0_online_m1_multiphase_hybrid_seed0/episodes/
 run-20260803T112917387345Z-34f6a577-ep0000-seed0-whole_body_policy
 ```
 
-因此可以确认“相机/状态 → 远端 M0 推理 → 动作投影 → Isaac 物理推进 →
+因此可以确认“相机/状态 → 远端 AL0 推理 → 动作投影 → Isaac 物理推进 →
 canonical 记录与判定”的在线链路已跑通，但当前 checkpoint 尚未达到可开启
-M0 policy 数据采集的门槛。现阶段可以继续采集 oracle 成功示教；不能把该模型
+AL0 policy 数据采集的门槛。现阶段可以继续采集 oracle 成功示教；不能把该模型
 生成的失败轨迹混入成功训练集。
 
 随后运行的静态 world-frame staging assist 诊断把失败边界推进到了抓取之后。
 TCP 在物体窗口前连续 `0.5 s` 的最大位置误差为 `9.94 mm`、最大姿态误差为
-`0.0238 rad`；`8.34 s` 进入 `track`，交接后 `0.04 s` 开始执行新的 M0 动作，
+`0.0238 rad`；`8.34 s` 进入 `track`，交接后 `0.04 s` 开始执行新的 AL0 动作，
 `0.44 s` 闭爪、`0.50 s` 双指接触并 held、`0.56 s` 进入 lift。辅助在
 `track/descend/close/lift` 中没有继续生效，因此可确认当前 checkpoint 已具备
 从合格 staging 状态完成动态下探、闭爪和抬升的能力。
 
 该回合仍不是任务成功：物体在整个 `carry_retract` 阶段保持夹持且机器人稳定，
-但 6 秒后触发 `mobile_carry_retract_timeout`。M0 把 compact TCP 误差从
+但 6 秒后触发 `mobile_carry_retract_timeout`。AL0 把 compact TCP 误差从
 `174.4 mm` 降到最小 `30.2 mm`，而 compact joint gate 的最佳最大关节误差仍为
 `0.298 rad`，没有达到 `0.060 rad`。完整机器可读结论位于
 `docs/m0_assisted_staging_seed0_20260803.json`。
 
 后续 teacher-executor A/B 已经排除了 executor 不可实现这一假设。该回合在
-`carry_retract` 用 shadow teacher physical10 通过与 M0 完全相同的 Cartesian IK
+`carry_retract` 用 shadow teacher physical10 通过与 AL0 完全相同的 Cartesian IK
 执行路径，83 个控制步后满足 `0.060 rad / 0.35 rad/s / 0.30 s` compact joint
 gate，并在 `11.40 s` 进入 `carry_turn`。因此旧回合的 carry timeout 是学习输出
 和闭环分布问题，不应通过放宽 joint gate 掩盖。teacher 回合后来在
 `place_descend` 高位提前开爪，仍不是成功轨迹。
 
-一次针对 carry 的 M2 补训也已按回归门禁拒绝。其 action SHA 为
+一次针对 carry 的 AL0-M2 补训也已按回归门禁拒绝。其 action SHA 为
 `b1dbc623020cd432f5d247043fa75103384ecd94e9f0bed64901c0d96824b936`：离线抓取
-transition 从 M1 的 `1/3` 退化到 `0/3`，在线 seed 0 在 `mobile_approach` 超时，
+transition 从 AL0-M1 的 `1/3` 退化到 `0/3`，在线 seed 0 在 `mobile_approach` 超时，
 从未执行 full action。该 checkpoint 不用于服务、采集或后续初始化；远端服务已
-恢复为上文三项 SHA 对应的 M1。
+恢复为上文三项 SHA 对应的 AL0-M1。
 
 ### 静止传送带补足结果
 
@@ -266,7 +267,7 @@ transition 从 M1 的 `1/3` 退化到 `0/3`，在线 seed 0 在 `mobile_approach
 动态分数。预注册的 3 个 train、1 个 val、1 个 test oracle 回合全部成功，并均
 通过 strict validator 与 temporal camera gate：
 
-- train：2906 control step、4356 张三相机 PNG、1428 条 M0-Mobile 记录；
+- train：2906 control step、4356 张三相机 PNG、1428 条 AL0 记录；
 - val：957 step、1434 PNG、470 条记录；
 - test：966 step、1449 PNG、475 条记录。
 
@@ -275,28 +276,28 @@ exporter 使用 scenario split，val/test 明确标为 `val`/`test`，不会因�
 `--belt-speed 0 --task-type stationary_sort` 精确筛选；完整机器可读证据位于
 `docs/m0_stationary_followup_20260803.json`。
 
-M1 的无辅助静态 seed 1101 在 `mobile_approach` 的 `4.0 s` 超时，100 次请求均
+AL0-M1 的无辅助静态 seed 1101 在 `mobile_approach` 的 `4.0 s` 超时，100 次请求均
 未进入机械臂 full action，说明静态语言条件下的底盘前置能力尚未学会。仅辅助
 mobile approach 的干净隔离回合则满足以下事实：
 
-- 物体生成前 M0 请求为 0，首次推理为 `sequence 0 / settle / 4.44 s`；
+- 物体生成前 AL0 请求为 0，首次推理为 `sequence 0 / settle / 4.44 s`；
 - 交接时 root `x=0.07355 m`、平面速度 `0.02694 m/s`、最大机械臂关节误差
   `0.06374 rad`，均处于冻结前置门槛内；
-- 交接后 455 步全部为 M1 full action；双侧接触与 `in_gripper` 的 112 个
+- 交接后 455 步全部为 AL0-M1 full action；双侧接触与 `in_gripper` 的 112 个
   50 Hz step 完全一致，连续持有约 `2.24 s`；
 - 零件最高达到 `z=0.71493 m`，相对抓取前稳定高度抬升约 `0.18264 m`；
-- M1 在 `7.38 s` 主动开爪，shadow phase 从未离开 `pregrasp`；canonical
+- AL0-M1 在 `7.38 s` 主动开爪，shadow phase 从未离开 `pregrasp`；canonical
   failure reason 为 `runtime_error`。对应 `summary.json` 的
   `metrics.abort_metadata` 已持久化 `IKConvergenceError`、`pregrasp` phase，以及
   `position_error=0.0892 m / orientation_error=0.2678`，因此 IK 越界是可复核的
   canonical 诊断原因；它仍不能替代顶层标准 failure reason。
 
-因此 M1 已经具有静止物体的闭夹、双侧持有和明显抬升 primitive，但没有学会
+因此 AL0-M1 已经具有静止物体的闭夹、双侧持有和明显抬升 primitive，但没有学会
 相位对齐、高位保持、carry 和 placement；两条在线回合都不能计作任务成功。
 
 ### 下一次训练门禁
 
-下一轮从已接受 M1 初始化，不从被拒绝的 M2 初始化。先只构造可审计的小混合：
+下一轮从已接受 AL0-M1 初始化，不从被拒绝的 AL0-M2 初始化。先只构造可审计的小混合：
 
 - 静态三条 train 完整轨迹占约 `45–60%`；
 - 现有动态完整成功 replay 不低于 `40%`；
@@ -307,4 +308,4 @@ mobile approach 的干净隔离回合则满足以下事实：
 `3/3` 完整投放成功 → 复跑已接受的动态离线/在线门禁且不得退化 → 再检查 val
 2101 和 test 3101。任何阶段失败都停止，不通过重复同一 seed、放宽 gate 或把
 assisted 回合加入训练来“修正”结果。通过这些门禁前，可以继续小规模 oracle
-示教采集，但不能开启 M0 成功轨迹采集或大规模放量。
+示教采集，但不能开启 AL0 成功轨迹采集或大规模放量。

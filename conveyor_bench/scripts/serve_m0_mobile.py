@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve one local M0-Mobile policy behind an SSH-forwarded HTTP endpoint."""
+"""Serve ConveyorVLA AL0 behind an SSH-forwarded HTTP endpoint."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from conveyor_bench.m0_mobile import (  # noqa: E402
     DEFAULT_CONFIG_PATH,
+    MODEL_FAMILY,
+    MODEL_NAME,
+    MODEL_VARIANT,
     M0MobileError,
     M0MobileNormalizer,
     load_m0_mobile_config,
@@ -87,7 +90,7 @@ class M0PolicyService:
 
 
 class M0RequestHandler(BaseHTTPRequestHandler):
-    server_version = "ConveyorBenchM0/1"
+    server_version = "ConveyorVLA-AL0/1"
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path != "/health":
@@ -199,6 +202,13 @@ def _verify_training_artifacts(
         ) from error
     if not isinstance(report, dict) or not report.get("ok"):
         raise M0OnlineError("training report must describe a successful run")
+    identity = report.get("model_identity")
+    if identity is not None and identity != {
+        "family": MODEL_FAMILY,
+        "variant": MODEL_VARIANT,
+        "name": MODEL_NAME,
+    }:
+        raise M0OnlineError(f"training report does not identify {MODEL_NAME}")
     action_sha256 = _sha256(action_path)
     statistics_sha256 = _sha256(statistics_path)
     if report.get("action_model_sha256") != action_sha256:
@@ -220,7 +230,7 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
 
     from conveyor_bench.m0_dit import M0DiTActionHead
     from conveyor_bench.m0_policy import (
-        M0MobilePolicy,
+        ConveyorVLAAL0Policy,
         Qwen3VLInterface,
         m0_dit_config,
         transfer_robocasa_policy_weights,
@@ -233,7 +243,7 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
     root = resolve_model_root(config, args.model_root)
     device = torch.device(args.device)
     if device.type != "cuda" or not torch.cuda.is_available():
-        raise M0OnlineError("M0-Mobile online inference requires a CUDA device")
+        raise M0OnlineError(f"{MODEL_NAME} online inference requires a CUDA device")
     torch.cuda.set_device(device)
     qwen = Qwen3VLInterface.from_local(
         root / config["vlm"]["relative_path"],
@@ -241,7 +251,7 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
         dtype=torch.bfloat16,
         attention_implementation=args.attention_implementation,
     )
-    policy = M0MobilePolicy(
+    policy = ConveyorVLAAL0Policy(
         qwen,
         M0DiTActionHead(m0_dit_config(config)),
         repeated_diffusion_steps=config["training"]["repeated_diffusion_steps"],
@@ -264,6 +274,11 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
     policy.action_model.to(device)
     policy.eval()
     report = {
+        "model_identity": {
+            "family": MODEL_FAMILY,
+            "variant": MODEL_VARIANT,
+            "name": MODEL_NAME,
+        },
         "loaded_qwen_tensors": transfer.loaded_qwen_tensors,
         "loaded_official_action_tensors": transfer.loaded_action_tensors,
         "reinitialized_tensors": len(transfer.reinitialized_keys),

@@ -18,10 +18,12 @@ SOURCE_ROOT = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SOURCE_ROOT))
 
 from conveyor_bench.v1.exporters import (  # noqa: E402
+    AL0_TEMPORAL_SCHEMA_VERSION,
     EXPORT_SCHEMA_VERSION,
     M0_MOBILE_SCHEMA_VERSION,
     ExportSummary,
     export_dynamicvla_episode,
+    export_conveyorvla_al0_temporal_episode,
     export_m0_episode,
     export_m0_mobile_episode,
 )
@@ -41,11 +43,13 @@ _EXPORTERS: dict[
     "dynamicvla": export_dynamicvla_episode,
     "m0": export_m0_episode,
     "m0_mobile": export_m0_mobile_episode,
+    "conveyorvla_al0_temporal": export_conveyorvla_al0_temporal_episode,
 }
 _PROFILE_SCHEMA_VERSIONS = {
     "dynamicvla": EXPORT_SCHEMA_VERSION,
     "m0": EXPORT_SCHEMA_VERSION,
     "m0_mobile": M0_MOBILE_SCHEMA_VERSION,
+    "conveyorvla_al0_temporal": AL0_TEMPORAL_SCHEMA_VERSION,
 }
 
 
@@ -229,7 +233,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--profile",
-        choices=("dynamicvla", "m0", "m0_mobile", "both", "all"),
+        choices=(
+            "dynamicvla",
+            "m0",
+            "m0_mobile",
+            "conveyorvla_al0_temporal",
+            "both",
+            "all",
+        ),
         default="both",
     )
     parser.add_argument(

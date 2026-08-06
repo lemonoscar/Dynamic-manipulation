@@ -2,8 +2,9 @@
 
 Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓取与分拣项目。
 当前核心实现为 **ConveyorBench**：它提供 Isaac Sim / Isaac Lab 场景、机器人与
-工位资产、动态抓取任务协议、轨迹记录、数据校验，以及面向 DynamicVLA 和 M0 的
-离线导出工具。
+工位资产、动态抓取任务协议、轨迹记录、数据校验，以及面向 DynamicVLA 和
+ConveyorVLA 的离线导出工具。当前策略基线的正式名称是 **ConveyorVLA AL0**；
+仓库中的 `m0_*` 仅保留为既有数据、检查点和在线协议的兼容标识。
 
 ## 项目内容
 
@@ -11,17 +12,20 @@ Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓
 - V1：多物体动态分拣任务，支持 `fixed_base` 消融模式与
   `whole_body_policy` 移动操作模式。
 - V1 静态诊断：传送带速度严格为零的单物体抓取—携带—投放任务，冻结
-  `3 train / 1 val / 1 test` 五个场景，用于先验证 M0 的基础操作能力；不计入
+  `3 train / 1 val / 1 test` 五个场景，用于先验证 AL0 的基础操作能力；不计入
   动态 benchmark 分数。
 - V2：双目标连续分拣和强制持物移动的远端投放任务，提供 2 个场景、7 个允许
-  组合、严格事件/位移校验及 M0/DynamicVLA 上下文投影。
+  组合、严格事件/位移校验及 AL0/DynamicVLA 上下文投影。
 - 统一的 400 Hz 物理、50 Hz 控制和 25 Hz 相机/模型时钟。
 - Go2-X5 的本地 USD、URDF、mesh 与移动策略资产。
 - episode 原子写入、严格校验、质量审计和相机时变门禁。
-- DynamicVLA 与 M0 两种离线数据视图。
-- M0-Mobile 50 Hz 因果动作块导出，以及不依赖外部仓库的最小 AML 训练烟测。
-- M0-Mobile 在线服务、阶段门禁与 Go2-X5/Isaac 闭环入口，完整记录模型身份、
-  service/M0 控制边界和请求时延。
+- DynamicVLA 与 ConveyorVLA AL0 两种离线数据视图；后者继续读取 legacy
+  `m0_mobile_v1` profile。
+- AL0 50 Hz 因果动作块导出，以及不依赖外部仓库的最小 AML 训练烟测。
+- AL0 temporal v1：head/wrist 双帧运动观测、20×10 的 25 Hz 独立未来目标、
+  generation-aware 流式合并和低速单物体成功配额采集器。
+- AL0 在线服务、阶段门禁与 Go2-X5/Isaac 闭环入口，完整记录模型身份、
+  service/AL0 控制边界和请求时延。
 
 > 本仓库包含基准框架和本地资产，不包含训练完成的 VLA 模型。Isaac Sim、
 > Isaac Lab、PyTorch、NumPy 和 OpenCV 等运行环境需要在宿主机上准备。
@@ -91,15 +95,19 @@ python scripts/run_benchmark_v2.py \
 冻结源码候选 `0a2fd7c…` 已完成 near fixed-base 双目标连续分拣，以及 remote
 whole-body 蓝/黄双向投放；连续持物位移分别为 `0.735903 m` 和 `0.778166 m`。
 本机 RTX 4060 上的 near/remote 三相机正例也已依次通过 strict validator、
-temporal camera gate 与 DynamicVLA/M0 双导出。尚未覆盖的语言条件、
+temporal camera gate 与 DynamicVLA/AL0 双导出。尚未覆盖的语言条件、
 near whole-body、其余物体/速度/seed 矩阵仍需按 V2 手册小规模验收，不能直接
 外推为大规模采集结论。
 
-面向下一阶段训练的 M0-Mobile profile 已按“观测后预测未来动作”重做因果
+面向下一阶段训练的 AL0 profile 已按“观测后预测未来动作”重做因果
 对齐；其数据契约、导出和 AML 烟测命令见
 [V1 采集手册](conveyor_bench/COLLECTION_GUIDE.md)。
 在线部署、闭环命令和 2026-08-03 的实测失败边界见
-[M0-Mobile 在线闭环与验收](conveyor_bench/M0_ONLINE_GUIDE.md)。
+[ConveyorVLA AL0 在线闭环与验收](conveyor_bench/CONVEYORVLA_AL0_GUIDE.md)。
+DynamicVLA 时序机制的代码级分析与下一代动态抓取方案见
+[ConveyorVLA AL1 设计](conveyor_bench/CONVEYORVLA_AL1_DESIGN.md)。
+当前正式执行的数据、流式控制与低速采集合同见
+[ConveyorVLA AL0 执行方案](conveyor_bench/CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
 
 ## V1 最小运行示例
 
@@ -139,8 +147,10 @@ python scripts/validate_v1_dataset.py outputs/gate/v1_fixed
 
 V1 框架已经覆盖任务配置、动态场景、固定机身与全身模式、三相机记录、严格数据
 校验和模型视图导出。新增静态诊断的 5/5 oracle episode 均通过 strict validator
-与 temporal camera gate；其中 3 条 train episode 已导出 1,428 条 M0-Mobile
-记录，val/test 会由导出器明确隔离。M1 在线测试证明静态闭夹、双侧持有和抬升
+与 temporal camera gate；其中 3 条 train episode 已导出 1,428 条 AL0
+记录，val/test 会由导出器明确隔离。AL0-M1 checkpoint 在线测试证明静态闭夹、双侧持有和抬升
 primitive 存在，但无辅助回合仍在底盘靠近阶段失败，辅助隔离回合也会提前开爪，
-因此当前只能开启 oracle 小规模采集，不能开启 M0 成功轨迹采集或大规模放量。
-完整证据见 [M0-Mobile 在线闭环与验收](conveyor_bench/M0_ONLINE_GUIDE.md)。
+因此旧 checkpoint 仍不能产生 policy-only 成功轨迹；当前正式采集使用严格门禁的
+oracle teacher，为新的时序 AL0 训练准备成功示教，不能把两者混为一谈。
+完整证据见
+[ConveyorVLA AL0 在线闭环与验收](conveyor_bench/CONVEYORVLA_AL0_GUIDE.md)。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stream train-split M0-Mobile JSONL into auditable state28 statistics."""
+"""Stream AL0 legacy-profile JSONL into auditable state28 statistics."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ STATE_LAYOUT = (
 
 
 class StatisticsError(ValueError):
-    """Raised when an input cannot be audited as train-split M0-Mobile data."""
+    """Raised when input cannot be audited as train-split AL0 data."""
 
 
 def _record(path: Path, line_number: int, raw_line: bytes) -> Mapping[str, Any]:

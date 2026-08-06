@@ -1,5 +1,10 @@
 # Dynamic Manipulation handoff — 2026-08-04
 
+> 2026-08-06 命名更新：当前策略基线的正式名称为 **ConveyorVLA AL0**。
+> 本文早期记录中的 M0/M1/M2、`m0_*` 路径和 schema 是历史实验或冻结兼容标识。
+> 新操作入口使用 `train_conveyorvla_al0.py`、`serve_conveyorvla_al0.py` 和
+> `run_conveyorvla_al0_closed_loop.py`。
+
 ## 仓库状态
 
 - 本地仓库：`/home/lemon/research/Issac/Dynamic`
@@ -23,11 +28,11 @@ benchmark 分数。固定合同为 `single_target`、一个 `part_red_block`、�
 | test | 3101 |
 
 运行时已同步物体 spawn X/Y、静态 intercept、staging、oracle 和任务描述；配置
-位于 `conveyor_bench/configs/v1.json`。协议、strict validator、M0 exporter、M0
+位于 `conveyor_bench/configs/v1.json`。协议、strict validator、AL0 exporter、AL0
 dataset 和训练 CLI 均已加入静态任务支持。训练接口目标用法：
 
 ```bash
-python conveyor_bench/scripts/train_m0_mobile.py \
+python conveyor_bench/scripts/train_conveyorvla_al0.py \
   --episode-root TRAIN_EPISODE_ROOT \
   --state-statistics TRAIN_STATE_STATISTICS \
   --initial-action-checkpoint ACCEPTED_M1_ACTION_MODEL \
@@ -38,7 +43,7 @@ python conveyor_bench/scripts/train_m0_mobile.py \
 ```
 
 另新增默认关闭的 `--mobile-approach-assist`，只用冻结 service command 完成
-`mobile_approach`，物体生成前抑制 M0 请求，用于隔离判断静态抓取 primitive。
+`mobile_approach`，物体生成前抑制 AL0 请求，用于隔离判断静态抓取 primitive。
 它是诊断功能，不能把 assisted 回合计作 policy-only 成功或训练数据。
 
 ## 已生成并验收的静态 oracle 数据
@@ -49,7 +54,7 @@ python conveyor_bench/scripts/train_m0_mobile.py \
 - train：`outputs/gate/v1_stationary_train_oracle_final_1101_1103`
   - 3/3 success
   - 2906 control steps，4356 张三相机 PNG
-  - 1428 条 M0-Mobile train records
+  - 1428 条 AL0 legacy-profile train records
 - val：`outputs/gate/v1_stationary_val_oracle_2101`
   - 1/1 success，957 steps，1434 PNG，470 records
 - test：`outputs/gate/v1_stationary_test_oracle_3101`
@@ -59,7 +64,7 @@ python conveyor_bench/scripts/train_m0_mobile.py \
 实测最大带速为零，无跌倒和禁区碰撞。详细 episode ID、导出 SHA 和在线证据在
 `conveyor_bench/docs/m0_stationary_followup_20260803.json`。
 
-## M0 结论
+## ConveyorVLA AL0 结论
 
 接受的基线仍是 M1：
 
@@ -105,7 +110,7 @@ ssh 4xH20 tmux list-sessions
   `object_spawned` 坐标必须与 registry 推导的场景位置一致，不能只伪造 manifest。
 - 伪造 split、scenario ID、episode/layout seed、object/root offset、root yaw 或
   使用未注册 seed 均会被拒绝。
-- 标准 M0-Mobile exporter 拒绝已声明或逐控制步记录的 approach、staging、teacher
+- 标准 AL0 exporter 拒绝已声明或逐控制步记录的 approach、staging、teacher
   diagnostic assist，并在合法记录中显式写入 `source_assisted=false`。
 - dataset 对 `source_assisted`、`source_task_type`、belt speed、object curriculum
   split 和 train statistics 全部采用缺字段即拒绝；`--all-belt-speeds` 必须显式给出

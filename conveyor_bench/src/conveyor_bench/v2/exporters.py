@@ -45,7 +45,7 @@ def iter_m0_records(
     episode_directory: str | Path,
     config: BenchmarkConfig | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield the V1 ABot-M0 projection plus V2 task supervision."""
+    """Yield the V1 legacy AL0 projection plus V2 task supervision."""
 
     episode_path = Path(episode_directory)
     context = _load_context(episode_path)
@@ -58,7 +58,7 @@ def iter_m0_mobile_records(
     episode_directory: str | Path,
     config: BenchmarkConfig | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield causal Go2-X5 M0-Mobile chunks plus V2 task supervision."""
+    """Yield causal Go2-X5 AL0 chunks plus V2 task supervision."""
 
     episode_path = Path(episode_directory)
     context = _load_context(episode_path)

@@ -1,4 +1,4 @@
-"""Minimal, dependency-light AML action head for M0-Mobile smoke tests."""
+"""Minimal, dependency-light AML action head for AL0 smoke tests."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class AMLConfig:
 
 
 class AMLActionHead(nn.Module):
-    """Predict clean action chunks and train with M0-style velocity matching."""
+    """Predict clean action chunks with AL0 clean-action velocity matching."""
 
     def __init__(self, config: AMLConfig = AMLConfig()) -> None:
         super().__init__()

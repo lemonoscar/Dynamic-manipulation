@@ -66,7 +66,7 @@ class M0DiTConfig:
             "num_inference_timesteps",
         )
         if any(getattr(self, name) <= 0 for name in positive):
-            raise ValueError("all M0 DiT dimensions and counts must be positive")
+            raise ValueError("all AL0 DiT dimensions and counts must be positive")
         if self.num_attention_heads * self.attention_head_dim != self.input_embedding_dim:
             raise ValueError("attention dimensions must equal input_embedding_dim")
         if not 0.0 <= self.dropout < 1.0:
@@ -319,7 +319,7 @@ class _DiT(nn.Module):
 
 
 class M0DiTActionHead(nn.Module):
-    """ABot-M0 clean-action velocity matching head with Go2-X5 dimensions."""
+    """AL0 clean-action head initialized from the upstream ABot-M0 layout."""
 
     def __init__(self, config: M0DiTConfig = M0DiTConfig()) -> None:
         super().__init__()

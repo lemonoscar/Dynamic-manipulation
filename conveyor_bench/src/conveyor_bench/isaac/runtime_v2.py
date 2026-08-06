@@ -225,33 +225,33 @@ class RuntimeOptionsV2:
             if not isinstance(self.m0_policy_endpoint, str):
                 raise TypeError("m0_policy_endpoint must be a string")
             if scene_id is not SceneId.TRANSVERSE_NEAR_SORT_V2:
-                raise ValueError("the first online M0 gate requires near-sort")
+                raise ValueError("the first online AL0 gate requires near-sort")
             if family is not TaskFamily.SINGLE_TARGET:
-                raise ValueError("the first online M0 gate requires single_target")
+                raise ValueError("the first online AL0 gate requires single_target")
             if mode is not RobotMode.WHOLE_BODY_POLICY:
-                raise ValueError("online M0 requires whole_body_policy")
+                raise ValueError("online ConveyorVLA AL0 requires whole_body_policy")
             if not self.enable_cameras:
-                raise ValueError("online M0 requires enable_cameras")
+                raise ValueError("online ConveyorVLA AL0 requires enable_cameras")
             if self.m0_state_statistics is None:
-                raise ValueError("online M0 requires m0_state_statistics")
+                raise ValueError("online AL0 requires m0_state_statistics")
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
             )
         elif self.m0_mobile_approach_assist:
             raise ValueError(
-                "m0_mobile_approach_assist requires online M0"
+                "m0_mobile_approach_assist requires online AL0"
             )
         elif self.m0_pregrasp_workspace_guard:
             raise ValueError(
-                "m0_pregrasp_workspace_guard requires online M0"
+                "m0_pregrasp_workspace_guard requires online AL0"
             )
         elif self.m0_pregrasp_staging_assist:
             raise ValueError(
-                "m0_pregrasp_staging_assist requires online M0"
+                "m0_pregrasp_staging_assist requires online AL0"
             )
         elif self.m0_carry_retract_teacher_executor:
             raise ValueError(
-                "m0_carry_retract_teacher_executor requires online M0"
+                "m0_carry_retract_teacher_executor requires online AL0"
             )
 
 

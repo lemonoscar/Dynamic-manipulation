@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless M0 predicts the demonstrated descend/close boundary."""
+"""Fail closed unless AL0 predicts the demonstrated descend/close boundary."""
 
 from __future__ import annotations
 

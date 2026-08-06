@@ -1,4 +1,4 @@
-"""Pure-Python contract and artifact checks for the Go2-X5 M0-Mobile stack."""
+"""Pure-Python contracts for the ConveyorVLA AL0 compatibility stack."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 
 CONFIG_SCHEMA_VERSION = "conveyor-bench-m0-mobile-train-config-1"
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs/m0_mobile.json"
+MODEL_FAMILY = "ConveyorVLA"
+MODEL_VARIANT = "AL0"
+MODEL_NAME = f"{MODEL_FAMILY} {MODEL_VARIANT}"
+MODEL_SLUG = "conveyorvla_al0"
+CANONICAL_MODEL_ROOT_ENV = "CONVEYORVLA_AL0_MODEL_ROOT"
+LEGACY_MODEL_ROOT_ENV = "DYNAMIC_M0_MODEL_ROOT"
 
 
 class M0MobileError(ValueError):
@@ -41,7 +47,7 @@ class M0MobileSample:
         normalizer: M0MobileNormalizer,
         image_loader: Callable[[Path], Any] | None = None,
     ) -> dict[str, Any]:
-        """Return only policy-visible fields in the ABot-M0 batch convention."""
+        """Return policy fields in the frozen checkpoint-compatible convention."""
 
         images = [
             image_loader(path) if image_loader is not None else path
@@ -177,9 +183,11 @@ def load_m0_mobile_config(
         with config_path.open(encoding="utf-8") as stream:
             config = json.load(stream)
     except (OSError, json.JSONDecodeError) as error:
-        raise M0MobileError(f"cannot read M0-Mobile config {config_path}: {error}") from error
+        raise M0MobileError(
+            f"cannot read {MODEL_NAME} config {config_path}: {error}"
+        ) from error
     if not isinstance(config, dict):
-        raise M0MobileError("M0-Mobile config must be a JSON object")
+        raise M0MobileError(f"{MODEL_NAME} config must be a JSON object")
     _validate_config(config)
     return config
 
@@ -193,10 +201,23 @@ def resolve_model_root(
         variable = config.get("model_root_env")
         if not isinstance(variable, str) or not variable:
             raise M0MobileError("model_root_env must be a non-empty string")
-        raw_root = os.environ.get(variable)
+        variables = [variable]
+        legacy_variables = config.get("legacy_model_root_envs", ())
+        if isinstance(legacy_variables, Sequence) and not isinstance(
+            legacy_variables, (str, bytes)
+        ):
+            variables.extend(
+                item
+                for item in legacy_variables
+                if isinstance(item, str) and item and item not in variables
+            )
+        raw_root = next(
+            (os.environ[name] for name in variables if os.environ.get(name)),
+            None,
+        )
         if not raw_root:
             raise M0MobileError(
-                f"pass --model-root or set the {variable} environment variable"
+                "pass --model-root or set one of: " + ", ".join(variables)
             )
     root = Path(raw_root).expanduser().resolve()
     if not root.is_dir():
@@ -289,7 +310,7 @@ def sample_from_record(
     )
     if record.get("schema_version") not in accepted:
         raise M0MobileError(
-            f"unsupported M0-Mobile schema: {record.get('schema_version')!r}"
+            f"unsupported AL0 legacy schema: {record.get('schema_version')!r}"
         )
     if record.get("profile") != data.get("profile"):
         raise M0MobileError(f"record profile must be {data.get('profile')!r}")
@@ -371,6 +392,18 @@ def sample_from_record(
 def _validate_config(config: Mapping[str, Any]) -> None:
     if config.get("schema_version") != CONFIG_SCHEMA_VERSION:
         raise M0MobileError(f"config schema must be {CONFIG_SCHEMA_VERSION!r}")
+    identity = config.get("model_identity")
+    if identity is not None:
+        identity = _mapping(identity, "config.model_identity")
+        expected_identity = {
+            "family": MODEL_FAMILY,
+            "variant": MODEL_VARIANT,
+            "name": MODEL_NAME,
+        }
+        if dict(identity) != expected_identity:
+            raise M0MobileError(
+                f"model_identity must identify {MODEL_NAME!r} exactly"
+            )
     data = _mapping(config.get("data"), "config.data")
     action = _mapping(config.get("action_model"), "config.action_model")
     for name in ("state_dim", "action_dim", "action_horizon"):
@@ -387,7 +420,7 @@ def _validate_config(config: Mapping[str, Any]) -> None:
     ):
         raise M0MobileError("action_dimension_mask is invalid")
     if mask[1] or not all(mask[index] for index in range(len(mask)) if index != 1):
-        raise M0MobileError("only base_vy may be masked for M0-Mobile v1")
+        raise M0MobileError("only base_vy may be masked for the AL0 legacy profile")
     if data.get("observer_camera_allowed") is not False:
         raise M0MobileError("observer camera must not be a model input")
     if data.get("supervision_only_fields_are_model_inputs") is not False:
@@ -492,8 +525,14 @@ def _index_set(value: Any, size: int, name: str) -> frozenset[int]:
 
 
 __all__ = [
+    "CANONICAL_MODEL_ROOT_ENV",
     "CONFIG_SCHEMA_VERSION",
     "DEFAULT_CONFIG_PATH",
+    "LEGACY_MODEL_ROOT_ENV",
+    "MODEL_FAMILY",
+    "MODEL_NAME",
+    "MODEL_SLUG",
+    "MODEL_VARIANT",
     "ArtifactCheck",
     "M0MobileError",
     "M0MobileNormalizer",

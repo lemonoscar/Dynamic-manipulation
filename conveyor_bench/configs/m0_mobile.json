@@ -1,6 +1,14 @@
 {
   "schema_version": "conveyor-bench-m0-mobile-train-config-1",
-  "model_root_env": "DYNAMIC_M0_MODEL_ROOT",
+  "model_identity": {
+    "family": "ConveyorVLA",
+    "variant": "AL0",
+    "name": "ConveyorVLA AL0"
+  },
+  "model_root_env": "CONVEYORVLA_AL0_MODEL_ROOT",
+  "legacy_model_root_envs": [
+    "DYNAMIC_M0_MODEL_ROOT"
+  ],
   "artifacts": [
     {
       "id": "qwen3_vl_4b_instruct",

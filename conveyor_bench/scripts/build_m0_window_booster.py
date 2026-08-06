@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a traceable M0 training subset from observation-time windows."""
+"""Create a traceable AL0 training subset from observation-time windows."""
 
 from __future__ import annotations
 

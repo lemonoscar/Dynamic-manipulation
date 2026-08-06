@@ -5,6 +5,15 @@
 训练模型，也不是大规模轨迹集，其接口冻结见 `BENCHMARK_V1_SPEC.md` 和
 `configs/v1.json`。
 
+## 当前主线：ConveyorVLA AL0 temporal v1
+
+DynamicVLA 调研得到的双帧运动线索、异步推理与 stale-prefix 跳过机制，已经以
+兼容 profile 的方式纳入 AL0，而没有改写历史 `m0_*` schema/checkpoint key。
+当前课程只做四种 train 零件在 `0.01/0.02 m/s` 下的单物体抓取：先 8-cell
+pilot，再按每格 48 条成功且完整门禁的配额采集 384 条。多物体分类、`0.03/0.06
+m/s` 和远端投放在低速闭环验证前冻结。正式方案和晋级门槛见
+`CONVEYORVLA_AL0_EXECUTION_PLAN.md`。
+
 ## 当前增量：ConveyorBench V2 suite
 
 V2 不修改 V1 canonical episode 协议，而是在其上增加面向新 VLA 策略的场景
@@ -24,7 +33,7 @@ V2 不修改 V1 canonical episode 协议，而是在其上增加面向新 VLA �
 - 8 类 V1 本地程序化零件、机器人、移动策略与远端新增资产的独立 V2 asset
   lock；
 - 在 V1 strict canonical validation 之上的 V2 目标顺序/持物距离验证；
-- 在 V1 M0/DynamicVLA 投影之上的 scene、目标序列与当前子任务监督字段；
+- 在 V1 AL0/DynamicVLA 投影之上的 scene、目标序列与当前子任务监督字段；
 - 不启动 Isaac 即可重建的 V2 场景 SVG 与纯 Python 回归测试。
 
 冻结源码候选 `0a2fd7c…` 已完成真实 Isaac CPU PhysX 的 near fixed-base 双目标
@@ -39,7 +48,7 @@ remote whole-body 已完成蓝/黄双方向单目标：黄色 seed 0 为 1201 �
 
 本机 RTX 4060 还完成 near fixed single 与 remote whole-body 的三相机正例：
 分别记录 294/600 个同步 tick、882/1800 张 PNG，均通过 strict validator、
-temporal camera gate 和 DynamicVLA/M0 双导出。早期默认 ground 的远程 USD
+temporal camera gate 和 DynamicVLA/AL0 双导出。早期默认 ground 的远程 USD
 依赖已由 V2 本地程序化地面替代。near whole-body、near continuous 相机、语言
 条件及其余物体/seed/速度矩阵仍未通过，不能把当前少量正例外推为 V2 全矩阵
 成功。
@@ -86,7 +95,8 @@ V1 已经在项目内提供以下组成部分：
 - `manifest/steps/objects/action_chunks/events/summary` 原子 episode 记录。
 - 任务判定、V1 结构 validator、逐 episode quality audit。
 - 相机物理时变和 head/wrist 目标证据的 fail-closed camera gate。
-- 不改写 canonical 数据的 DynamicVLA 与 M0 离线导出。
+- 不改写 canonical 数据的 DynamicVLA 与 AL0 离线导出；AL0 继续使用 legacy
+  `m0`/`m0_mobile` profile 名。
 - 机器人 USD/URDF/mesh、移动策略、物体注册表、分拣盘和工位 manifest 的
   asset lock，以及每 episode 的源码树指纹。
 - 全部项目资产、策略权重和代码位于 `Dynamic/conveyor_bench/`；采集运行不
@@ -107,7 +117,7 @@ V1 已经在项目内提供以下组成部分：
 最终 whole-body 单目标 release 还生成了 540 个同步 tick、1620 张 PNG，
 并实际通过 temporal camera gate。相机最大结构变化率为 head `0.704164`、
 wrist `0.688824`、overview `0.039858`，head/wrist 目标证据为 `0.760409`。
-同一 canonical episode 已完成各 540 条的 M0/DynamicVLA 双导出，源文件哈希
+同一 canonical episode 已完成各 540 条的 AL0/DynamicVLA 双导出，源文件哈希
 未改变；其源码树 SHA-256 为
 `a5c2802447abd4e4c50365549b7b0cc83db313f01800cb26d734fc8fc695f39c`。
 核心 whole-body 单目标的物理—视觉—记录—审计—导出链路因此已经形成一条
@@ -162,7 +172,7 @@ V1 已经支持同一 episode 中的目标加干扰物和中英双语目标选�
 
 ```text
 特权 oracle 数据 teacher
-  → DynamicVLA / M0 同步视觉基线
+  → DynamicVLA / ConveyorVLA AL0 同步视觉基线
   → VLA + 短时未来状态预测
   → VLA + 预测 + 异步 action chunk
 ```

@@ -172,7 +172,7 @@ class CanonicalAction:
 
     Layout: base body-frame ``vx, vy, wz``; end-effector delta ``x, y, z``
     and rotation-vector delta ``rx, ry, rz`` in the robot-root/base frame;
-    gripper command. M0 world-pose deltas belong only in an exporter
+    gripper command. Legacy world-pose deltas belong only in an exporter
     projection and must never be stored as this canonical action.
     """
 

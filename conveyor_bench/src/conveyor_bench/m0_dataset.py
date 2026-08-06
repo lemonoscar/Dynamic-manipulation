@@ -1,4 +1,4 @@
-"""Lazy PyTorch dataset for policy-only M0-Mobile training examples."""
+"""Lazy PyTorch dataset for policy-only ConveyorVLA AL0 examples."""
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ class M0MobileDataset(Dataset[dict[str, Any]]):
             except OSError as error:
                 raise M0MobileError(f"cannot read {path}: {error}") from error
         if not self._records:
-            raise M0MobileError("M0-Mobile dataset contains no records")
+            raise M0MobileError("ConveyorVLA AL0 dataset contains no records")
 
     def __len__(self) -> int:
         return len(self._records)
@@ -229,12 +229,12 @@ def _jsonl_paths(
     raw_paths = (value,) if isinstance(value, (str, Path)) else tuple(value)
     paths = tuple(Path(path).expanduser().resolve() for path in raw_paths)
     if not paths:
-        raise M0MobileError("at least one M0-Mobile JSONL path is required")
+        raise M0MobileError("at least one AL0 legacy-profile JSONL path is required")
     if len(set(paths)) != len(paths):
-        raise M0MobileError("M0-Mobile JSONL paths must be unique")
+        raise M0MobileError("AL0 legacy-profile JSONL paths must be unique")
     if any(not path.is_file() for path in paths):
         missing = next(path for path in paths if not path.is_file())
-        raise M0MobileError(f"M0-Mobile JSONL is not a file: {missing}")
+        raise M0MobileError(f"AL0 legacy-profile JSONL is not a file: {missing}")
     return paths
 
 

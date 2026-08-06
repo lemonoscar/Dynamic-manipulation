@@ -14,6 +14,7 @@ from conveyor_bench.m0_dit import (
 )
 from conveyor_bench.m0_mobile import load_m0_mobile_config
 from conveyor_bench.m0_policy import (
+    ConveyorVLAAL0TemporalPolicy,
     M0MobilePolicy,
     Qwen3VLInterface,
     m0_dit_config,
@@ -22,8 +23,12 @@ from conveyor_bench.m0_policy import (
 
 
 class _Processor:
+    def __init__(self):
+        self.messages = None
+
     def apply_chat_template(self, messages, **kwargs):
         del kwargs
+        self.messages = messages
         batch_size = len(messages)
         attention_mask = torch.ones(batch_size, 5, dtype=torch.long)
         for index in range(batch_size):
@@ -80,6 +85,14 @@ def _examples(batch_size: int = 2):
     ]
 
 
+def _temporal_examples(batch_size: int = 2):
+    examples = _examples(batch_size)
+    for example in examples:
+        example["video"] = ((object(), object()), (object(), object()))
+        del example["image"]
+    return examples
+
+
 def test_policy_batch_forward_and_masked_sampling() -> None:
     torch.manual_seed(5)
     config = _tiny_config()
@@ -109,6 +122,30 @@ def test_policy_batch_forward_and_masked_sampling() -> None:
     actions = policy.predict_normalized_actions(_examples(1))
     assert actions.shape == (1, 4, 3)
     assert torch.count_nonzero(actions[..., 1]) == 0
+
+
+def test_temporal_policy_builds_two_ordered_camera_clips() -> None:
+    torch.manual_seed(6)
+    config = _tiny_config()
+    processor = _Processor()
+    interface = Qwen3VLInterface(_Qwen(config.vlm_hidden_dim), processor)
+    policy = ConveyorVLAAL0TemporalPolicy(
+        interface,
+        M0DiTActionHead(config),
+    )
+
+    loss = policy(_temporal_examples(1))["action_loss"]
+    content = processor.messages[0][0]["content"]
+
+    assert torch.isfinite(loss)
+    assert [item["type"] for item in content] == [
+        "text",
+        "video",
+        "text",
+        "video",
+        "text",
+    ]
+    assert len(content[1]["video"]) == len(content[3]["video"]) == 2
 
 
 def test_release_config_builds_go2_x5_dit_contract() -> None:

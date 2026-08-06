@@ -11,7 +11,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from conveyor_bench.m0_mobile import M0MobileNormalizer, load_m0_mobile_config
+from conveyor_bench.m0_mobile import (
+    MODEL_FAMILY,
+    MODEL_NAME,
+    MODEL_VARIANT,
+    M0MobileNormalizer,
+    load_m0_mobile_config,
+)
 from conveyor_bench.m0_online import (
     ONLINE_SCHEMA_VERSION,
     M0OnlineClient,
@@ -40,6 +46,12 @@ MODEL_IDENTITY = {
     "training_report_sha256": "c" * 64,
     "training_steps": 10,
     "dataset_records": 3,
+}
+CANONICAL_MODEL_IDENTITY = {
+    "family": MODEL_FAMILY,
+    "variant": MODEL_VARIANT,
+    "name": MODEL_NAME,
+    **MODEL_IDENTITY,
 }
 
 
@@ -158,7 +170,9 @@ def test_pregrasp_workspace_guard_only_clamps_audited_drift_directions() -> None
 
 class _FakeService:
     def health(self):
-        return health_payload(MODEL_IDENTITY)
+        payload = health_payload(MODEL_IDENTITY)
+        payload["model"] = MODEL_IDENTITY
+        return payload
 
     def infer(self, request):
         return make_infer_response(request, [[2.0] * 10] * 16, 12.5)
@@ -176,7 +190,7 @@ def test_localhost_server_and_client_round_trip() -> None:
             normalizer=_normalizer(),
         )
         assert client.health()["status"] == "ready"
-        assert client.health()["model"] == MODEL_IDENTITY
+        assert client.health()["model"] == CANONICAL_MODEL_IDENTITY
         result = client.infer(
             np.zeros((6, 8, 4), dtype=np.uint8),
             _jpeg(),
@@ -204,6 +218,17 @@ def test_localhost_server_and_client_round_trip() -> None:
 def test_client_rejects_non_loopback_endpoint() -> None:
     with pytest.raises(M0OnlineError, match="127.0.0.1"):
         M0OnlineClient("http://0.0.0.0:18080")
+
+
+def test_health_identity_is_canonical_and_accepts_legacy_server_payload() -> None:
+    payload = health_payload(MODEL_IDENTITY)
+
+    assert payload["model"] == CANONICAL_MODEL_IDENTITY
+
+    wrong = dict(CANONICAL_MODEL_IDENTITY)
+    wrong["variant"] = "M0"
+    with pytest.raises(M0OnlineError, match="ConveyorVLA AL0"):
+        health_payload(wrong)
 
 
 def test_server_pins_action_and_state_artifacts_to_training_report(
