@@ -461,6 +461,8 @@ python scripts/collect_conveyorvla_al0_grasp.py \
   --output-root NEW_AL0_DATASET_ROOT \
   --python ISAAC_PYTHON \
   --isaaclab-source ISAACLAB_CORE_SOURCE \
+  --kit-cache-root PREWARMED_KIT_CACHE \
+  --runtime-library-dir ISAAC_RUNTIME_LIBRARY_DIR \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2
@@ -475,6 +477,8 @@ python scripts/collect_conveyorvla_al0_grasp.py \
   --output-root NEW_AL0_DATASET_ROOT \
   --python ISAAC_PYTHON \
   --isaaclab-source ISAACLAB_CORE_SOURCE \
+  --kit-cache-root PREWARMED_KIT_CACHE \
+  --runtime-library-dir ISAAC_RUNTIME_LIBRARY_DIR \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2
@@ -482,6 +486,9 @@ python scripts/collect_conveyorvla_al0_grasp.py \
 
 脚本只接受物理 GPU 2/3，并同时设置 worker 的 CUDA 可见域和 Kit/Vulkan 的物理
 renderer ordinal；每张卡最多一个 worker。每个仿真进程最多 8 条并在批间回收。
+`PREWARMED_KIT_CACHE` 和 `ISAAC_RUNTIME_LIBRARY_DIR` 必须都是同一服务器工作根内
+已经验收的目录；前者避免每个隔离 worker 从空 cache 重编 RTX shader，后者用于
+补充 pip Isaac Sim 所需的宿主动态库。
 它以独占锁、源码/资产指纹、语义 seed、
 原子总账和成功根列表支持精确恢复。production 完成条件是
 `collection_report.json` 中 production 的 `training_eligible_episodes=384`，

@@ -151,6 +151,8 @@ python scripts/collect_conveyorvla_al0_grasp.py \
   --output-root NEW_OUTPUT_ROOT \
   --python ISAAC_PYTHON \
   --isaaclab-source ISAACLAB_CORE_SOURCE \
+  --kit-cache-root PREWARMED_KIT_CACHE \
+  --runtime-library-dir ISAAC_RUNTIME_LIBRARY_DIR \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2 \

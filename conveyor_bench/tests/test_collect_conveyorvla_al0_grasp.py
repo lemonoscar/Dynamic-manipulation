@@ -125,7 +125,12 @@ def test_worker_environment_prepends_explicit_isaaclab_source(
     package = source / "isaaclab"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
+    kit_cache = tmp_path / "kit-cache"
+    runtime_library = tmp_path / "runtime-library"
+    kit_cache.mkdir()
+    runtime_library.mkdir()
     monkeypatch.setenv("PYTHONPATH", "/existing/pythonpath")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/existing/librarypath")
 
     resolved = collector._resolve_isaaclab_source(source)
     environment = collector._worker_environment(
@@ -135,9 +140,18 @@ def test_worker_environment_prepends_explicit_isaaclab_source(
         200000,
         3,
         resolved,
+        collector._resolve_existing_directory(kit_cache, "--kit-cache-root"),
+        collector._resolve_existing_directory(
+            runtime_library, "--runtime-library-dir"
+        ),
     )
 
     assert environment["PYTHONPATH"].split(collector.os.pathsep) == [
         str(source.resolve()),
         "/existing/pythonpath",
+    ]
+    assert environment["XDG_CACHE_HOME"] == str(kit_cache.resolve())
+    assert environment["LD_LIBRARY_PATH"].split(collector.os.pathsep) == [
+        str(runtime_library.resolve()),
+        "/existing/librarypath",
     ]

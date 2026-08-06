@@ -548,11 +548,12 @@ def _worker_environment(
     seed: int,
     physical_gpu: int,
     isaaclab_source: Path | None,
+    kit_cache_root: Path | None,
+    runtime_library_dir: Path | None,
 ) -> dict[str, str]:
     root = output_root / "runtime" / phase / cell.cell_id / f"seed-{seed}"
     paths = {
         "TMPDIR": root / "tmp",
-        "XDG_CACHE_HOME": root / "cache",
         "XDG_CONFIG_HOME": root / "config",
         "XDG_DATA_HOME": root / "data",
         "XDG_STATE_HOME": root / "state",
@@ -560,8 +561,11 @@ def _worker_environment(
     }
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)
+    cache_root = kit_cache_root if kit_cache_root is not None else root / "cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
     environment.update({name: str(path) for name, path in paths.items()})
+    environment["XDG_CACHE_HOME"] = str(cache_root)
     environment.update(
         {
             "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
@@ -573,6 +577,11 @@ def _worker_environment(
     if isaaclab_source is not None:
         existing = environment.get("PYTHONPATH")
         environment["PYTHONPATH"] = str(isaaclab_source) + (
+            os.pathsep + existing if existing else ""
+        )
+    if runtime_library_dir is not None:
+        existing = environment.get("LD_LIBRARY_PATH")
+        environment["LD_LIBRARY_PATH"] = str(runtime_library_dir) + (
             os.pathsep + existing if existing else ""
         )
     return environment
@@ -606,6 +615,8 @@ def _run_cell(
     physical_gpu: int,
     existing_training_eligible: int,
     isaaclab_source: Path | None,
+    kit_cache_root: Path | None,
+    runtime_library_dir: Path | None,
 ) -> None:
     cell_root = output_root / phase / "cells" / cell.cell_id
     log = output_root / phase / "logs" / f"{cell.cell_id}.log"
@@ -626,6 +637,8 @@ def _run_cell(
             seed,
             physical_gpu,
             isaaclab_source,
+            kit_cache_root,
+            runtime_library_dir,
         )
         returncode = _run(command, log, environment)
         published = _episodes_by_seed(cell_root)
@@ -659,10 +672,18 @@ def run_phase(
     physical_gpus: Sequence[int],
     workers: int,
     isaaclab_source: Path | None = None,
+    kit_cache_root: Path | None = None,
+    runtime_library_dir: Path | None = None,
 ) -> None:
     gpus = tuple(physical_gpus)
     _validate_gpu_assignment(gpus, workers)
     isaaclab_source = _resolve_isaaclab_source(isaaclab_source)
+    kit_cache_root = _resolve_existing_directory(
+        kit_cache_root, "--kit-cache-root"
+    )
+    runtime_library_dir = _resolve_existing_directory(
+        runtime_library_dir, "--runtime-library-dir"
+    )
     output_root.mkdir(parents=True, exist_ok=True)
     lock_path = output_root / ".collection.lock"
     try:
@@ -700,6 +721,8 @@ def run_phase(
                         gpus[(offset + index) % len(gpus)],
                         eligible,
                         isaaclab_source,
+                        kit_cache_root,
+                        runtime_library_dir,
                     )
                     for index, (cell, missing, eligible) in enumerate(wave)
                 ]
@@ -728,6 +751,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Directory containing isaaclab/__init__.py; prepend it to "
             "worker PYTHONPATH when Isaac Lab is not installed in --python."
         ),
+    )
+    parser.add_argument(
+        "--kit-cache-root",
+        type=Path,
+        help="Existing prewarmed XDG cache used by the Isaac Sim workers.",
+    )
+    parser.add_argument(
+        "--runtime-library-dir",
+        type=Path,
+        help="Existing runtime library directory prepended to LD_LIBRARY_PATH.",
     )
     parser.add_argument(
         "--physical-gpu",
@@ -763,6 +796,15 @@ def _resolve_isaaclab_source(path: Path | None) -> Path | None:
     return source
 
 
+def _resolve_existing_directory(path: Path | None, option: str) -> Path | None:
+    if path is None:
+        return None
+    directory = path.expanduser().resolve()
+    if not directory.is_dir():
+        raise CollectionError(f"{option} must be an existing directory")
+    return directory
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_root = args.output_root.expanduser().resolve()
@@ -770,6 +812,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         _validate_gpu_assignment(args.physical_gpu, args.workers)
         isaaclab_source = _resolve_isaaclab_source(args.isaaclab_source)
+        kit_cache_root = _resolve_existing_directory(
+            args.kit_cache_root, "--kit-cache-root"
+        )
+        runtime_library_dir = _resolve_existing_directory(
+            args.runtime_library_dir, "--runtime-library-dir"
+        )
     except CollectionError as error:
         raise SystemExit(str(error)) from error
     if args.dry_run:
@@ -798,6 +846,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if isaaclab_source is not None
                         else None
                     ),
+                    "kit_cache_root": (
+                        str(kit_cache_root)
+                        if kit_cache_root is not None
+                        else None
+                    ),
+                    "runtime_library_dir": (
+                        str(runtime_library_dir)
+                        if runtime_library_dir is not None
+                        else None
+                    ),
                     "commands": commands,
                 },
                 indent=2,
@@ -813,6 +871,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.physical_gpu,
             args.workers,
             isaaclab_source,
+            kit_cache_root,
+            runtime_library_dir,
         )
     except (CollectionError, OSError) as error:
         print(f"collect_conveyorvla_al0_grasp: {error}", file=sys.stderr)
