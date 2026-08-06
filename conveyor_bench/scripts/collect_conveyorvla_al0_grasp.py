@@ -547,6 +547,7 @@ def _worker_environment(
     cell: Cell,
     seed: int,
     physical_gpu: int,
+    isaaclab_source: Path | None,
 ) -> dict[str, str]:
     root = output_root / "runtime" / phase / cell.cell_id / f"seed-{seed}"
     paths = {
@@ -569,6 +570,11 @@ def _worker_environment(
             "PYTHONDONTWRITEBYTECODE": "1",
         }
     )
+    if isaaclab_source is not None:
+        existing = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = str(isaaclab_source) + (
+            os.pathsep + existing if existing else ""
+        )
     return environment
 
 
@@ -599,6 +605,7 @@ def _run_cell(
     python: Path,
     physical_gpu: int,
     existing_training_eligible: int,
+    isaaclab_source: Path | None,
 ) -> None:
     cell_root = output_root / phase / "cells" / cell.cell_id
     log = output_root / phase / "logs" / f"{cell.cell_id}.log"
@@ -613,7 +620,12 @@ def _run_cell(
             cell, phase, seed, count, output_root, python, physical_gpu
         )
         environment = _worker_environment(
-            output_root, phase, cell, seed, physical_gpu
+            output_root,
+            phase,
+            cell,
+            seed,
+            physical_gpu,
+            isaaclab_source,
         )
         returncode = _run(command, log, environment)
         published = _episodes_by_seed(cell_root)
@@ -646,9 +658,11 @@ def run_phase(
     python: Path,
     physical_gpus: Sequence[int],
     workers: int,
+    isaaclab_source: Path | None = None,
 ) -> None:
     gpus = tuple(physical_gpus)
     _validate_gpu_assignment(gpus, workers)
+    isaaclab_source = _resolve_isaaclab_source(isaaclab_source)
     output_root.mkdir(parents=True, exist_ok=True)
     lock_path = output_root / ".collection.lock"
     try:
@@ -685,6 +699,7 @@ def run_phase(
                         python,
                         gpus[(offset + index) % len(gpus)],
                         eligible,
+                        isaaclab_source,
                     )
                     for index, (cell, missing, eligible) in enumerate(wave)
                 ]
@@ -706,6 +721,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phase", choices=("pilot", "production"), required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument(
+        "--isaaclab-source",
+        type=Path,
+        help=(
+            "Directory containing isaaclab/__init__.py; prepend it to "
+            "worker PYTHONPATH when Isaac Lab is not installed in --python."
+        ),
+    )
     parser.add_argument(
         "--physical-gpu",
         type=int,
@@ -729,12 +752,24 @@ def _validate_gpu_assignment(gpus: Sequence[int], workers: int) -> None:
         raise CollectionError("workers cannot exceed the number of physical GPUs")
 
 
+def _resolve_isaaclab_source(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    source = path.expanduser().resolve()
+    if not (source / "isaaclab" / "__init__.py").is_file():
+        raise CollectionError(
+            "--isaaclab-source must contain isaaclab/__init__.py"
+        )
+    return source
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_root = args.output_root.expanduser().resolve()
     python = args.python.expanduser().resolve()
     try:
         _validate_gpu_assignment(args.physical_gpu, args.workers)
+        isaaclab_source = _resolve_isaaclab_source(args.isaaclab_source)
     except CollectionError as error:
         raise SystemExit(str(error)) from error
     if args.dry_run:
@@ -758,6 +793,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "source_tree": SOURCE_TREE_FINGERPRINT,
                     "asset_lock_sha256": ASSET_LOCK_SHA256,
                     "physical_gpus": args.physical_gpu,
+                    "isaaclab_source": (
+                        str(isaaclab_source)
+                        if isaaclab_source is not None
+                        else None
+                    ),
                     "commands": commands,
                 },
                 indent=2,
@@ -772,6 +812,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             python,
             args.physical_gpu,
             args.workers,
+            isaaclab_source,
         )
     except (CollectionError, OSError) as error:
         print(f"collect_conveyorvla_al0_grasp: {error}", file=sys.stderr)

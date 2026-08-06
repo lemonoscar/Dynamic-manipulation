@@ -149,6 +149,8 @@ mobile_settle → mobile_approach → mobile_stabilize → arm_preposition
 python scripts/collect_conveyorvla_al0_grasp.py \
   --phase pilot \
   --output-root NEW_OUTPUT_ROOT \
+  --python ISAAC_PYTHON \
+  --isaaclab-source ISAACLAB_CORE_SOURCE \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2 \

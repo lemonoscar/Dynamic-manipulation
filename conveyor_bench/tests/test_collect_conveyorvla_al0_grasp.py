@@ -116,3 +116,28 @@ def test_dry_run_and_runtime_reject_gpu_zero_one(tmp_path: Path) -> None:
             (2,),
             workers=2,
         )
+
+
+def test_worker_environment_prepends_explicit_isaaclab_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "IsaacLab" / "source" / "isaaclab"
+    package = source / "isaaclab"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", "/existing/pythonpath")
+
+    resolved = collector._resolve_isaaclab_source(source)
+    environment = collector._worker_environment(
+        tmp_path / "output",
+        "pilot",
+        collector.cells()[0],
+        200000,
+        3,
+        resolved,
+    )
+
+    assert environment["PYTHONPATH"].split(collector.os.pathsep) == [
+        str(source.resolve()),
+        "/existing/pythonpath",
+    ]

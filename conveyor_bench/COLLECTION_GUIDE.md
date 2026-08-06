@@ -460,6 +460,7 @@ python scripts/collect_conveyorvla_al0_grasp.py \
   --phase pilot \
   --output-root NEW_AL0_DATASET_ROOT \
   --python ISAAC_PYTHON \
+  --isaaclab-source ISAACLAB_CORE_SOURCE \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2
@@ -473,6 +474,7 @@ python scripts/collect_conveyorvla_al0_grasp.py \
   --phase production \
   --output-root NEW_AL0_DATASET_ROOT \
   --python ISAAC_PYTHON \
+  --isaaclab-source ISAACLAB_CORE_SOURCE \
   --physical-gpu 2 \
   --physical-gpu 3 \
   --workers 2
