@@ -198,6 +198,7 @@ _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_ARM_SLEW_SCALE = 0.20
+_MOBILE_PLACE_FULL_GOAL_RADIUS_M = 0.060
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
@@ -779,6 +780,9 @@ class ConveyorRuntimeV1:
                     _TEACHER_MAX_ROTATION_STEP_RAD
                 ),
                 "place_arm_slew_scale": _MOBILE_PLACE_ARM_SLEW_SCALE,
+                "place_full_goal_radius_m": (
+                    _MOBILE_PLACE_FULL_GOAL_RADIUS_M
+                ),
             }
         }
 
@@ -1560,6 +1564,11 @@ class ConveyorRuntimeV1:
                             is RobotMode.WHOLE_BODY_POLICY
                             and phase == "carry"
                             and self._mobile_carry_stage == "place"
+                            and math.dist(
+                                state_before["tcp_world"].xyz,
+                                target_tcp_pose_world.xyz,
+                            )
+                            <= _MOBILE_PLACE_FULL_GOAL_RADIUS_M
                         )
                         (
                             canonical_ee_delta,
@@ -3963,13 +3972,21 @@ class ConveyorRuntimeV1:
         # folded IK branch.  The existing joint slew and tracking window below
         # remain the physical rate limiter, while ``raw_delta`` and
         # ``rotation_delta`` preserve the 25 Hz VLA label contract.
+        solution = None
         if solve_full_target:
-            solution = self.arm_kinematics.solve(
-                target_base.xyz,
-                target_base.wxyz,
-                seed=self._arm_ik_seed,
-            )
-        else:
+            try:
+                solution = self.arm_kinematics.solve(
+                    target_base.xyz,
+                    target_base.wxyz,
+                    seed=self._arm_ik_seed,
+                )
+            except IKConvergenceError:
+                # Floating-base reaction can make the final world-frame goal
+                # transiently unreachable.  Keep publishing the bounded
+                # local waypoint and retry the full goal on the next tick
+                # instead of aborting a physically valid slow approach.
+                pass
+        if solution is None:
             try:
                 solution = self.arm_kinematics.solve(
                     next_position,

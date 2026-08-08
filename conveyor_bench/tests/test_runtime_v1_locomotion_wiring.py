@@ -176,6 +176,7 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     assert _literal_constant(tree, "_TEACHER_LIFT_STEP_M") == 0.002
     assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.01
     assert _literal_constant(tree, "_MOBILE_PLACE_ARM_SLEW_SCALE") == 0.20
+    assert _literal_constant(tree, "_MOBILE_PLACE_FULL_GOAL_RADIUS_M") == 0.060
     source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
     assert "phase in {'descend', 'close'}" in source
     assert "phase == 'lift'" in source
@@ -197,6 +198,8 @@ def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
     assert "'lift'" in full_goal_phases
     assert "phase == 'carry'" in episode
     assert "self._mobile_carry_stage == 'place'" in episode
+    assert "math.dist(state_before['tcp_world'].xyz" in episode
+    assert "<= _MOBILE_PLACE_FULL_GOAL_RADIUS_M" in episode
     assert "arm_slew_scale=_MOBILE_PLACE_ARM_SLEW_SCALE" in episode
     assert "slew_scale=arm_slew_scale" in source
     assert "for value in raw_delta" in source
