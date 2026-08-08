@@ -276,13 +276,13 @@ def _default_scenes() -> tuple[SceneContract, ...]:
                 GoalZoneContract(
                     "sort_bin_blue",
                     "blue sorting tray",
-                    (0.34, 0.43, 0.40),
+                    (0.34, 0.40, 0.40),
                     near_half_extents,
                 ),
                 GoalZoneContract(
                     "sort_bin_yellow",
                     "yellow sorting tray",
-                    (0.34, -0.43, 0.40),
+                    (0.34, -0.40, 0.40),
                     near_half_extents,
                 ),
             ),

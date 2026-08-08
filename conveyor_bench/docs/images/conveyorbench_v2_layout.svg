@@ -62,14 +62,14 @@
   </g>
   <g id="near-sort-profile">
     <g id="near-bin-sort_bin_blue" class="bin near-bin">
-      <rect x="411.3" y="516.45" width="85" height="81.9" rx="10" fill="#1a52db"/>
-      <rect x="418.3" y="523.45" width="71" height="67.9" rx="6" fill="#101923"/>
-      <text x="453.8" y="562.4" text-anchor="middle" class="bin-label">sort_bin_blue</text>
+      <rect x="421.5" y="516.45" width="85" height="81.9" rx="10" fill="#1a52db"/>
+      <rect x="428.5" y="523.45" width="71" height="67.9" rx="6" fill="#101923"/>
+      <text x="464" y="562.4" text-anchor="middle" class="bin-label">sort_bin_blue</text>
     </g>
     <g id="near-bin-sort_bin_yellow" class="bin near-bin">
-      <rect x="703.7" y="516.45" width="85" height="81.9" rx="10" fill="#edb014"/>
-      <rect x="710.7" y="523.45" width="71" height="67.9" rx="6" fill="#101923"/>
-      <text x="746.2" y="562.4" text-anchor="middle" class="bin-label">sort_bin_yellow</text>
+      <rect x="693.5" y="516.45" width="85" height="81.9" rx="10" fill="#edb014"/>
+      <rect x="700.5" y="523.45" width="71" height="67.9" rx="6" fill="#101923"/>
+      <text x="736" y="562.4" text-anchor="middle" class="bin-label">sort_bin_yellow</text>
     </g>
   </g>
   <g id="remote-delivery-profile">
