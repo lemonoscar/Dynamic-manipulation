@@ -218,6 +218,8 @@ _TEACHER_LIFT_STEP_M = 0.002
 _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
+_TEACHER_INTERCEPT_MIN_HALF_WIDTH_M = 0.005
+_TEACHER_INTERCEPT_DWELL_MARGIN_S = 0.10
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
@@ -241,6 +243,22 @@ _CAMERA_SPECS = (
     CameraSpec("wrist_rgb", 224, 224, "policy_observation"),
     CameraSpec("overview_rgb", 480, 320, "observer_only"),
 )
+
+
+def _teacher_intercept_entry_tolerance_m(
+    belt_speed_mps: float,
+) -> float:
+    """Keep the moving part visible for the complete pregrasp dwell."""
+
+    return max(
+        _TEACHER_INTERCEPT_MIN_HALF_WIDTH_M,
+        0.5
+        * abs(float(belt_speed_mps))
+        * (
+            _TEACHER_PREGRASP_OBSERVATION_DWELL_S
+            + _TEACHER_INTERCEPT_DWELL_MARGIN_S
+        ),
+    )
 
 
 class _MobilePreconditionFailure(Exception):
@@ -791,6 +809,11 @@ class ConveyorRuntimeV1:
                 "pregrasp_arm_joint_target_rad": list(pregrasp_arm),
                 "pregrasp_observation_dwell_s": (
                     _TEACHER_PREGRASP_OBSERVATION_DWELL_S
+                ),
+                "intercept_entry_tolerance_m": (
+                    _teacher_intercept_entry_tolerance_m(
+                        self.options.belt_speed_mps
+                    )
                 ),
                 "preplace_observation_dwell_s": (
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
@@ -3115,7 +3138,11 @@ class ConveyorRuntimeV1:
                 # Enter a narrow prediction window so the open 114 mm jaw is
                 # centered before its lower collision envelope reaches the
                 # 48 mm part.  A broad window closes above the moving part.
-                intercept_entry_tolerance_m=0.005,
+                intercept_entry_tolerance_m=(
+                    _teacher_intercept_entry_tolerance_m(
+                        self.options.belt_speed_mps
+                    )
+                ),
                 # Contact is recorded as a learning signal, but closure waits
                 # for the Cartesian grasp gate.  The open finger bottoms touch
                 # the part about 50 mm above the pad center and must be allowed

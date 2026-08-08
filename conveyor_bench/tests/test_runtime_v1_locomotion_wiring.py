@@ -176,6 +176,12 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     assert _literal_constant(tree, "_TEACHER_LIFT_STEP_M") == 0.002
     assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.01
     assert _literal_constant(tree, "_TEACHER_RELEASE_CLEARANCE_M") == 0.005
+    assert _literal_constant(
+        tree, "_TEACHER_INTERCEPT_MIN_HALF_WIDTH_M"
+    ) == 0.005
+    assert _literal_constant(
+        tree, "_TEACHER_INTERCEPT_DWELL_MARGIN_S"
+    ) == 0.10
     assert _literal_constant(tree, "_MOBILE_RELEASE_POSITION_TOLERANCE_M") == 0.045
     source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
     assert "phase in {'descend', 'close'}" in source
@@ -198,6 +204,38 @@ def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
     assert "'lift'" in full_goal_phases
     assert "for value in raw_delta" in source
     assert "for value in next_position" in source
+
+
+def test_intercept_window_covers_the_observation_dwell_at_each_speed() -> None:
+    tree = _runtime_tree()
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_teacher_intercept_entry_tolerance_m"
+    )
+    namespace = {
+        name: _literal_constant(tree, name)
+        for name in (
+            "_TEACHER_INTERCEPT_MIN_HALF_WIDTH_M",
+            "_TEACHER_INTERCEPT_DWELL_MARGIN_S",
+            "_TEACHER_PREGRASP_OBSERVATION_DWELL_S",
+        )
+    }
+    exec(
+        compile(
+            ast.fix_missing_locations(
+                ast.Module(body=[copy.deepcopy(helper)], type_ignores=[])
+            ),
+            str(RUNTIME_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    tolerance = namespace["_teacher_intercept_entry_tolerance_m"]
+
+    assert tolerance(0.01) == pytest.approx(0.005)
+    assert tolerance(0.02) == pytest.approx(0.006)
 
 
 def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
