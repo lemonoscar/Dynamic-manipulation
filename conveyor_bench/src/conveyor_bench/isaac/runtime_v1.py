@@ -3135,7 +3135,11 @@ class ConveyorRuntimeV1:
             0.0,
             (spawn_y - intercept_y) / speed,
         )
-        return max(15.0, travel_s + 5.0)
+        # CARRY includes the mobile retract, turn, and settle substages before
+        # the deliberately slow overhead tray approach resumes.  The former
+        # 15 s budget expired with the held object already moving correctly
+        # toward the tray, so retain a full 30 s for dynamic demonstrations.
+        return max(30.0, travel_s + 5.0)
 
     def _mobile_preoracle_command(
         self,

@@ -292,7 +292,7 @@ def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
 def test_v1_oracle_phase_timeout_covers_slow_belt_travel() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_oracle_phase_timeout_s"))
 
-    assert "return max(15.0, travel_s + 5.0)" in source
+    assert "return max(30.0, travel_s + 5.0)" in source
     assert "(spawn_y - intercept_y) / speed" in source
 
 
