@@ -567,6 +567,31 @@ def test_high_goal_drop_opens_without_entering_the_tray() -> None:
     assert _position(command) == pytest.approx(high_goal)
 
 
+def test_high_goal_drop_uses_the_registered_carry_tolerance() -> None:
+    oracle = DynamicSortOracle(
+        replace(
+            config(),
+            release_from_high_goal=True,
+            position_tolerance_m=0.01,
+            carry_position_tolerance_m=0.045,
+        )
+    )
+    oracle._transition(OraclePhase.CARRY, 0.0)
+    high_goal = oracle._goal_high_position()
+    nearby = (high_goal[0] - 0.03, high_goal[1], high_goal[2])
+
+    command = oracle.step(
+        observation(0.01, tcp_position_world=nearby, target_held=True)
+    )
+    assert command.phase is OraclePhase.PREPLACE
+
+    command = oracle.step(
+        observation(0.07, tcp_position_world=nearby, target_held=True)
+    )
+    assert command.phase is OraclePhase.OPEN
+    assert command.gripper_command == 1.0
+
+
 def test_high_goal_lift_clears_the_object_without_double_counting_bin_height() -> None:
     ordinary = DynamicSortOracle(config())
     high_drop = DynamicSortOracle(
@@ -580,3 +605,8 @@ def test_high_goal_lift_clears_the_object_without_double_counting_bin_height() -
 def test_high_goal_drop_flag_requires_a_bool() -> None:
     with pytest.raises(ValueError, match="release_from_high_goal"):
         replace(config(), release_from_high_goal=1)
+
+
+def test_carry_position_tolerance_must_be_positive_when_provided() -> None:
+    with pytest.raises(ValueError, match="carry_position_tolerance_m"):
+        replace(config(), carry_position_tolerance_m=0.0)

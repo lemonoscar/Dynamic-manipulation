@@ -59,8 +59,8 @@ def test_compound_geometry_extent_includes_offsets() -> None:
 def test_receptacles_have_two_sort_bins_and_post_exit_catch() -> None:
     zones = {zone.zone_id: zone for zone in load_receptacles()}
     assert {"sort_bin_blue", "sort_bin_yellow", "reject_catch"} == set(zones)
-    assert zones["sort_bin_blue"].center_xyz_m[1] > 0.0
-    assert zones["sort_bin_yellow"].center_xyz_m[1] < 0.0
+    assert zones["sort_bin_blue"].center_xyz_m[1] == pytest.approx(0.40)
+    assert zones["sort_bin_yellow"].center_xyz_m[1] == pytest.approx(-0.40)
     assert zones["reject_catch"].center_xyz_m[1] == pytest.approx(-0.93)
 
 

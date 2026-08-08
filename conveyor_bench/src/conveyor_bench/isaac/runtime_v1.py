@@ -197,8 +197,7 @@ _TEACHER_RELEASE_CLEARANCE_M = 0.005
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
-_MOBILE_PLACE_ARM_SLEW_SCALE = 0.20
-_MOBILE_PLACE_FULL_GOAL_RADIUS_M = 0.045
+_MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
@@ -779,9 +778,8 @@ class ConveyorRuntimeV1:
                 "max_rotation_step_rad": (
                     _TEACHER_MAX_ROTATION_STEP_RAD
                 ),
-                "place_arm_slew_scale": _MOBILE_PLACE_ARM_SLEW_SCALE,
-                "place_full_goal_radius_m": (
-                    _MOBILE_PLACE_FULL_GOAL_RADIUS_M
+                "release_position_tolerance_m": (
+                    _MOBILE_RELEASE_POSITION_TOLERANCE_M
                 ),
             }
         }
@@ -1559,17 +1557,6 @@ class ConveyorRuntimeV1:
                             state_before["tcp_base"]
                         )
                     else:
-                        mobile_place_full_goal = (
-                            self.options.robot_mode
-                            is RobotMode.WHOLE_BODY_POLICY
-                            and phase == "carry"
-                            and self._mobile_carry_stage == "place"
-                            and math.dist(
-                                state_before["tcp_world"].xyz,
-                                target_tcp_pose_world.xyz,
-                            )
-                            <= _MOBILE_PLACE_FULL_GOAL_RADIUS_M
-                        )
                         (
                             canonical_ee_delta,
                             canonical_rotvec,
@@ -1593,12 +1580,6 @@ class ConveyorRuntimeV1:
                                     "close",
                                     "lift",
                                 }
-                                or mobile_place_full_goal
-                            ),
-                            arm_slew_scale=(
-                                _MOBILE_PLACE_ARM_SLEW_SCALE
-                                if mobile_place_full_goal
-                                else 1.0
                             ),
                         )
                     if oracle_command.terminal:
@@ -3073,7 +3054,7 @@ class ConveyorRuntimeV1:
         # turn.  Even the widest 48 mm train part remains fully inside the
         # 105 mm goal half-width.
         reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.025)
-        reachable_release_y = zone_y - math.copysign(0.10, zone_y)
+        reachable_release_y = zone_y - math.copysign(0.07, zone_y)
         if affordance.approach_axis != "-z":
             raise RuntimeError(
                 "overhead teacher requires a registered -z approach axis"
@@ -3116,6 +3097,12 @@ class ConveyorRuntimeV1:
                 # high-goal workspace.
                 safe_carry_clearance_m=0.025,
                 position_tolerance_m=0.020,
+                carry_position_tolerance_m=(
+                    _MOBILE_RELEASE_POSITION_TOLERANCE_M
+                    if self.options.robot_mode
+                    is RobotMode.WHOLE_BODY_POLICY
+                    else None
+                ),
                 # The TCP is the center of the usable finger grasp region.
                 # Closing too high catches only the top edges and the part
                 # slips during lift; collision-noise extrapolation is handled
@@ -3919,7 +3906,6 @@ class ConveyorRuntimeV1:
         max_translation_m: float,
         max_rotation_rad: float = _TEACHER_MAX_ROTATION_STEP_RAD,
         solve_full_target: bool = False,
-        arm_slew_scale: float = 1.0,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -3932,7 +3918,6 @@ class ConveyorRuntimeV1:
             max_translation_m=max_translation_m,
             max_rotation_rad=max_rotation_rad,
             solve_full_target=solve_full_target,
-            arm_slew_scale=arm_slew_scale,
         )
 
     def _apply_tcp_target_base(
@@ -3943,7 +3928,6 @@ class ConveyorRuntimeV1:
         max_translation_m: float = 0.025,
         max_rotation_rad: float = 0.12,
         solve_full_target: bool = False,
-        arm_slew_scale: float = 1.0,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -4010,7 +3994,6 @@ class ConveyorRuntimeV1:
         self._arm_target = self._slew_arm_target(
             planned,
             carrying_object=self._held_instance_id is not None,
-            slew_scale=arm_slew_scale,
         )
         limits = self.robot.data.soft_joint_pos_limits[
             :, self.arm_joint_ids
@@ -4212,12 +4195,9 @@ class ConveyorRuntimeV1:
         planned: torch.Tensor,
         *,
         carrying_object: bool,
-        slew_scale: float = 1.0,
     ) -> torch.Tensor:
         """Rate-limit every arm target write on the floating platform."""
 
-        if not 0.0 < slew_scale <= 1.0:
-            raise ValueError("slew_scale must be in (0, 1]")
         current = self.robot.data.joint_pos[:, self.arm_joint_ids]
         commanded = self._arm_target
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
@@ -4230,7 +4210,7 @@ class ConveyorRuntimeV1:
                 [per_joint],
                 dtype=torch.float32,
                 device=self.sim.device,
-            ) * slew_scale
+            )
         else:
             delta_limit = torch.full_like(commanded, 0.08)
         # Project the stored command onto the segment between the measured

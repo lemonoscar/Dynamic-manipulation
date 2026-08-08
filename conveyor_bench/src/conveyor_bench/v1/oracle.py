@@ -99,6 +99,7 @@ class OracleConfig:
     pregrasp_clearance_m: float = 0.12
     safe_carry_clearance_m: float = 0.16
     position_tolerance_m: float = 0.015
+    carry_position_tolerance_m: float | None = None
     grasp_tolerance_m: float = 0.010
     settle_duration_s: float = 0.25
     select_duration_s: float = 0.10
@@ -149,6 +150,13 @@ class OracleConfig:
         ):
             raise ValueError(
                 "intercept_staging_y_world must be finite when provided"
+            )
+        if self.carry_position_tolerance_m is not None and (
+            not math.isfinite(self.carry_position_tolerance_m)
+            or self.carry_position_tolerance_m <= 0.0
+        ):
+            raise ValueError(
+                "carry_position_tolerance_m must be finite and positive"
             )
         quaternion_norm = math.sqrt(
             sum(float(component) ** 2 for component in self.tcp_orientation_wxyz)
@@ -448,13 +456,21 @@ class DynamicSortOracle:
 
         high_goal = self._goal_high_position()
         if self.phase is OraclePhase.CARRY:
-            if self._near(observation.tcp_position_world, high_goal):
+            if self._near(
+                observation.tcp_position_world,
+                high_goal,
+                tolerance=self.config.carry_position_tolerance_m,
+            ):
                 self._transition(OraclePhase.PREPLACE, observation.sim_time_s)
             return self._command(high_goal, gripper_command=0.0)
 
         if self.phase is OraclePhase.PREPLACE:
             if (
-                self._near(observation.tcp_position_world, high_goal)
+                self._near(
+                    observation.tcp_position_world,
+                    high_goal,
+                    tolerance=self.config.carry_position_tolerance_m,
+                )
                 and phase_elapsed >= self.config.preplace_dwell_s
             ):
                 if self.config.release_from_high_goal:
