@@ -282,6 +282,13 @@ def test_high_goal_verify_holds_the_reached_joint_target() -> None:
     assert "last_command_target_base = state_before['tcp_base'].xyz" in source
 
 
+def test_long_parts_receive_a_full_post_release_settling_window() -> None:
+    source = RUNTIME_PATH.read_text(encoding="utf-8")
+
+    assert "verify_timeout_s=6.0" in source
+    assert "_TEACHER_PREPLACE_OBSERVATION_DWELL_S" in source
+
+
 def test_terminal_oracle_tick_cannot_run_an_extra_ik_solve() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_run_episode"))
 
