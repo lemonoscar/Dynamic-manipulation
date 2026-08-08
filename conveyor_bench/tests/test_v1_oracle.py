@@ -234,12 +234,12 @@ def test_intercept_staging_waits_for_target_entry():
             0.16,
             target_position_world=(0.50, 0.03, 0.20),
             target_velocity_world=(0.0, 0.0, 0.0),
-            tcp_position_world=staging_position,
-            left_contact_object_ids=(TARGET_ID,),
+            tcp_position_world=_position(command),
         )
     )
     assert command.phase is OraclePhase.CLOSE
     assert command.gripper_command == 0.0
+    assert _position(command)[1] == pytest.approx(0.08)
 
 
 def run_success_trace(

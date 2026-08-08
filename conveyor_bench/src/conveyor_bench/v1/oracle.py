@@ -341,6 +341,7 @@ class DynamicSortOracle:
         pregrasp_target = self._pregrasp_position(predicted_target)
         staging_target = self._staging_pregrasp_position(predicted_target)
         grasp_target = self._grasp_position(predicted_target)
+        descent_target = self._intercept_grasp_position(predicted_target)
 
         if self.phase is OraclePhase.SETTLE:
             if phase_elapsed >= self.config.settle_duration_s:
@@ -385,7 +386,7 @@ class DynamicSortOracle:
                 # tracks the predicted part while moving mostly vertically.
                 self._transition(OraclePhase.DESCEND, observation.sim_time_s)
                 return self._command(
-                    self._intercept_grasp_position(predicted_target),
+                    descent_target,
                     gripper_command=1.0,
                 )
             if self._near(observation.tcp_position_world, pregrasp_target):
@@ -406,12 +407,12 @@ class DynamicSortOracle:
                 and target_contact
             ) or self._near(
                 observation.tcp_position_world,
-                grasp_target,
+                descent_target,
                 tolerance=self.config.grasp_tolerance_m,
             ):
                 self._transition(OraclePhase.CLOSE, observation.sim_time_s)
-                return self._command(grasp_target, gripper_command=0.0)
-            return self._command(grasp_target, gripper_command=1.0)
+                return self._command(descent_target, gripper_command=0.0)
+            return self._command(descent_target, gripper_command=1.0)
 
         if self.phase is OraclePhase.CLOSE:
             target_contact = self._has_target_bilateral_contact(observation)
@@ -448,7 +449,7 @@ class DynamicSortOracle:
                 self._contact_started_at = None
             if phase_elapsed >= self.config.close_timeout_s:
                 return self._fail(observation, "grasp_timeout")
-            return self._command(grasp_target, gripper_command=0.0)
+            return self._command(descent_target, gripper_command=0.0)
 
         if self.phase is OraclePhase.LIFT:
             if (
