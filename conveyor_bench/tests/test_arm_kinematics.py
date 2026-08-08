@@ -2,7 +2,10 @@ import numpy as np
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
-from conveyor_bench.v1.oracle import top_down_tcp_orientation_wxyz
+from conveyor_bench.v1.oracle import (
+    TOP_DOWN_X_CLOSING_YAW_DEG,
+    top_down_tcp_orientation_wxyz,
+)
 
 
 def test_forward_matches_simulator_probe():
@@ -48,6 +51,34 @@ def test_policy_arm_reaches_low_belt_from_overhead() -> None:
         assert solution.orientation_error < 0.005
         assert solution.joint_positions[3] >= -1.26
         seed = solution.joint_positions
+
+
+def test_x_closing_overhead_pose_retains_wrist_limit_margin() -> None:
+    kinematics = CalibratedArmKinematics.in_policy_usd_root_frame(
+        max_iterations=300,
+        position_tolerance_m=0.001,
+        orientation_tolerance=0.01,
+    )
+    y_closing_pregrasp = (
+        -0.044556522,
+        2.098253408,
+        1.709825231,
+        -0.942128716,
+        -0.052071541,
+        0.092826496,
+    )
+    target_position, _ = kinematics.forward(y_closing_pregrasp)
+
+    solution = kinematics.solve(
+        target_position,
+        top_down_tcp_orientation_wxyz("x"),
+        seed=y_closing_pregrasp,
+    )
+
+    assert TOP_DOWN_X_CLOSING_YAW_DEG == 73.0
+    assert solution.position_error_m < 0.001
+    assert solution.orientation_error < 0.01
+    assert solution.joint_positions[-1] > -1.40
 
 
 def test_quaternion_sign_does_not_change_solution():

@@ -22,6 +22,12 @@ _ZERO_BASE_COMMAND: Vec3 = (0.0, 0.0, 0.0)
 # its approach direction downward.  This preserves the low-workspace margin
 # that an exact 90 degree pose loses at the conveyor and tray rim.
 TOP_DOWN_APPROACH_PITCH_DEG = 75.0
+# The X5 final wrist joint is limited to +/-1.4 rad.  A literal 90 degree
+# world-yaw request for an X-closing grasp drives that joint into its stop and
+# pulls the TCP away from the conveyor intercept.  Seventy-three degrees is
+# the largest calibrated yaw with useful joint-limit margin; the 17 degree
+# residual is harmless for the parallel pads and remains an overhead grasp.
+TOP_DOWN_X_CLOSING_YAW_DEG = 73.0
 
 
 def top_down_tcp_orientation_wxyz(
@@ -39,15 +45,18 @@ def top_down_tcp_orientation_wxyz(
     if finger_closing_axis == "y":
         return pitch
     if finger_closing_axis == "x":
-        # Pre-multiply by a world-Z quarter turn.  The sign of a parallel
-        # closing axis is immaterial, so local +Y mapping to world -X is valid.
-        yaw = math.sqrt(0.5)
+        # Pre-multiply by the calibrated world-Z yaw.  The sign of a parallel
+        # closing axis is immaterial, so local +Y mapping mostly to world -X
+        # is valid while retaining margin at the final wrist-joint limit.
+        half_yaw = math.radians(TOP_DOWN_X_CLOSING_YAW_DEG) * 0.5
+        yaw_w = math.cos(half_yaw)
+        yaw_z = math.sin(half_yaw)
         pw, px, py, pz = pitch
         return (
-            yaw * pw,
-            -yaw * py,
-            yaw * py,
-            yaw * pw,
+            yaw_w * pw,
+            -yaw_z * py,
+            yaw_w * py,
+            yaw_z * pw,
         )
     raise ValueError("top-down parallel grasp requires closing axis x or y")
 

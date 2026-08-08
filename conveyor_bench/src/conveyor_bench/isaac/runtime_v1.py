@@ -150,6 +150,31 @@ _PREGRASP_ARM = (
     -0.052071541,
     0.092826496,
 )
+# Same root-frame TCP position and 75 degree downward pitch as
+# ``_PREGRASP_ARM``, with the calibrated 73 degree world yaw used for assets
+# whose short grasp axis is X.  This is solved before object spawn so the
+# teacher observes the moving part from a stable overhead pose instead of
+# attempting an unreachable 90 degree wrist correction at interception.
+_PREGRASP_ARM_X_CLOSING = (
+    -0.113020704,
+    2.269433687,
+    1.989801971,
+    -1.241977948,
+    -0.257035292,
+    -1.379550036,
+)
+
+
+def _pregrasp_arm_for_closing_axis(
+    finger_closing_axis: str,
+) -> tuple[float, float, float, float, float, float]:
+    if finger_closing_axis == "y":
+        return _PREGRASP_ARM
+    if finger_closing_axis == "x":
+        return _PREGRASP_ARM_X_CLOSING
+    raise ValueError("overhead pregrasp requires closing axis x or y")
+
+
 _LOCOMOTION_PHYSICS_HZ = 400
 _LOCOMOTION_POLICY_HZ = 50
 _LOCOMOTION_DECIMATION = 8
@@ -746,6 +771,9 @@ class ConveyorRuntimeV1:
         self, resolved: _ResolvedTask
     ) -> dict[str, Any]:
         affordance = resolved.target_asset.grasp_affordances[0]
+        pregrasp_arm = _pregrasp_arm_for_closing_axis(
+            affordance.finger_closing_axis
+        )
         return {
             "demonstration_teacher": {
                 "profile_id": _TEACHER_PROFILE_ID,
@@ -760,6 +788,7 @@ class ConveyorRuntimeV1:
                         affordance.finger_closing_axis
                     )
                 ),
+                "pregrasp_arm_joint_target_rad": list(pregrasp_arm),
                 "pregrasp_observation_dwell_s": (
                     _TEACHER_PREGRASP_OBSERVATION_DWELL_S
                 ),
@@ -2829,6 +2858,11 @@ class ConveyorRuntimeV1:
         )
 
     def _reset_episode(self, resolved: _ResolvedTask) -> None:
+        self._pregrasp_arm_target = _pregrasp_arm_for_closing_axis(
+            resolved.target_asset.grasp_affordances[
+                0
+            ].finger_closing_axis
+        )
         self._reset_robot_state(resolved)
         for index, asset in enumerate(OBJECT_ASSETS):
             rigid_object = self.objects[asset.object_id]
@@ -2899,7 +2933,7 @@ class ConveyorRuntimeV1:
 
     def _preposition_fixed_arm(self) -> None:
         target = torch.tensor(
-            [_PREGRASP_ARM],
+            [self._pregrasp_arm_target],
             dtype=torch.float32,
             device=self.sim.device,
         )
@@ -2922,7 +2956,7 @@ class ConveyorRuntimeV1:
             )
             self.scene.write_data_to_sim()
             self._step_physics()
-        self._arm_ik_seed = _PREGRASP_ARM
+        self._arm_ik_seed = self._pregrasp_arm_target
         self._physics_step_count = 0
 
     def _spawn_assets_for_current_target(
@@ -3276,7 +3310,7 @@ class ConveyorRuntimeV1:
     def _arm_preposition_metrics(self) -> tuple[float, float]:
         measured = self.robot.data.joint_pos[:, self.arm_joint_ids]
         target = torch.tensor(
-            [_PREGRASP_ARM],
+            [self._pregrasp_arm_target],
             dtype=torch.float32,
             device=self.sim.device,
         )
@@ -3734,7 +3768,7 @@ class ConveyorRuntimeV1:
         tuple[float, float, float],
     ]:
         target_position, target_rotation = self.arm_kinematics.forward(
-            _PREGRASP_ARM
+            self._pregrasp_arm_target
         )
         target_pose = Pose(
             tuple(float(value) for value in target_position),
@@ -3753,7 +3787,7 @@ class ConveyorRuntimeV1:
         if angle > 0.12:
             rotation_delta *= 0.12 / angle
         planned = torch.tensor(
-            [_PREGRASP_ARM],
+            [self._pregrasp_arm_target],
             dtype=torch.float32,
             device=self.sim.device,
         )

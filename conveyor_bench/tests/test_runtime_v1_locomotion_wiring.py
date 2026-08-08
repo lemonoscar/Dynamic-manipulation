@@ -214,6 +214,19 @@ def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
     assert arm[3] >= -1.26
 
 
+def test_x_closing_pregrasp_has_a_distinct_reachable_joint_posture() -> None:
+    tree = ast.parse(RUNTIME_PATH.read_text(encoding="utf-8"))
+    y_closing = _literal_constant(tree, "_PREGRASP_ARM")
+    x_closing = _literal_constant(tree, "_PREGRASP_ARM_X_CLOSING")
+
+    assert len(x_closing) == 6
+    assert x_closing != y_closing
+    assert x_closing[-1] > -1.40
+    assert "self._pregrasp_arm_target" in RUNTIME_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_overhead_arm_must_settle_before_the_object_can_spawn() -> None:
     tree = _runtime_tree()
     helper = copy.deepcopy(_method(tree, "_arm_preposition_ready"))
