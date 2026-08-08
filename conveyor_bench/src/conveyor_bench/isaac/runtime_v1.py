@@ -3674,7 +3674,12 @@ class ConveyorRuntimeV1:
             "turn": 10.0,
             "navigate": 6.0,
             "settle": 4.0,
-            "place": 15.0,
+            # The overhead teacher deliberately advances only a few
+            # millimetres per policy tick.  The measured loaded path from the
+            # compact carry pose to the inner tray quadrant needs about
+            # 19 seconds; keep the slow motion and give release verification
+            # a deterministic margin instead of speeding up the arm.
+            "place": 25.0,
         }[stage]
 
     def _mobile_place_target(

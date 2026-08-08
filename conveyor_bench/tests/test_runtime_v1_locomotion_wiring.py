@@ -283,10 +283,11 @@ def test_terminal_oracle_tick_cannot_run_an_extra_ik_solve() -> None:
     assert "canonical_rotvec = (0.0, 0.0, 0.0)" in terminal_source
 
 
-def test_v1_carry_turn_uses_the_audited_bidirectional_timeout() -> None:
+def test_v1_mobile_carry_stages_use_the_audited_timeouts() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_carry_stage_timeout_s"))
 
     assert "'turn': 10.0" in source
+    assert "'place': 25.0" in source
 
 
 def test_v1_oracle_phase_timeout_covers_slow_belt_travel() -> None:

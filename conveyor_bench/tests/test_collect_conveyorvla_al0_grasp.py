@@ -58,7 +58,7 @@ def test_collection_command_is_single_target_slow_and_temporally_balanced(
     assert command[command.index("--task-family") + 1] == "single_target"
     assert command[command.index("--belt-speed") + 1] == str(cell.belt_speed_mps)
     assert command[command.index("--target-intercept-lead-time") + 1] == "5.0"
-    assert command[command.index("--max-duration") + 1] == "40.0"
+    assert command[command.index("--max-duration") + 1] == "55.0"
     assert command[command.index("--destination") + 1] == "sort_bin_blue"
     assert "--require-all-success" in command
     kit_args = command[command.index("--kit_args") + 1]
