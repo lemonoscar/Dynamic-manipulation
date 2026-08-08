@@ -592,6 +592,39 @@ def test_high_goal_drop_uses_the_registered_carry_tolerance() -> None:
     assert command.gripper_command == 1.0
 
 
+def test_high_goal_drop_can_release_from_a_physically_entered_goal() -> None:
+    oracle = DynamicSortOracle(
+        replace(
+            config(),
+            release_from_high_goal=True,
+            position_tolerance_m=0.01,
+            carry_position_tolerance_m=0.02,
+        )
+    )
+    oracle._transition(OraclePhase.CARRY, 0.0)
+
+    command = oracle.step(
+        observation(
+            0.01,
+            tcp_position_world=(0.0, 0.0, 0.0),
+            target_held=True,
+            target_in_goal=True,
+        )
+    )
+    assert command.phase is OraclePhase.PREPLACE
+
+    command = oracle.step(
+        observation(
+            0.07,
+            tcp_position_world=(0.0, 0.0, 0.0),
+            target_held=True,
+            target_in_goal=True,
+        )
+    )
+    assert command.phase is OraclePhase.OPEN
+    assert command.gripper_command == 1.0
+
+
 def test_high_goal_lift_clears_the_object_without_double_counting_bin_height() -> None:
     ordinary = DynamicSortOracle(config())
     high_drop = DynamicSortOracle(

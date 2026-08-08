@@ -456,21 +456,13 @@ class DynamicSortOracle:
 
         high_goal = self._goal_high_position()
         if self.phase is OraclePhase.CARRY:
-            if self._near(
-                observation.tcp_position_world,
-                high_goal,
-                tolerance=self.config.carry_position_tolerance_m,
-            ):
+            if self._high_goal_ready(observation, high_goal):
                 self._transition(OraclePhase.PREPLACE, observation.sim_time_s)
             return self._command(high_goal, gripper_command=0.0)
 
         if self.phase is OraclePhase.PREPLACE:
             if (
-                self._near(
-                    observation.tcp_position_world,
-                    high_goal,
-                    tolerance=self.config.carry_position_tolerance_m,
-                )
+                self._high_goal_ready(observation, high_goal)
                 and phase_elapsed >= self.config.preplace_dwell_s
             ):
                 if self.config.release_from_high_goal:
@@ -725,6 +717,18 @@ class DynamicSortOracle:
             )
         )
         return distance <= threshold
+
+    def _high_goal_ready(
+        self, observation: OracleObservation, high_goal: Vec3
+    ) -> bool:
+        return self._near(
+            observation.tcp_position_world,
+            high_goal,
+            tolerance=self.config.carry_position_tolerance_m,
+        ) or (
+            self.config.release_from_high_goal
+            and observation.target_in_goal
+        )
 
     def _base_command(self) -> Vec3:
         if self.config.robot_mode is RobotMode.FIXED_BASE:
