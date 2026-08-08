@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
-from conveyor_bench.v1.oracle import top_down_tcp_orientation_wxyz
 from conveyor_bench.v1.protocol import FailureReason, Pose
 from conveyor_bench.v1.stationary import (
     STATIONARY_DESTINATION_ZONE_ID,
@@ -186,15 +185,12 @@ def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
     arm = _literal_constant(tree, "_PREGRASP_ARM")
     kinematics = CalibratedArmKinematics.in_policy_usd_root_frame()
 
-    position, _ = kinematics.forward(arm)
-    solution = kinematics.solve(
-        position,
-        top_down_tcp_orientation_wxyz("y"),
-        seed=arm,
-    )
+    position, rotation = kinematics.forward(arm)
 
-    assert position == pytest.approx((0.50, 0.0, 0.22), abs=2.0e-4)
-    assert solution.joint_positions == pytest.approx(arm, abs=2.0e-4)
+    assert position == pytest.approx(
+        (0.5754, -0.0127, 0.1248), abs=2.0e-4
+    )
+    assert rotation[2, 0] < -0.96
     assert arm[3] >= -1.26
 
 

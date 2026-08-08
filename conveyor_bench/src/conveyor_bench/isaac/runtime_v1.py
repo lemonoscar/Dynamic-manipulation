@@ -136,18 +136,19 @@ from .scene_v1 import (
 )
 
 
-# Collision-free overhead observation posture.  With the policy-USD mount and
-# pad-centered TCP this places the TCP at [0.50, 0.0, 0.22] in the robot-root
-# frame with the same 75-degree downward pitch used for grasp and placement.
-# Starting on this IK branch prevents the floating X5 from folding underneath
-# itself while rotating from the former near-horizontal posture at pregrasp.
+# Collision-free world-overhead observation posture, calibrated at the
+# locomotion policy's settled root attitude.  With the policy-USD mount and
+# pad-centered TCP this places the TCP at [0.5754, -0.0127, 0.1248] in the
+# robot-root frame, i.e. at the registered belt intercept in world space.  Its
+# tool approach retains a 97.0% downward component, so object spawn no longer
+# triggers a simultaneous world-frame wrist correction and Cartesian sweep.
 _PREGRASP_ARM = (
-    0.001490198,
-    1.763165248,
-    1.627251730,
-    -1.173088165,
-    0.000385675,
-    0.001439419,
+    -0.044556522,
+    2.098253408,
+    1.709825231,
+    -0.942128716,
+    -0.052071541,
+    0.092826496,
 )
 _LOCOMOTION_PHYSICS_HZ = 400
 _LOCOMOTION_POLICY_HZ = 50
