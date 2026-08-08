@@ -1,8 +1,9 @@
 # ConveyorVLA AL0：动态抓取架构与正式采集执行方案
 
-状态：G0–G3 已通过，正式 production 正在运行。冻结日期：2026-08-06。
-生产运行固定在提交 `d7b6f0963bef0864b8101571981b7d02e40c3122`；运行期间
-不得用后续文档提交替换源码树。
+状态：2026-08-08 正在执行新工位与俯视慢速 teacher 重新标定。旧提交
+`d7b6f0963bef0864b8101571981b7d02e40c3122` 的 production 数据保留作历史诊断，
+但不得与新几何/新 teacher 数据混合；新一轮 production 只能在新的单回合和
+并行 pilot 重新通过后启动。
 
 ## 交付终点
 
@@ -82,6 +83,12 @@ mobile_settle → mobile_approach → mobile_stabilize → arm_preposition
 
 训练指令统一为“抓取传送带零件并安全抬升”，不会把目标分拣盘作为模型条件。
 投放部分仍在 canonical episode 中供未来扩展，但不进入当前 grasp-only profile。
+
+canonical 示教器冻结为 `overhead_slow_pick_place_v1`：抓取和投放均使用距竖直
+`15°` 的俯视姿态，并按零件 `finger_closing_axis` 对齐夹爪；预抓取和预放置
+各保持 `0.5 s` 视觉观察。50 Hz 下普通移动、竖直下探、抬升单步上限分别为
+`3.0/1.5/2.0 mm`。新 episode 必须在 metadata 中携带 profile ID；缺失该字段
+的旧 episode 即使物理成功，也不能进入本轮训练清单。
 
 ### 矩阵
 

@@ -15,8 +15,9 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 
 ### 1.1 真实工位语义
 
-布局 `transverse_dynamic_sort_station_v1` 使用顶面高 `0.50 m` 的横向低位
-传送带。皮带几何中心为 `X=0.70 m`，零件使用靠机器人一侧但仍位于带内的
+布局 `transverse_dynamic_sort_station_v1` 使用顶面高 `0.34 m` 的横向低位
+传送带，尺寸为 `0.252 × 1.56 × 0.06 m`；皮带面低于 whole-body 狗头相机
+名义光轴。皮带几何中心为 `X=0.70 m`，零件使用靠机器人一侧但仍位于带内的
 `X=0.65 m` 车道，沿世界 `+Y → -Y` 运输，在机器人视角中从左向右移动。
 工位包含：
 
@@ -28,6 +29,12 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 视觉细节与运输碰撞体分离，避免滚筒和机架外观改变 benchmark 的接触语义。
 工位参数和来源记录在
 [assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json](assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json)。
+
+新采集必须使用 `overhead_slow_pick_place_v1` 示教：机械臂先在零件上方保持
+俯视观察，再以最高 `0.075 m/s` 的竖直速度下探；抓稳后竖直抬升，到分拣盘
+上方再次保持 `0.5 s` 俯视观察后释放。夹爪采用距竖直 `15°` 的可达俯视姿态，
+并按物体 affordance 对齐闭合轴。episode metadata 中缺少该 profile ID 的旧
+轨迹不得与新一轮训练集混合。
 
 ### 1.2 物体、划分与任务
 
@@ -137,7 +144,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 20 \
   --active-objects 1 \
   --target-asset part_red_block \
@@ -162,7 +169,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 35 \
   --active-objects 1 \
   --target-asset part_red_block \
@@ -185,7 +192,7 @@ python scripts/run_benchmark_v1.py \
   --split train \
   --task-family language_conditioned \
   --instruction-language en_zh \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 35 \
   --active-objects 3 \
   --target-asset part_red_block \

@@ -1,4 +1,5 @@
 from dataclasses import replace
+import math
 
 import pytest
 
@@ -7,6 +8,8 @@ from conveyor_bench.v1.oracle import (
     OracleConfig,
     OracleObservation,
     OraclePhase,
+    TOP_DOWN_APPROACH_PITCH_DEG,
+    top_down_tcp_orientation_wxyz,
 )
 from conveyor_bench.v1.protocol import RobotMode
 
@@ -84,6 +87,81 @@ def observation(
 
 def _position(command) -> tuple[float, float, float]:
     return command.target_tcp_pose_world.xyz
+
+
+def _rotate_vector(wxyz, xyz):
+    w, x, y, z = wxyz
+    vx, vy, vz = xyz
+    return (
+        (1 - 2 * (y * y + z * z)) * vx
+        + 2 * (x * y - z * w) * vy
+        + 2 * (x * z + y * w) * vz,
+        2 * (x * y + z * w) * vx
+        + (1 - 2 * (x * x + z * z)) * vy
+        + 2 * (y * z - x * w) * vz,
+        2 * (x * z - y * w) * vx
+        + 2 * (y * z + x * w) * vy
+        + (1 - 2 * (x * x + y * y)) * vz,
+    )
+
+
+@pytest.mark.parametrize(
+    ("closing_axis", "world_axis_index"), (("y", 1), ("x", 0))
+)
+def test_registered_teacher_pose_is_overhead_and_closing_axis_aligned(
+    closing_axis, world_axis_index
+) -> None:
+    orientation = top_down_tcp_orientation_wxyz(closing_axis)
+    approach = _rotate_vector(orientation, (1.0, 0.0, 0.0))
+    closing = _rotate_vector(orientation, (0.0, 1.0, 0.0))
+
+    assert TOP_DOWN_APPROACH_PITCH_DEG == pytest.approx(75.0)
+    assert approach[2] == pytest.approx(-math.sin(math.radians(75.0)))
+    assert approach[2] < -0.96
+    assert abs(closing[world_axis_index]) == pytest.approx(1.0)
+
+
+def test_pregrasp_requires_continuous_overhead_observation_dwell() -> None:
+    oracle = DynamicSortOracle(
+        replace(
+            config(),
+            intercept_staging_y_world=0.08,
+            intercept_entry_tolerance_m=0.04,
+            pregrasp_observation_dwell_s=0.50,
+        )
+    )
+    oracle.step(observation(0.00))
+    oracle.step(observation(0.06))
+    command = oracle.step(observation(0.12))
+    staging = _position(command)
+
+    command = oracle.step(
+        observation(
+            0.14,
+            target_position_world=(0.50, 0.08, 0.20),
+            target_velocity_world=TARGET_VELOCITY,
+            tcp_position_world=staging,
+        )
+    )
+    assert command.phase is OraclePhase.PREGRASP
+    command = oracle.step(
+        observation(
+            0.63,
+            target_position_world=(0.50, 0.08, 0.20),
+            target_velocity_world=TARGET_VELOCITY,
+            tcp_position_world=staging,
+        )
+    )
+    assert command.phase is OraclePhase.PREGRASP
+    command = oracle.step(
+        observation(
+            0.64,
+            target_position_world=(0.50, 0.08, 0.20),
+            target_velocity_world=TARGET_VELOCITY,
+            tcp_position_world=staging,
+        )
+    )
+    assert command.phase is OraclePhase.TRACK
 
 
 def test_intercept_staging_waits_for_target_entry():

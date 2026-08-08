@@ -126,11 +126,7 @@ def test_runtime_locks_checkpoint_timing_and_cpu_fabric() -> None:
 
     resolve_source = ast.unparse(_method(tree, "_resolve_entities"))
     assert "orientation_tolerance=0.08" in resolve_source
-    assert "self.place_position_kinematics = kinematics_factory" in (
-        resolve_source
-    )
-    assert "orientation_weight=0.002" in resolve_source
-    assert "orientation_tolerance=4.0" in resolve_source
+    assert "place_position_kinematics" not in resolve_source
 
 
 def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
@@ -141,12 +137,11 @@ def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
     assert "else (0.02,) * len(ARM_JOINT_NAMES)" in source
 
 
-def test_mobile_place_orientation_uses_the_live_tcp_state() -> None:
+def test_mobile_place_preserves_the_registered_overhead_orientation() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_mobile_place_target"))
 
-    assert "self.place_position_kinematics.solve" in source
-    assert "state['tcp_base'].wxyz" in source
-    assert "seed=self._arm_ik_seed" in source
+    assert "return oracle_target" in source
+    assert "state['tcp_base'].wxyz" not in source
 
 
 def test_scene_applies_registry_rigid_body_damping() -> None:
@@ -161,10 +156,28 @@ def test_scene_applies_registry_rigid_body_damping() -> None:
 def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 
-    assert "asset.half_extents_xyz[2] + 0.05" in source
+    assert "asset.half_extents_xyz[2] + _TEACHER_RELEASE_CLEARANCE_M" in source
     assert "zone_x - (0.04 if zone_y < 0.0 else 0.0)" in source
     assert "reachable_release_y = zone_y - math.copysign(0.1, zone_y)" in source
     assert "safe_carry_clearance_m=0.025" in source
+    assert "top_down_tcp_orientation_wxyz" in source
+    assert "pregrasp_observation_dwell_s" in source
+    assert "preplace_dwell_s" in source
+
+
+def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
+    tree = _runtime_tree()
+
+    assert _literal_constant(tree, "_TEACHER_PROFILE_ID") == (
+        "overhead_slow_pick_place_v1"
+    )
+    assert _literal_constant(tree, "_TEACHER_CARTESIAN_STEP_M") == 0.003
+    assert _literal_constant(tree, "_TEACHER_VERTICAL_STEP_M") == 0.0015
+    assert _literal_constant(tree, "_TEACHER_LIFT_STEP_M") == 0.002
+    assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.04
+    source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
+    assert "phase in {'descend', 'close'}" in source
+    assert "phase == 'lift'" in source
 
 
 def test_high_goal_verify_holds_the_reached_joint_target() -> None:
@@ -526,15 +539,24 @@ def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
         "Pose": Pose,
         "OBJECT_LANE_X_M": 0.65,
         "_MOBILE_INTERCEPT_Y_WORLD_M": 0.10,
-        "BELT_TOP_Z_M": 0.50,
+        "BELT_TOP_Z_M": 0.34,
         "_M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M": 0.10,
+        "top_down_tcp_orientation_wxyz": lambda _axis: (
+            0.79335334,
+            0.0,
+            0.60876143,
+            0.0,
+        ),
     }
     exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
     asset = SimpleNamespace(
         object_id="part_red_block",
         half_extents_xyz=(0.024, 0.024, 0.032),
         grasp_affordances=(
-            SimpleNamespace(tcp_offset_xyz=(0.0, 0.0, 0.004)),
+            SimpleNamespace(
+                tcp_offset_xyz=(0.0, 0.0, 0.004),
+                finger_closing_axis="y",
+            ),
         ),
     )
     resolved = SimpleNamespace(
@@ -547,8 +569,10 @@ def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
     )
     pose = namespace["_m0_pregrasp_staging_pose"](runtime, resolved)
 
-    assert pose.xyz == pytest.approx((0.65, 0.10, 0.636))
-    assert pose.wxyz == pytest.approx((-1.0, 0.0, 0.0, 0.0))
+    assert pose.xyz == pytest.approx((0.65, 0.10, 0.476))
+    assert pose.wxyz == pytest.approx(
+        (0.79335334, 0.0, 0.60876143, 0.0)
+    )
 
 
 def test_m0_carry_teacher_uses_the_cartesian_policy_executor() -> None:
@@ -601,16 +625,16 @@ def test_forbidden_belt_intrusion_is_spatially_scoped() -> None:
         "Sequence": list,
         "BELT_CENTER_X_M": 0.70,
         "BELT_CENTER_Y_M": 0.0,
-        "BELT_WIDTH_M": 0.42,
-        "BELT_LENGTH_M": 1.20,
-        "BELT_TOP_Z_M": 0.50,
+        "BELT_WIDTH_M": 0.252,
+        "BELT_LENGTH_M": 1.56,
+        "BELT_TOP_Z_M": 0.34,
     }
     exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
     intrudes = namespace["_tcp_intrudes_belt"]
-    assert intrudes((0.70, 0.0, 0.47))
-    assert not intrudes((0.20, 0.0, 0.47))
-    assert not intrudes((0.70, 0.80, 0.47))
-    assert not intrudes((0.70, 0.0, 0.49))
+    assert intrudes((0.70, 0.0, 0.31))
+    assert not intrudes((0.50, 0.0, 0.31))
+    assert not intrudes((0.70, 0.90, 0.31))
+    assert not intrudes((0.70, 0.0, 0.33))
 
 
 def test_mobile_preoracle_timeout_and_fall_are_task_failures() -> None:

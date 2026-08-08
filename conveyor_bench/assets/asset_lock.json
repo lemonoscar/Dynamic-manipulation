@@ -6,7 +6,7 @@
     "policies/go2_x5_pct_dog_only/PROVENANCE.md": "200bfc2283a9e562f222ea2290ec1371ac1299e451b06f73be66a3741318c2a5",
     "policies/go2_x5_pct_dog_only/contract.json": "3d4104d838626e53acaf1048e4f5bfe9653b7e430e9985cac8741fb98a9f3f3b",
     "policies/go2_x5_pct_dog_only/policy.pt": "f02e6467472e90671a28d97cd6dc02ed7fdeb59d2ece18e082f254314558d383",
-    "receptacles/ASSET_MANIFEST.json": "314a10067366e6a44b9c82dad6f5ca3baa36f067ad6fd613dbda568205aa4ac7",
+    "receptacles/ASSET_MANIFEST.json": "c1c677eddf97664582281c28d93d7bad0a56505cd815548316305790dae3f686",
     "robots/go2_x5/ASSET_PROVENANCE.md": "6ab891ddd9e7c7996389c83ee523e9f252cbe824e72ba61e0ead8be2c5b471b5",
     "robots/go2_x5/configuration/go2_x5_base.usd": "24c83e28e2b41df24e26a025ca3b73696a48a8712a56f31ba5310e536bfea500",
     "robots/go2_x5/configuration/go2_x5_physics.usd": "f1e402157781fb67a944b20a2313d22565a70b2860eaaaa04985f0c91cb5e3bc",
@@ -31,6 +31,6 @@
     "robots/go2_x5/meshes/hip.dae": "8735e10617afe252cef0844c1d139d15bc6d4c653660d742fea9fe05c2704d8f",
     "robots/go2_x5/meshes/thigh.dae": "a622381ae308897ff143b8bbf02f075457c342b22984205040424a5a983246fa",
     "robots/go2_x5/meshes/thigh_mirror.dae": "c7bae0b0565c2aa4b7cc15a538d795e9153e0f10c821cc18429e92693172bdc6",
-    "workcells/conveyor_station_v1/ASSET_MANIFEST.json": "b0b77a32debc39070a8f0e1b09ab44e91832173aae8fd7455dc7e3f0294cbac4"
+    "workcells/conveyor_station_v1/ASSET_MANIFEST.json": "d611b077f37cafe3b945ebe4b75939e341f40a452bc3b4a3da637710b72e56f3"
   }
 }

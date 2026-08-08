@@ -28,12 +28,13 @@
 冻结布局 ID 为 `transverse_dynamic_sort_station_v1`：
 
 - Go2-X5 面向世界 `+X`，世界 `+Y` 是机器人左侧，`-Y` 是右侧。
-- 低位传送带位于机器人正前方，顶面高度 `0.50 m`，尺寸
-  `0.42 × 1.20 × 0.06 m`。
+- 低位传送带位于机器人正前方，顶面高度 `0.34 m`，低于 whole-body
+  模式狗头相机名义光轴 `0.37 m`；尺寸为 `0.252 × 1.56 × 0.06 m`，即
+  长度为上一版的 `1.3×`、宽度为上一版的 `60%`。
 - 运输单位向量固定为 `[0, -1, 0]`。物体从上游 `+Y` 进入、经过
   `Y=0` 拦截区并向 `-Y` 出口移动；在机器人视角中必须呈现为左到右。
 - 物体使用靠近机器人的带内车道 `X=0.65 m`；出口平面参考点为
-  `[0.65, -0.57, 0.50] m`。传送带几何中心仍为 `X=0.70 m`。
+  `[0.65, -0.75, 0.34] m`。传送带几何中心仍为 `X=0.70 m`。
 - 接触关键路径使用本地程序化刚体和 `PhysxSurfaceVelocityAPI`；视觉皮带、
   滚筒和机架不得改变运输碰撞体语义。
 
@@ -49,9 +50,16 @@
 - `sort_bin_yellow`
 
 `reject_catch` 只接住下游漏件，不是计分目的地。CLI 默认激活 3 个物体、
-带速 `0.06 m/s`、episode 时限 `20 s`；whole-body 门禁必须显式覆盖为
+带速 `0.01 m/s`、episode 时限 `20 s`；whole-body 门禁必须显式覆盖为
 `35 s`。目标越过出口、错抓、掉落、错误分拣盒、机器人跌倒、禁区碰撞和
 超时等均记录为明确失败原因。
+
+oracle 示教使用 `overhead_slow_pick_place_v1`：夹爪局部进给轴相对水平向下
+俯转 `75°`（距竖直 `15°`），并按零件注册表对齐 `x/y` 双指闭合轴。预抓取与
+预放置各连续俯视观察 `0.5 s`；50 Hz 控制下普通 Cartesian、竖直下探和抬升
+单步分别不超过 `3.0/1.5/2.0 mm`，对应最高 `0.15/0.075/0.10 m/s`。抓取从
+零件上方缓慢跟踪下探，投放从分拣盘上方缓慢到达释放位，禁止使用水平正对
+物体或框壁的单位姿态生成新训练数据。
 
 ### 2.1 零速传送带诊断
 
@@ -333,7 +341,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 20 \
   --active-objects 1 \
   --target-asset part_red_block \
@@ -355,7 +363,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 35 \
   --active-objects 1 \
   --target-asset part_red_block \

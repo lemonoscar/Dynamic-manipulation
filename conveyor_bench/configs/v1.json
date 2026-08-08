@@ -30,21 +30,21 @@
     "belt_center_xyz_m": [
       0.7,
       0.0,
-      0.47
+      0.31
     ],
     "belt_size_xyz_m": [
-      0.42,
-      1.2,
+      0.252,
+      1.56,
       0.06
     ],
-    "belt_top_z_m": 0.5,
+    "belt_top_z_m": 0.34,
     "object_lane_x_m": 0.65,
-    "object_spawn_y_m": 0.48,
+    "object_spawn_y_m": 0.66,
     "object_intercept_y_m": 0.0,
     "exit_plane_point_xyz_m": [
       0.65,
-      -0.57,
-      0.5
+      -0.75,
+      0.34
     ],
     "transport_direction_xyz": [
       0.0,
@@ -96,7 +96,7 @@
       "sort_bin_yellow"
     ],
     "receptacle_manifest": "assets/receptacles/ASSET_MANIFEST.json",
-    "default_belt_speed_mps": 0.06,
+    "default_belt_speed_mps": 0.01,
     "max_duration_s": 20.0,
     "failure_is_retained_as_valid_benchmark_data": true
   },
@@ -191,6 +191,18 @@
       "open": 1.0,
       "close": -1.0
     }
+  },
+  "demonstration_teacher": {
+    "profile_id": "overhead_slow_pick_place_v1",
+    "approach": "overhead_top_down",
+    "tcp_pitch_from_horizontal_deg": 75.0,
+    "pregrasp_observation_dwell_s": 0.5,
+    "preplace_observation_dwell_s": 0.5,
+    "cartesian_step_m_at_50hz": 0.003,
+    "vertical_step_m_at_50hz": 0.0015,
+    "lift_step_m_at_50hz": 0.002,
+    "max_rotation_step_rad_at_50hz": 0.04,
+    "release_clearance_above_rim_m": 0.025
   },
   "cameras": {
     "capture_format": "lossless_png",
@@ -348,7 +360,7 @@
     "robot_mode": "fixed_base",
     "episodes": 1,
     "seed": 0,
-    "belt_speed_mps": 0.06,
+    "belt_speed_mps": 0.01,
     "max_duration_s": 20.0,
     "active_objects": 3,
     "target_asset": "part_red_block",

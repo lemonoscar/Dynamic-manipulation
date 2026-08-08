@@ -17,6 +17,39 @@ from .protocol import Pose, RobotMode
 Vec3 = tuple[float, float, float]
 Vec4 = tuple[float, float, float, float]
 _ZERO_BASE_COMMAND: Vec3 = (0.0, 0.0, 0.0)
+# The X5 tool extends along link6 +X.  A +75 degree world-Y pitch therefore
+# points the gripper 15 degrees forward from vertical while keeping 96.6% of
+# its approach direction downward.  This preserves the low-workspace margin
+# that an exact 90 degree pose loses at the conveyor and tray rim.
+TOP_DOWN_APPROACH_PITCH_DEG = 75.0
+
+
+def top_down_tcp_orientation_wxyz(
+    finger_closing_axis: str,
+) -> Vec4:
+    """Return an overhead tool pose aligned to an object's grasp affordance."""
+
+    half_pitch = math.radians(TOP_DOWN_APPROACH_PITCH_DEG) * 0.5
+    pitch = (
+        math.cos(half_pitch),
+        0.0,
+        math.sin(half_pitch),
+        0.0,
+    )
+    if finger_closing_axis == "y":
+        return pitch
+    if finger_closing_axis == "x":
+        # Pre-multiply by a world-Z quarter turn.  The sign of a parallel
+        # closing axis is immaterial, so local +Y mapping to world -X is valid.
+        yaw = math.sqrt(0.5)
+        pw, px, py, pz = pitch
+        return (
+            yaw * pw,
+            -yaw * py,
+            yaw * py,
+            yaw * pw,
+        )
+    raise ValueError("top-down parallel grasp requires closing axis x or y")
 
 
 class OraclePhase(str, Enum):
@@ -70,6 +103,7 @@ class OracleConfig:
     settle_duration_s: float = 0.25
     select_duration_s: float = 0.10
     grasp_contact_dwell_s: float = 0.06
+    pregrasp_observation_dwell_s: float = 0.0
     preplace_dwell_s: float = 0.06
     placement_dwell_s: float = 0.50
     episode_timeout_s: float = 20.0
@@ -148,6 +182,7 @@ class OracleConfig:
             "settle_duration_s",
             "select_duration_s",
             "grasp_contact_dwell_s",
+            "pregrasp_observation_dwell_s",
             "preplace_dwell_s",
         )
         for name in nonnegative_names:
@@ -250,6 +285,7 @@ class DynamicSortOracle:
         self._last_step_at = sim_time_s
         self._selected_object_id: str | None = None
         self._contact_started_at: float | None = None
+        self._pregrasp_observation_started_at: float | None = None
         self._placement_started_at: float | None = None
         self._failure_reason: str | None = None
         self._terminal_gripper = 1.0
@@ -301,19 +337,35 @@ class DynamicSortOracle:
             return self._command(staging_target, gripper_command=1.0)
 
         if self.phase is OraclePhase.PREGRASP:
-            if (
+            observation_ready = (
                 self._near(observation.tcp_position_world, staging_target)
                 and self._target_entered_intercept_window(predicted_target)
-            ):
-                self._transition(OraclePhase.TRACK, observation.sim_time_s)
-                return self._command(staging_target, gripper_command=1.0)
+            )
+            if observation_ready:
+                if self._pregrasp_observation_started_at is None:
+                    self._pregrasp_observation_started_at = (
+                        observation.sim_time_s
+                    )
+                if (
+                    observation.sim_time_s
+                    - self._pregrasp_observation_started_at
+                    >= self.config.pregrasp_observation_dwell_s
+                ):
+                    self._transition(
+                        OraclePhase.TRACK, observation.sim_time_s
+                    )
+                    return self._command(
+                        staging_target, gripper_command=1.0
+                    )
+            else:
+                self._pregrasp_observation_started_at = None
             return self._command(staging_target, gripper_command=1.0)
 
         if self.phase is OraclePhase.TRACK:
             if self.config.intercept_staging_y_world is not None:
-                # A staged interception does not chase the part laterally.
-                # Prediction decides when to leave the wait pose; the belt
-                # then carries the part through the fixed descend line.
+                # Leave the fixed overhead observation pose only after the
+                # moving part enters its registered window.  DESCEND then
+                # tracks the predicted part while moving mostly vertically.
                 self._transition(OraclePhase.DESCEND, observation.sim_time_s)
                 return self._command(
                     self._intercept_grasp_position(predicted_target),
@@ -692,6 +744,8 @@ class DynamicSortOracle:
         self._phase_started_at = sim_time_s
         if phase is not OraclePhase.CLOSE:
             self._contact_started_at = None
+        if phase is not OraclePhase.PREGRASP:
+            self._pregrasp_observation_started_at = None
         if phase is not OraclePhase.VERIFY_PLACE:
             self._placement_started_at = None
 

@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--belt-speed", type=float, default=0.06)
+    parser.add_argument("--belt-speed", type=float, default=0.01)
     parser.add_argument("--max-duration", type=float, default=30.0)
     parser.add_argument(
         "--output-dir",

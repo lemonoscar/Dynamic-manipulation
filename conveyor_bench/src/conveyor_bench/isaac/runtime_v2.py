@@ -314,6 +314,7 @@ class ConveyorRuntimeV2(ConveyorRuntimeV1):
     ) -> dict[str, Any]:
         suite = resolved.manifest.metadata["benchmark_suite"]
         return {
+            **super()._extra_episode_metadata(resolved),
             "benchmark_suite": suite,
             "benchmark_profile": "conveyor-bench-v2",
         }

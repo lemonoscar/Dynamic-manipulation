@@ -28,7 +28,7 @@
       "zone_id": "reject_catch",
       "display_name": "downstream reject catch tray",
       "color_rgb": [0.52, 0.54, 0.57],
-      "center_xyz_m": [0.70, -0.75, 0.40],
+      "center_xyz_m": [0.70, -0.93, 0.40],
       "goal_half_extents_xyz_m": [0.20, 0.12, 0.10],
       "floor_top_z_m": 0.34,
       "wall_height_m": 0.12,

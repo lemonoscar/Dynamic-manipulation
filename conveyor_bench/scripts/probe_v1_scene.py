@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
     )
-    parser.add_argument("--belt-speed", type=float, default=0.04)
+    parser.add_argument("--belt-speed", type=float, default=0.01)
     parser.add_argument("--settle-seconds", type=float, default=1.0)
     AppLauncher.add_app_launcher_args(parser)
     parser.set_defaults(device="cpu", enable_cameras=True)

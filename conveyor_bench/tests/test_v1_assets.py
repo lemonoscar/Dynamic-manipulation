@@ -61,17 +61,27 @@ def test_receptacles_have_two_sort_bins_and_post_exit_catch() -> None:
     assert {"sort_bin_blue", "sort_bin_yellow", "reject_catch"} == set(zones)
     assert zones["sort_bin_blue"].center_xyz_m[1] > 0.0
     assert zones["sort_bin_yellow"].center_xyz_m[1] < 0.0
-    assert zones["reject_catch"].center_xyz_m[1] < -0.6
+    assert zones["reject_catch"].center_xyz_m[1] == pytest.approx(-0.93)
 
 
 def test_workcell_is_project_local_procedural_asset() -> None:
     manifest = load_workcell_manifest()
     assert manifest["runtime_dependency"] == "none"
-    assert manifest["design"]["belt_top_z_m"] == pytest.approx(0.50)
-    assert manifest["design"]["belt_diffuse_color_linear_rgb"] == pytest.approx(
+    design = manifest["design"]
+    assert design["belt_top_z_m"] == pytest.approx(0.34)
+    assert design["belt_center_xyz_m"] == pytest.approx((0.70, 0.0, 0.31))
+    assert design["belt_size_xyz_m"] == pytest.approx((0.252, 1.56, 0.06))
+    assert design["recommended_low_speed_mps"] == pytest.approx(0.01)
+    assert design["belt_top_z_m"] < design[
+        "nominal_mobile_head_camera_axis_z_m"
+    ]
+    assert design["belt_clearance_below_nominal_head_axis_m"] == pytest.approx(
+        0.03
+    )
+    assert design["belt_diffuse_color_linear_rgb"] == pytest.approx(
         (0.015, 0.10, 0.035)
     )
-    assert manifest["design"]["belt_appearance"] == "dark green PVC"
+    assert design["belt_appearance"] == "dark green PVC"
     assert "transport_surface" in manifest["components"]
     assert "motor_and_guard" in manifest["components"]
     assert "catch_tray" in manifest["components"]

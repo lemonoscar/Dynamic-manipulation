@@ -36,18 +36,18 @@ from .scene import _collision, _spawn_direct_cuboid
 LAYOUT_ID = "transverse_dynamic_sort_station_v1"
 BELT_CENTER_X_M = 0.70
 BELT_CENTER_Y_M = 0.0
-BELT_LENGTH_M = 1.20
-BELT_WIDTH_M = 0.42
+BELT_LENGTH_M = 1.56
+BELT_WIDTH_M = 0.252
 BELT_THICKNESS_M = 0.06
-BELT_TOP_Z_M = 0.50
+BELT_TOP_Z_M = 0.34
 BELT_CENTER_Z_M = BELT_TOP_Z_M - BELT_THICKNESS_M * 0.5
 TRANSPORT_DIRECTION_WORLD = (0.0, -1.0, 0.0)
-OBJECT_SPAWN_Y_M = 0.48
+OBJECT_SPAWN_Y_M = BELT_CENTER_Y_M + BELT_LENGTH_M * 0.5 - 0.12
 OBJECT_INTERCEPT_Y_M = 0.0
-OBJECT_EXIT_Y_M = -0.57
-# Use the near-side lane of the 0.42 m belt.  This leaves 0.16 m of belt
-# between the part center and the near rail while keeping the part inside the
-# stable X5 workspace with its corrected, pad-centered TCP.
+OBJECT_EXIT_Y_M = BELT_CENTER_Y_M - BELT_LENGTH_M * 0.5 + 0.03
+# Use the near-side lane of the narrowed belt.  The 76 mm center-to-edge
+# clearance keeps every registered part inside the belt while retaining the
+# calibrated X5 top-down workspace.
 OBJECT_LANE_X_M = 0.65
 EXIT_PLANE_POINT_WORLD = (OBJECT_LANE_X_M, OBJECT_EXIT_Y_M, BELT_TOP_Z_M)
 
@@ -575,27 +575,48 @@ def spawn_conveyor_workcell(
         f"{prim_path}/Looks/safety_red", (0.82, 0.04, 0.025)
     )
 
+    half_length = BELT_LENGTH_M * 0.5
+    half_width = BELT_WIDTH_M * 0.5
+    near_edge_x = BELT_CENTER_X_M - half_width
+    far_edge_x = BELT_CENTER_X_M + half_width
+    beam_x_by_name = (
+        ("near_beam", near_edge_x - 0.020),
+        ("far_beam", far_edge_x + 0.020),
+    )
+    frame_beam_z = BELT_TOP_Z_M - 0.095
+    support_leg_height = frame_beam_z - 0.005
+    support_y = half_length - 0.13
+
     # Load-bearing frame below the independently simulated transport surface.
-    for name, x in (("near_beam", 0.47), ("far_beam", 0.93)):
+    for name, x in beam_x_by_name:
         _static_box(
             f"{prim_path}/frame/{name}",
-            (x, 0.0, 0.405),
-            (0.060, 1.26, 0.090),
+            (x, 0.0, frame_beam_z),
+            (0.060, BELT_LENGTH_M + 0.060, 0.090),
             steel,
         )
-    for x_name, x in (("near", 0.47), ("far", 0.93)):
-        for y_name, y in (("upstream", 0.47), ("downstream", -0.47)):
+    for x_name, x in (
+        ("near", near_edge_x - 0.020),
+        ("far", far_edge_x + 0.020),
+    ):
+        for y_name, y in (
+            ("upstream", support_y),
+            ("downstream", -support_y),
+        ):
             _static_box(
                 f"{prim_path}/frame/leg_{x_name}_{y_name}",
-                (x, y, 0.20),
-                (0.060, 0.060, 0.40),
+                (x, y, support_leg_height * 0.5),
+                (0.060, 0.060, support_leg_height),
                 steel,
             )
-    for name, y in (("upstream", 0.47), ("downstream", -0.47)):
+    for name, y in (
+        ("upstream", support_y),
+        ("downstream", -support_y),
+    ):
         _static_box(
             f"{prim_path}/frame/cross_brace_{name}",
-            (BELT_CENTER_X_M, y, 0.265),
-            (0.52, 0.050, 0.050),
+            (BELT_CENTER_X_M, y, support_leg_height * 0.66),
+            (BELT_WIDTH_M + 0.10, 0.050, 0.050),
             aluminum,
         )
 
@@ -608,7 +629,9 @@ def spawn_conveyor_workcell(
         rubber,
         collision=False,
     )
-    for index, y in enumerate((-0.30, 0.0, 0.30)):
+    for index, y in enumerate(
+        (-BELT_LENGTH_M * 0.25, 0.0, BELT_LENGTH_M * 0.25)
+    ):
         _static_box(
             f"{prim_path}/belt/seam_{index}",
             (BELT_CENTER_X_M, y, BELT_TOP_Z_M + 0.001),
@@ -616,7 +639,10 @@ def spawn_conveyor_workcell(
             aluminum,
             collision=False,
         )
-    for name, y in (("drive", -0.565), ("idler", 0.565)):
+    for name, y in (
+        ("drive", -half_length + 0.035),
+        ("idler", half_length - 0.035),
+    ):
         _static_cylinder(
             f"{prim_path}/rollers/{name}",
             (BELT_CENTER_X_M, y, BELT_CENTER_Z_M - 0.005),
@@ -629,19 +655,27 @@ def spawn_conveyor_workcell(
     # Far-side rail protects the workcell without blocking the robot-facing edge.
     _static_box(
         f"{prim_path}/guards/far_rail",
-        (0.955, 0.0, 0.555),
-        (0.035, 1.18, 0.055),
+        (far_edge_x + 0.045, 0.0, BELT_TOP_Z_M + 0.055),
+        (0.035, BELT_LENGTH_M - 0.020, 0.055),
         yellow,
     )
     _static_box(
         f"{prim_path}/motor/guard",
-        (1.00, 0.43, 0.39),
+        (
+            far_edge_x + 0.090,
+            half_length - 0.17,
+            BELT_TOP_Z_M - 0.11,
+        ),
         (0.15, 0.22, 0.22),
         steel,
     )
     _static_cylinder(
         f"{prim_path}/motor/shaft",
-        (0.94, 0.49, 0.45),
+        (
+            far_edge_x + 0.030,
+            half_length - 0.11,
+            BELT_TOP_Z_M - 0.05,
+        ),
         radius=0.030,
         height=0.10,
         axis="Y",
@@ -649,23 +683,31 @@ def spawn_conveyor_workcell(
     )
     _static_box(
         f"{prim_path}/controls/emergency_stop_base",
-        (1.005, 0.32, 0.535),
+        (
+            far_edge_x + 0.095,
+            half_length - 0.28,
+            BELT_TOP_Z_M + 0.035,
+        ),
         (0.065, 0.055, 0.055),
         yellow,
         collision=False,
     )
     _static_cylinder(
         f"{prim_path}/controls/emergency_stop_button",
-        (0.97, 0.32, 0.535),
+        (
+            far_edge_x + 0.060,
+            half_length - 0.28,
+            BELT_TOP_Z_M + 0.035,
+        ),
         radius=0.027,
         height=0.025,
         axis="X",
         material_path=red,
     )
-    for name, y in (("entry", 0.47), ("exit", -0.47)):
+    for name, y in (("entry", support_y), ("exit", -support_y)):
         _static_box(
             f"{prim_path}/sensors/{name}_photoeye",
-            (0.455, y, 0.545),
+            (near_edge_x - 0.035, y, BELT_TOP_Z_M + 0.045),
             (0.025, 0.035, 0.065),
             aluminum,
             collision=False,
@@ -705,20 +747,35 @@ def spawn_conveyor_workcell(
     )
     _static_box(
         f"{prim_path}/receptacles/reject_catch/floor",
-        (catch.center_xyz_m[0], catch.center_xyz_m[1], 0.33),
+        (
+            catch.center_xyz_m[0],
+            catch.center_xyz_m[1],
+            catch.floor_top_z_m - 0.0125,
+        ),
         (0.42, 0.25, 0.025),
         catch_material,
     )
-    for name, x in (("near", 0.50), ("far", 0.90)):
+    for name, x in (
+        ("near", catch.center_xyz_m[0] - 0.20),
+        ("far", catch.center_xyz_m[0] + 0.20),
+    ):
         _static_box(
             f"{prim_path}/receptacles/reject_catch/wall_x_{name}",
-            (x, catch.center_xyz_m[1], 0.40),
+            (
+                x,
+                catch.center_xyz_m[1],
+                catch.floor_top_z_m + 0.060,
+            ),
             (0.025, 0.25, 0.15),
             catch_material,
         )
     _static_box(
         f"{prim_path}/receptacles/reject_catch/end_wall",
-        (catch.center_xyz_m[0], -0.86, 0.40),
+        (
+            catch.center_xyz_m[0],
+            catch.center_xyz_m[1] - 0.11,
+            catch.floor_top_z_m + 0.060,
+        ),
         (0.42, 0.025, 0.15),
         catch_material,
     )

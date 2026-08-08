@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
+from conveyor_bench.v1.oracle import top_down_tcp_orientation_wxyz
 
 
 def test_forward_matches_simulator_probe():
@@ -33,6 +34,19 @@ def test_solver_reaches_pregrasp_grasp_and_lift_targets():
         )
         assert solution.position_error_m < 0.001
         assert solution.orientation_error < 0.005
+        seed = solution.joint_positions
+
+
+def test_policy_arm_reaches_low_belt_from_overhead() -> None:
+    kinematics = CalibratedArmKinematics.in_policy_usd_root_frame()
+    orientation = top_down_tcp_orientation_wxyz("y")
+    seed = (0.002, 1.431, 0.746, 0.686, 0.002, 0.0)
+
+    for target in ((0.57, 0.10, 0.179), (0.57, 0.10, 0.079)):
+        solution = kinematics.solve(target, orientation, seed=seed)
+        assert solution.position_error_m < 0.001
+        assert solution.orientation_error < 0.005
+        assert solution.joint_positions[3] >= -1.26
         seed = solution.joint_positions
 
 

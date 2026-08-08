@@ -48,6 +48,8 @@ from conveyor_bench.v1.oracle import (
     DynamicSortOracle,
     OracleConfig,
     OracleObservation,
+    TOP_DOWN_APPROACH_PITCH_DEG,
+    top_down_tcp_orientation_wxyz,
 )
 from conveyor_bench.v1.protocol import (
     CanonicalAction,
@@ -172,9 +174,17 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 # cross-track error, inside the 0.045 m position gate.  Drive that chord
 # straight instead of asking the loaded policy for another coupled turn.
 _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
-_MOBILE_PLACE_CARTESIAN_STEP_M = 0.008
-_MOBILE_PLACE_DESCEND_STEP_M = 0.003
-_MOBILE_PLACE_HOLD_STEP_M = 0.003
+_TEACHER_PROFILE_ID = "overhead_slow_pick_place_v1"
+_TEACHER_CARTESIAN_STEP_M = 0.003
+_TEACHER_VERTICAL_STEP_M = 0.0015
+_TEACHER_LIFT_STEP_M = 0.002
+_TEACHER_MAX_ROTATION_STEP_RAD = 0.04
+_TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
+_TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
+_TEACHER_RELEASE_CLEARANCE_M = 0.025
+_MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
+_MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
+_MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
@@ -215,7 +225,7 @@ class RuntimeOptionsV1:
     robot_mode: RobotMode = RobotMode.FIXED_BASE
     episodes: int = 1
     seed: int = 0
-    belt_speed_mps: float = 0.06
+    belt_speed_mps: float = 0.01
     target_intercept_lead_time_s: float | None = None
     max_duration_s: float = 20.0
     active_object_count: int = 3
@@ -570,11 +580,19 @@ class ConveyorRuntimeV1:
             eye, target = self._viewer_camera_view()
             self.sim.set_camera_view(eye=eye, target=target)
             scene_cfg = self._make_scene_cfg()
-            scene_cfg.robot = (
-                make_go2_x5_policy_cfg()
-                if options.robot_mode is RobotMode.WHOLE_BODY_POLICY
-                else make_go2_x5_cfg(fix_base=True)
-            )
+            if options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
+                scene_cfg.robot = make_go2_x5_policy_cfg()
+            else:
+                fixed_robot = make_go2_x5_cfg(fix_base=True)
+                # Match the mobile controller's audited interception stance.
+                # The 80 mm forward offset keeps the narrowed belt inside the
+                # fixed-base arm's overhead workspace as well.
+                fixed_robot.init_state.pos = (
+                    _LOCOMOTION_APPROACH_TARGET_X_M,
+                    0.0,
+                    0.38,
+                )
+                scene_cfg.robot = fixed_robot
             if not options.enable_cameras:
                 scene_cfg.head_camera = None
                 scene_cfg.wrist_camera = None
@@ -714,8 +732,35 @@ class ConveyorRuntimeV1:
     def _extra_episode_metadata(
         self, resolved: _ResolvedTask
     ) -> dict[str, Any]:
-        del resolved
-        return {}
+        affordance = resolved.target_asset.grasp_affordances[0]
+        return {
+            "demonstration_teacher": {
+                "profile_id": _TEACHER_PROFILE_ID,
+                "approach": "overhead_top_down",
+                "approach_axis": affordance.approach_axis,
+                "finger_closing_axis": affordance.finger_closing_axis,
+                "tcp_pitch_from_horizontal_deg": (
+                    TOP_DOWN_APPROACH_PITCH_DEG
+                ),
+                "tcp_orientation_wxyz": list(
+                    top_down_tcp_orientation_wxyz(
+                        affordance.finger_closing_axis
+                    )
+                ),
+                "pregrasp_observation_dwell_s": (
+                    _TEACHER_PREGRASP_OBSERVATION_DWELL_S
+                ),
+                "preplace_observation_dwell_s": (
+                    _TEACHER_PREPLACE_OBSERVATION_DWELL_S
+                ),
+                "cartesian_step_m": _TEACHER_CARTESIAN_STEP_M,
+                "vertical_step_m": _TEACHER_VERTICAL_STEP_M,
+                "lift_step_m": _TEACHER_LIFT_STEP_M,
+                "max_rotation_step_rad": (
+                    _TEACHER_MAX_ROTATION_STEP_RAD
+                ),
+            }
+        }
 
     def _resolve_entities(self) -> None:
         self.robot = self.scene["robot"]
@@ -800,16 +845,6 @@ class ConveyorRuntimeV1:
             # near the lateral sorting trays.
             position_tolerance_m=0.015,
             orientation_tolerance=0.08,
-        )
-        self.place_position_kinematics = kinematics_factory(
-            # Sorting evaluates object position and settling, not wrist
-            # attitude.  Use a position-dominant auxiliary solve to choose a
-            # reachable wrist orientation for each lateral waypoint, then
-            # pass that exact FK orientation through the strict solver above.
-            orientation_weight=0.002,
-            max_iterations=120,
-            position_tolerance_m=0.015,
-            orientation_tolerance=4.0,
         )
         self._tcp_offset = torch.tensor(
             [[TCP_OFFSET_X_M, 0.0, 0.0]],
@@ -1523,61 +1558,9 @@ class ConveyorRuntimeV1:
                             target_tcp_pose_world,
                             state_before["tcp_base"],
                             max_translation_m=(
-                                0.015
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.WHOLE_BODY_POLICY
-                                    and phase == "lift"
+                                self._teacher_translation_step_m(
+                                    resolved, phase
                                 )
-                                else _MOBILE_PLACE_CARTESIAN_STEP_M
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.WHOLE_BODY_POLICY
-                                    and phase == "carry"
-                                )
-                                else self._mobile_place_descend_step_m(resolved)
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.WHOLE_BODY_POLICY
-                                    and phase == "place_descend"
-                                )
-                                else _MOBILE_PLACE_HOLD_STEP_M
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.WHOLE_BODY_POLICY
-                                    and phase == "open"
-                                )
-                                else _MOBILE_PLACE_CARTESIAN_STEP_M
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.WHOLE_BODY_POLICY
-                                    and phase
-                                    in {"preplace", "retreat", "verify_place"}
-                                )
-                                else _MOBILE_PLACE_DESCEND_STEP_M
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.FIXED_BASE
-                                    and phase in {"place_descend", "open"}
-                                )
-                                else _MOBILE_PLACE_CARTESIAN_STEP_M
-                                if (
-                                    self.options.robot_mode
-                                    is RobotMode.FIXED_BASE
-                                    and phase
-                                    in {
-                                        "carry",
-                                        "preplace",
-                                        "retreat",
-                                        "verify_place",
-                                    }
-                                )
-                                else 0.002
-                                if phase
-                                in {"carry", "preplace", "place_descend"}
-                                else 0.008
-                                if phase in {"descend", "close", "lift"}
-                                else 0.020
                             ),
                         )
                     if oracle_command.terminal:
@@ -3019,7 +3002,9 @@ class ConveyorRuntimeV1:
                 + affordance.tcp_offset_xyz[2]
                 + _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M,
             ),
-            (-1.0, 0.0, 0.0, 0.0),
+            top_down_tcp_orientation_wxyz(
+                affordance.finger_closing_axis
+            ),
         )
 
     def _make_oracle(
@@ -3034,7 +3019,7 @@ class ConveyorRuntimeV1:
             resolved.target_zone.floor_top_z_m
             + resolved.target_zone.wall_height_m
             + asset.half_extents_xyz[2]
-            + 0.050
+            + _TEACHER_RELEASE_CLEARANCE_M
         )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
@@ -3049,6 +3034,10 @@ class ConveyorRuntimeV1:
         # still well inside the 105 mm goal half-width for every train asset.
         reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.0)
         reachable_release_y = zone_y - math.copysign(0.10, zone_y)
+        if affordance.approach_axis != "-z":
+            raise RuntimeError(
+                "overhead teacher requires a registered -z approach axis"
+            )
         oracle = DynamicSortOracle(
             OracleConfig(
                 target_object_id=asset.object_id,
@@ -3060,7 +3049,9 @@ class ConveyorRuntimeV1:
                 robot_mode=self.options.robot_mode,
                 object_height_m=asset.nominal_height_m,
                 grasp_offset_world=affordance.tcp_offset_xyz,
-                tcp_orientation_wxyz=(-1.0, 0.0, 0.0, 0.0),
+                tcp_orientation_wxyz=top_down_tcp_orientation_wxyz(
+                    affordance.finger_closing_axis
+                ),
                 intercept_horizon_s=0.12,
                 # Wait above a fixed intercept point instead of sweeping the
                 # floating arm laterally toward an upstream part.  Tracking
@@ -3081,7 +3072,7 @@ class ConveyorRuntimeV1:
                 pregrasp_clearance_m=0.10,
                 # The release pose is already above the tray rim.  This extra
                 # clearance keeps the lowest registered part above the
-                # 0.555 m far rail while matching the measured loaded X5
+                # lowered far rail while matching the measured loaded X5
                 # high-goal workspace.
                 safe_carry_clearance_m=0.025,
                 position_tolerance_m=0.020,
@@ -3090,7 +3081,15 @@ class ConveyorRuntimeV1:
                 # slips during lift; collision-noise extrapolation is handled
                 # separately by the transport-axis velocity below.
                 grasp_tolerance_m=0.015,
-                grasp_contact_dwell_s=0.04,
+                settle_duration_s=0.50,
+                select_duration_s=0.25,
+                grasp_contact_dwell_s=0.15,
+                pregrasp_observation_dwell_s=(
+                    _TEACHER_PREGRASP_OBSERVATION_DWELL_S
+                ),
+                preplace_dwell_s=(
+                    _TEACHER_PREPLACE_OBSERVATION_DWELL_S
+                ),
                 # Lateral placement is deliberately rate-limited while the
                 # arm carries a part.  Both robot modes need the same timeout
                 # envelope to reach and settle over the side trays.
@@ -3507,6 +3506,21 @@ class ConveyorRuntimeV1:
         del resolved
         return _MOBILE_PLACE_DESCEND_STEP_M
 
+    def _teacher_translation_step_m(
+        self, resolved: _ResolvedTask, phase: str
+    ) -> float:
+        """Bound teacher motion so 25 Hz policy chunks can reproduce it."""
+
+        if phase in {"descend", "close"}:
+            return _TEACHER_VERTICAL_STEP_M
+        if phase == "lift":
+            return _TEACHER_LIFT_STEP_M
+        if phase == "place_descend":
+            return self._mobile_place_descend_step_m(resolved)
+        if phase == "open":
+            return _MOBILE_PLACE_HOLD_STEP_M
+        return _TEACHER_CARTESIAN_STEP_M
+
     def _object_crossed_task_exit(
         self,
         resolved: _ResolvedTask,
@@ -3615,39 +3629,10 @@ class ConveyorRuntimeV1:
         *,
         waypoint_step_m: float = _MOBILE_PLACE_CARTESIAN_STEP_M,
     ) -> Pose:
-        """Choose a reachable wrist attitude for the lateral tray target."""
+        """Preserve the registered overhead attitude above the sorting tray."""
 
-        target_base = self._world_pose_to_root(
-            Pose(oracle_target.xyz, state["tcp_world"].wxyz)
-        )
-        current_base = np.asarray(
-            state["tcp_base"].xyz, dtype=np.float64
-        )
-        waypoint_base = np.asarray(
-            target_base.xyz, dtype=np.float64
-        )
-        waypoint_delta = waypoint_base - current_base
-        waypoint_distance = float(np.linalg.norm(waypoint_delta))
-        if waypoint_distance > waypoint_step_m:
-            waypoint_delta *= waypoint_step_m / waypoint_distance
-        orientation_waypoint = current_base + waypoint_delta
-        # Choose orientation at the same incremental Cartesian waypoint.
-        # Asking for a frozen final attitude while the position is still
-        # centred drives the redundant wrist branch into a workspace limit.
-        position_solution = self.place_position_kinematics.solve(
-            orientation_waypoint,
-            state["tcp_base"].wxyz,
-            seed=self._arm_ik_seed,
-        )
-        _, reference_rotation = self.arm_kinematics.forward(
-            position_solution.joint_positions
-        )
-        reference_base = Pose(
-            target_base.xyz,
-            _quaternion_from_rotation(reference_rotation),
-        )
-        target_world = self._root_pose_to_world(reference_base)
-        return Pose(oracle_target.xyz, target_world.wxyz)
+        del state, waypoint_step_m
+        return oracle_target
 
     def _transition_mobile_carry(
         self, stage: str, sim_time_s: float
@@ -3847,6 +3832,7 @@ class ConveyorRuntimeV1:
         current_tcp_base: Pose,
         *,
         max_translation_m: float,
+        max_rotation_rad: float = _TEACHER_MAX_ROTATION_STEP_RAD,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -3857,6 +3843,7 @@ class ConveyorRuntimeV1:
             target_base,
             current_tcp_base,
             max_translation_m=max_translation_m,
+            max_rotation_rad=max_rotation_rad,
         )
 
     def _apply_tcp_target_base(
@@ -3865,6 +3852,7 @@ class ConveyorRuntimeV1:
         current_tcp_base: Pose,
         *,
         max_translation_m: float = 0.025,
+        max_rotation_rad: float = 0.12,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -3881,8 +3869,8 @@ class ConveyorRuntimeV1:
             current_tcp_base.wxyz, target_base.wxyz
         )
         angle = float(np.linalg.norm(rotation_delta))
-        if angle > 0.12:
-            rotation_delta *= 0.12 / angle
+        if angle > max_rotation_rad:
+            rotation_delta *= max_rotation_rad / angle
         next_orientation = _apply_rotation_vector(
             current_tcp_base.wxyz, rotation_delta
         )

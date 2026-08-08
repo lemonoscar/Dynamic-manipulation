@@ -99,6 +99,15 @@
     "target_intercept_lead_time_s": 5.0,
     "formal_episode_target": 384,
     "training_requires_success": true,
-    "diagnostic_assistance_allowed": false
+    "diagnostic_assistance_allowed": false,
+    "demonstration_teacher": {
+      "profile_id": "overhead_slow_pick_place_v1",
+      "overhead_approach_pitch_deg": 75.0,
+      "pregrasp_observation_dwell_s": 0.5,
+      "preplace_observation_dwell_s": 0.5,
+      "maximum_vertical_speed_mps": 0.075,
+      "maximum_lift_speed_mps": 0.1,
+      "maximum_cartesian_speed_mps": 0.15
+    }
   }
 }

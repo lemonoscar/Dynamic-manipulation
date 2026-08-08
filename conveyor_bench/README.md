@@ -6,6 +6,10 @@ ConveyorBench 现在同时保留 V0 单目标固定机身基线、冻结的 V1 �
 scene/task/mode 组合，包含首版双目标连续分拣与强制 whole-body 的远端交付。
 V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五个预注册场景先
 隔离 ConveyorVLA AL0 的移动、抓取与投放能力；它不会计入动态 benchmark 分数。
+当前 V1/V2 近端工位的皮带面为 `0.34 m`，尺寸 `0.252 × 1.56 m`，默认低速
+为 `0.01 m/s`。新示教统一使用俯视抓取和俯视投放：预抓取/预放置各观察
+`0.5 s`，下探最高 `0.075 m/s`，episode metadata 标记为
+`overhead_slow_pick_place_v1`，避免和早期水平进给轨迹混用。
 
 - V2 规范：[BENCHMARK_V2_SPEC.md](BENCHMARK_V2_SPEC.md)
 - V2 可机读快照：[configs/v2.json](configs/v2.json)
@@ -406,7 +410,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 20 \
   --active-objects 1 \
   --target-asset part_red_block \
@@ -428,7 +432,7 @@ python scripts/run_benchmark_v1.py \
   --seed 0 \
   --split train \
   --task-family single_target \
-  --belt-speed 0.06 \
+  --belt-speed 0.01 \
   --max-duration 35 \
   --active-objects 1 \
   --target-asset part_red_block \

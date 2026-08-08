@@ -63,6 +63,7 @@ LEGACY_PROFILE_SCHEMAS = {
     "m0_mobile": "conveyor-bench-m0-mobile-v1",
 }
 TEMPORAL_EXPORT_PROFILE = "conveyorvla_al0_temporal"
+TEACHER_PROFILE_ID = "overhead_slow_pick_place_v1"
 
 
 class CollectionError(ValueError):
@@ -303,6 +304,14 @@ def scan_phase(output_root: Path, phase: str) -> dict[int, EpisodeObservation]:
                 raise CollectionError(f"{episode} source tree fingerprint mismatch")
             if metadata.get("asset_lock_sha256") != ASSET_LOCK_SHA256:
                 raise CollectionError(f"{episode} asset lock fingerprint mismatch")
+            teacher = _mapping(
+                metadata.get("demonstration_teacher"),
+                "manifest.episode.metadata.demonstration_teacher",
+            )
+            if teacher.get("profile_id") != TEACHER_PROFILE_ID:
+                raise CollectionError(
+                    f"{episode} demonstration teacher profile mismatch"
+                )
             seeds = _mapping(value.get("seeds"), "manifest.episode.seeds")
             seed = seeds.get("episode")
             if isinstance(seed, bool) or not isinstance(seed, int):
@@ -452,6 +461,7 @@ def _write_report(output_root: Path) -> None:
         "source_tree": SOURCE_TREE_FINGERPRINT,
         "asset_lock_sha256": ASSET_LOCK_SHA256,
         "task_scope": "single_object_grasp",
+        "demonstration_teacher_profile_id": TEACHER_PROFILE_ID,
         "belt_speeds_mps": BELT_SPEEDS_MPS,
         "target_intercept_lead_time_s": INTERCEPT_LEAD_TIME_S,
         "cells": [cell.__dict__ for cell in cells()],
