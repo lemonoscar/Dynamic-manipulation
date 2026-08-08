@@ -64,6 +64,13 @@ def test_grasp_curriculum_parts_are_fixture_aligned_for_one_wrist_branch(
     )
     assert assets["part_blue_bar"].stable_poses_wxyz[0][3] > 0.70
     assert assets["part_green_shaft"].stable_poses_wxyz[0][3] > 0.70
+    assert all(
+        0.34
+        + geometry_half_extents(assets[object_id].geometry)[2]
+        + assets[object_id].grasp_affordances[0].tcp_offset_xyz[2]
+        == pytest.approx(0.376)
+        for object_id in curriculum
+    )
 
 
 def test_compound_geometry_extent_includes_offsets() -> None:

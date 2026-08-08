@@ -69,7 +69,7 @@
           "id": "top_parallel_y_fixture_aligned",
           "approach_axis": "-z",
           "finger_closing_axis": "y",
-          "tcp_offset_xyz": [0.0, 0.0, 0.003],
+          "tcp_offset_xyz": [0.0, 0.0, 0.019],
           "required_opening_m": 0.046
         }
       ],
@@ -111,7 +111,7 @@
           "id": "top_diameter",
           "approach_axis": "-z",
           "finger_closing_axis": "y",
-          "tcp_offset_xyz": [0.0, 0.0, 0.003],
+          "tcp_offset_xyz": [0.0, 0.0, 0.013],
           "required_opening_m": 0.062
         }
       ],
@@ -153,7 +153,7 @@
           "id": "top_cross_shaft_y_fixture_aligned",
           "approach_axis": "-z",
           "finger_closing_axis": "y",
-          "tcp_offset_xyz": [0.0, 0.0, 0.004],
+          "tcp_offset_xyz": [0.0, 0.0, 0.020],
           "required_opening_m": 0.040
         }
       ],
