@@ -19,6 +19,7 @@ def _pinhole_contract(
     parent: str,
     xyz_m: tuple[float, float, float],
     wxyz: tuple[float, float, float, float],
+    orientation_convention: str,
 ) -> dict[str, Any]:
     focal_px = focal_length_mm / _HORIZONTAL_APERTURE_MM * width
     return {
@@ -35,7 +36,7 @@ def _pinhole_contract(
             "parent": parent,
             "xyz_m": list(xyz_m),
             "wxyz": list(wxyz),
-            "orientation_convention": "world",
+            "orientation_convention": orientation_convention,
         },
     }
 
@@ -66,11 +67,12 @@ def camera_contract_for_scene(scene_id: SceneId | str) -> dict[str, Any]:
         "head_rgb": _pinhole_contract(
             width=224,
             height=224,
-            focal_length_mm=16.0,
+            focal_length_mm=24.0,
             role="policy_observation",
             parent="base",
-            xyz_m=(0.355, 0.0, 0.18),
-            wxyz=(1.0, 0.0, 0.0, 0.0),
+            xyz_m=(0.28, 0.0, 0.07),
+            wxyz=(0.5, -0.5, 0.5, -0.5),
+            orientation_convention="ros",
         ),
         "wrist_rgb": _pinhole_contract(
             width=224,
@@ -78,8 +80,9 @@ def camera_contract_for_scene(scene_id: SceneId | str) -> dict[str, Any]:
             focal_length_mm=18.0,
             role="policy_observation",
             parent="arm_link6",
-            xyz_m=(0.025, 0.0, 0.115),
-            wxyz=(0.93200787, 0.0, 0.36243804, 0.0),
+            xyz_m=(0.0, 0.0, 0.10),
+            wxyz=(0.353553, -0.612372, 0.612372, -0.353553),
+            orientation_convention="ros",
         ),
         "overview_rgb": _pinhole_contract(
             width=480,
@@ -89,6 +92,7 @@ def camera_contract_for_scene(scene_id: SceneId | str) -> dict[str, Any]:
             parent="environment_origin",
             xyz_m=overview_xyz_m,
             wxyz=overview_wxyz,
+            orientation_convention="world",
         ),
     }
 

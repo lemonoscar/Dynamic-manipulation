@@ -51,16 +51,17 @@ OBJECT_EXIT_Y_M = -0.57
 OBJECT_LANE_X_M = 0.65
 EXIT_PLANE_POINT_WORLD = (OBJECT_LANE_X_M, OBJECT_EXIT_Y_M, BELT_TOP_Z_M)
 
-# The dog-head camera remains straight ahead as requested, but a short local
-# bracket raises it above the 0.50 m belt so it can actually see candidate
-# objects.  It is still rigidly attached to the robot base.
-HEAD_CAMERA_OFFSET_XYZ = (0.355, 0.0, 0.18)
-HEAD_CAMERA_OFFSET_WXYZ = (1.0, 0.0, 0.0, 0.0)
-# Wrist camera: centered above the gripper.  The local +X optical axis is
-# pitched down by 42.5 degrees so it intersects the benchmark TCP at
-# ``arm_link6 + (0.125, 0, 0)`` instead of looking over the belt.
-WRIST_CAMERA_OFFSET_XYZ = (0.025, 0.0, 0.115)
-WRIST_CAMERA_OFFSET_WXYZ = (0.93200787, 0.0, 0.36243804, 0.0)
+# Calibrated sensor mounts copied from arm-vla-grasp-sim's Go2-X5 runtime.
+# Both are link-relative ROS optical-frame transforms rather than idealized
+# world-frame views.  The head camera looks straight ahead from ``base``;
+# the wrist camera sits above the gripper on ``arm_link6`` and looks slightly
+# down through the usable FinRay grasp region.
+HEAD_CAMERA_OFFSET_XYZ = (0.28, 0.0, 0.07)
+HEAD_CAMERA_OFFSET_WXYZ = (0.5, -0.5, 0.5, -0.5)
+HEAD_CAMERA_ORIENTATION_CONVENTION = "ros"
+WRIST_CAMERA_OFFSET_XYZ = (0.0, 0.0, 0.10)
+WRIST_CAMERA_OFFSET_WXYZ = (0.353553, -0.612372, 0.612372, -0.353553)
+WRIST_CAMERA_ORIENTATION_CONVENTION = "ros"
 # Observer-only view, deliberately farther away than V0.
 OVERVIEW_CAMERA_OFFSET_XYZ = (-2.10, -1.60, 2.40)
 OVERVIEW_CAMERA_OFFSET_WXYZ = (
@@ -69,6 +70,12 @@ OVERVIEW_CAMERA_OFFSET_WXYZ = (
     0.26721596,
     0.25774106,
 )
+OVERVIEW_CAMERA_ORIENTATION_CONVENTION = "world"
+
+# Linear RGB chosen to render as the dark green PVC belt used by the target
+# workcell under the benchmark lights.  The contact surface and visual skin
+# intentionally share this value so no grey edge leaks into camera frames.
+BELT_DARK_GREEN_RGB = (0.015, 0.10, 0.035)
 
 # The vendored FinRay finger meshes contain a wide mounting flange and a
 # curved, open finger. Isaac Sim imports each complete mesh as one convex
@@ -559,7 +566,7 @@ def spawn_conveyor_workcell(
         f"{prim_path}/Looks/aluminum", (0.48, 0.52, 0.56)
     )
     rubber = _static_visual_material(
-        f"{prim_path}/Looks/rubber", (0.035, 0.045, 0.055)
+        f"{prim_path}/Looks/rubber", BELT_DARK_GREEN_RGB
     )
     yellow = _static_visual_material(
         f"{prim_path}/Looks/safety_yellow", (0.95, 0.62, 0.04)
@@ -818,7 +825,7 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
                 restitution=0.0,
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.045, 0.055, 0.065),
+                diffuse_color=BELT_DARK_GREEN_RGB,
                 roughness=0.78,
             ),
         ),
@@ -864,15 +871,15 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
         width=224,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=16.0,
-            focus_distance=1.5,
+            focal_length=24.0,
+            focus_distance=400.0,
             horizontal_aperture=20.955,
-            clipping_range=(0.05, 5.0),
+            clipping_range=(0.1, 1.0e5),
         ),
         offset=CameraCfg.OffsetCfg(
             pos=HEAD_CAMERA_OFFSET_XYZ,
             rot=HEAD_CAMERA_OFFSET_WXYZ,
-            convention="world",
+            convention=HEAD_CAMERA_ORIENTATION_CONVENTION,
         ),
     )
 
@@ -891,7 +898,7 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
         offset=CameraCfg.OffsetCfg(
             pos=WRIST_CAMERA_OFFSET_XYZ,
             rot=WRIST_CAMERA_OFFSET_WXYZ,
-            convention="world",
+            convention=WRIST_CAMERA_ORIENTATION_CONVENTION,
         ),
     )
 
@@ -910,7 +917,7 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
         offset=CameraCfg.OffsetCfg(
             pos=OVERVIEW_CAMERA_OFFSET_XYZ,
             rot=OVERVIEW_CAMERA_OFFSET_WXYZ,
-            convention="world",
+            convention=OVERVIEW_CAMERA_ORIENTATION_CONVENTION,
         ),
     )
 

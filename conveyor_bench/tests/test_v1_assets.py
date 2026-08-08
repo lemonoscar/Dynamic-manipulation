@@ -68,6 +68,10 @@ def test_workcell_is_project_local_procedural_asset() -> None:
     manifest = load_workcell_manifest()
     assert manifest["runtime_dependency"] == "none"
     assert manifest["design"]["belt_top_z_m"] == pytest.approx(0.50)
+    assert manifest["design"]["belt_diffuse_color_linear_rgb"] == pytest.approx(
+        (0.015, 0.10, 0.035)
+    )
+    assert manifest["design"]["belt_appearance"] == "dark green PVC"
     assert "transport_surface" in manifest["components"]
     assert "motor_and_guard" in manifest["components"]
     assert "catch_tray" in manifest["components"]
@@ -95,6 +99,7 @@ def test_asset_lock_matches_files() -> None:
     locked = verify_asset_lock()
     assert "objects/registry.json" in locked
     assert "robots/go2_x5/go2_x5.urdf" in locked
+    assert "robots/go2_x5/ASSET_PROVENANCE.md" in locked
     for relative_name, digest in locked.items():
         assert sha256_file(ASSET_ROOT / relative_name) == digest
 

@@ -10,6 +10,8 @@
     "belt_top_z_m": 0.50,
     "belt_center_xyz_m": [0.70, 0.0, 0.47],
     "belt_size_xyz_m": [0.42, 1.20, 0.06],
+    "belt_diffuse_color_linear_rgb": [0.015, 0.10, 0.035],
+    "belt_appearance": "dark green PVC",
     "contact_model": "hidden/simple cuboid collider with PhysxSurfaceVelocityAPI",
     "visual_model": "collision-free belt skin, seam markers and synchronized rollers"
   },

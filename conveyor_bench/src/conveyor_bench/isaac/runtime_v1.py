@@ -114,6 +114,7 @@ from .scene_v1 import (
     BELT_TOP_Z_M,
     BELT_WIDTH_M,
     EXIT_PLANE_POINT_WORLD,
+    HEAD_CAMERA_ORIENTATION_CONVENTION,
     HEAD_CAMERA_OFFSET_WXYZ,
     HEAD_CAMERA_OFFSET_XYZ,
     LAYOUT_ID,
@@ -121,9 +122,11 @@ from .scene_v1 import (
     OBJECT_ENTITY_NAMES,
     OBJECT_LANE_X_M,
     OBJECT_SPAWN_Y_M,
+    OVERVIEW_CAMERA_ORIENTATION_CONVENTION,
     OVERVIEW_CAMERA_OFFSET_WXYZ,
     OVERVIEW_CAMERA_OFFSET_XYZ,
     TRANSPORT_DIRECTION_WORLD,
+    WRIST_CAMERA_ORIENTATION_CONVENTION,
     WRIST_CAMERA_OFFSET_WXYZ,
     WRIST_CAMERA_OFFSET_XYZ,
     ConveyorSceneV1Cfg,
@@ -4835,6 +4838,7 @@ def _camera_contract_v1() -> dict[str, Any]:
         parent: str,
         xyz: tuple[float, float, float],
         wxyz: tuple[float, float, float, float],
+        orientation_convention: str,
     ) -> dict[str, Any]:
         focal_x = (
             focal_length / horizontal_aperture * camera.width
@@ -4853,17 +4857,18 @@ def _camera_contract_v1() -> dict[str, Any]:
                 "parent": parent,
                 "xyz_m": list(xyz),
                 "wxyz": list(wxyz),
-                "orientation_convention": "world",
+                "orientation_convention": orientation_convention,
             },
         }
 
     return {
         "head_rgb": spec(
             _CAMERA_SPECS[0],
-            16.0,
+            24.0,
             "base",
             HEAD_CAMERA_OFFSET_XYZ,
             HEAD_CAMERA_OFFSET_WXYZ,
+            HEAD_CAMERA_ORIENTATION_CONVENTION,
         ),
         "wrist_rgb": spec(
             _CAMERA_SPECS[1],
@@ -4871,6 +4876,7 @@ def _camera_contract_v1() -> dict[str, Any]:
             "arm_link6",
             WRIST_CAMERA_OFFSET_XYZ,
             WRIST_CAMERA_OFFSET_WXYZ,
+            WRIST_CAMERA_ORIENTATION_CONVENTION,
         ),
         "overview_rgb": spec(
             _CAMERA_SPECS[2],
@@ -4878,5 +4884,6 @@ def _camera_contract_v1() -> dict[str, Any]:
             "environment_origin",
             OVERVIEW_CAMERA_OFFSET_XYZ,
             OVERVIEW_CAMERA_OFFSET_WXYZ,
+            OVERVIEW_CAMERA_ORIENTATION_CONVENTION,
         ),
     }

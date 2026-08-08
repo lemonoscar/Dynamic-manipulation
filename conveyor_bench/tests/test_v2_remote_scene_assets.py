@@ -179,11 +179,17 @@ def test_frozen_camera_contract_matches_scene_mount_constants() -> None:
     assert near["head_rgb"]["mount"]["wxyz"] == pytest.approx(
         near_constants["HEAD_CAMERA_OFFSET_WXYZ"]
     )
+    assert near["head_rgb"]["mount"]["orientation_convention"] == (
+        near_constants["HEAD_CAMERA_ORIENTATION_CONVENTION"]
+    )
     assert near["wrist_rgb"]["mount"]["xyz_m"] == pytest.approx(
         near_constants["WRIST_CAMERA_OFFSET_XYZ"]
     )
     assert near["wrist_rgb"]["mount"]["wxyz"] == pytest.approx(
         near_constants["WRIST_CAMERA_OFFSET_WXYZ"]
+    )
+    assert near["wrist_rgb"]["mount"]["orientation_convention"] == (
+        near_constants["WRIST_CAMERA_ORIENTATION_CONVENTION"]
     )
     assert near["overview_rgb"]["mount"]["xyz_m"] == pytest.approx(
         near_constants["OVERVIEW_CAMERA_OFFSET_XYZ"]
@@ -191,9 +197,32 @@ def test_frozen_camera_contract_matches_scene_mount_constants() -> None:
     assert near["overview_rgb"]["mount"]["wxyz"] == pytest.approx(
         near_constants["OVERVIEW_CAMERA_OFFSET_WXYZ"]
     )
+    assert near["overview_rgb"]["mount"]["orientation_convention"] == (
+        near_constants["OVERVIEW_CAMERA_ORIENTATION_CONVENTION"]
+    )
     assert remote["overview_rgb"]["mount"]["xyz_m"] == pytest.approx(
         remote_constants["REMOTE_OVERVIEW_CAMERA_OFFSET_XYZ"]
     )
     assert remote["overview_rgb"]["mount"]["wxyz"] == pytest.approx(
         remote_constants["REMOTE_OVERVIEW_CAMERA_OFFSET_WXYZ"]
     )
+
+
+def test_go2_camera_mounts_match_the_audited_arm_vla_reference() -> None:
+    constants = _constants(_tree(SCENE_V1_PATH))
+    assert constants["HEAD_CAMERA_OFFSET_XYZ"] == pytest.approx((0.28, 0.0, 0.07))
+    assert constants["HEAD_CAMERA_OFFSET_WXYZ"] == pytest.approx(
+        (0.5, -0.5, 0.5, -0.5)
+    )
+    assert constants["HEAD_CAMERA_ORIENTATION_CONVENTION"] == "ros"
+    assert constants["WRIST_CAMERA_OFFSET_XYZ"] == pytest.approx((0.0, 0.0, 0.10))
+    assert constants["WRIST_CAMERA_OFFSET_WXYZ"] == pytest.approx(
+        (0.353553, -0.612372, 0.612372, -0.353553)
+    )
+    assert constants["WRIST_CAMERA_ORIENTATION_CONVENTION"] == "ros"
+    assert constants["BELT_DARK_GREEN_RGB"] == pytest.approx((0.015, 0.10, 0.035))
+
+    scene_source = ast.unparse(_class(_tree(SCENE_V1_PATH), "ConveyorSceneV1Cfg"))
+    assert "focal_length=24.0" in scene_source
+    assert "convention=HEAD_CAMERA_ORIENTATION_CONVENTION" in scene_source
+    assert "convention=WRIST_CAMERA_ORIENTATION_CONVENTION" in scene_source
