@@ -9,6 +9,7 @@ from conveyor_bench.v1.oracle import (
     OracleObservation,
     OraclePhase,
     TOP_DOWN_APPROACH_PITCH_DEG,
+    TOP_DOWN_X_CLOSING_YAW_DEG,
     top_down_tcp_orientation_wxyz,
 )
 from conveyor_bench.v1.protocol import RobotMode
@@ -118,7 +119,15 @@ def test_registered_teacher_pose_is_overhead_and_closing_axis_aligned(
     assert TOP_DOWN_APPROACH_PITCH_DEG == pytest.approx(75.0)
     assert approach[2] == pytest.approx(-math.sin(math.radians(75.0)))
     assert approach[2] < -0.96
-    assert abs(closing[world_axis_index]) == pytest.approx(1.0)
+    expected_alignment = (
+        1.0
+        if closing_axis == "y"
+        else math.sin(math.radians(TOP_DOWN_X_CLOSING_YAW_DEG))
+    )
+    assert abs(closing[world_axis_index]) == pytest.approx(
+        expected_alignment
+    )
+    assert abs(closing[world_axis_index]) > 0.95
 
 
 def test_pregrasp_requires_continuous_overhead_observation_dwell() -> None:
