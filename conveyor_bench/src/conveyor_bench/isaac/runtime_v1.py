@@ -1565,16 +1565,24 @@ class ConveyorRuntimeV1:
                                     resolved, phase
                                 )
                             ),
-                            solve_full_target=phase
-                            in {
-                                "settle",
-                                "select",
-                                "pregrasp",
-                                "track",
-                                "descend",
-                                "close",
-                                "lift",
-                            },
+                            solve_full_target=(
+                                phase
+                                in {
+                                    "settle",
+                                    "select",
+                                    "pregrasp",
+                                    "track",
+                                    "descend",
+                                    "close",
+                                    "lift",
+                                }
+                                or (
+                                    self.options.robot_mode
+                                    is RobotMode.WHOLE_BODY_POLICY
+                                    and phase == "carry"
+                                    and self._mobile_carry_stage == "place"
+                                )
+                            ),
                         )
                     if oracle_command.terminal:
                         target_command_terminal = True
