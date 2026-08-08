@@ -180,6 +180,16 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     assert "phase == 'lift'" in source
 
 
+def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_apply_tcp_target_base"))
+
+    assert "if distance > max_translation_m" in source
+    assert "if angle > max_rotation_rad" in source
+    assert "self.arm_kinematics.solve(target_base.xyz, target_base.wxyz" in source
+    assert "for value in raw_delta" in source
+    assert "for value in next_position" in source
+
+
 def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
     tree = _runtime_tree()
     arm = _literal_constant(tree, "_PREGRASP_ARM")

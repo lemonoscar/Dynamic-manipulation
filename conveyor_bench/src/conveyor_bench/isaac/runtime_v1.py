@@ -87,7 +87,6 @@ from conveyor_bench.v1.tasking import (
 
 from .arm_kinematics import (
     CalibratedArmKinematics,
-    IKConvergenceError,
 )
 from .asset_config import (
     ARM_JOINT_NAMES,
@@ -3915,21 +3914,18 @@ class ConveyorRuntimeV1:
         next_orientation = _apply_rotation_vector(
             current_tcp_base.wxyz, rotation_delta
         )
-        try:
-            solution = self.arm_kinematics.solve(
-                next_position,
-                next_orientation,
-                seed=self._arm_ik_seed,
-            )
-        except IKConvergenceError:
-            # Retry the final oracle orientation at the bounded position.  If
-            # it is unreachable the error must remain visible to the episode
-            # abort path rather than silently fabricating a command.
-            solution = self.arm_kinematics.solve(
-                next_position,
-                target_base.wxyz,
-                seed=self._arm_ik_seed,
-            )
+        # Keep the policy-facing Cartesian action bounded, but solve the
+        # complete reachable teacher goal for low-level actuation.  Solving a
+        # fresh 3 mm waypoint from the lagging measured TCP on every tick
+        # causes the floating X5 to chase its own gravity drift and select a
+        # folded IK branch.  The existing joint slew and tracking window below
+        # remain the physical rate limiter, while ``raw_delta`` and
+        # ``rotation_delta`` preserve the 25 Hz VLA label contract.
+        solution = self.arm_kinematics.solve(
+            target_base.xyz,
+            target_base.wxyz,
+            seed=self._arm_ik_seed,
+        )
         self._arm_ik_seed = solution.joint_positions
         self._last_ik_error_m = solution.position_error_m
         self._last_ik_iterations = solution.iterations
