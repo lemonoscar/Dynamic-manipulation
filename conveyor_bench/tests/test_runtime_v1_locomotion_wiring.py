@@ -157,7 +157,7 @@ def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 
     assert "asset.half_extents_xyz[2] + _TEACHER_RELEASE_CLEARANCE_M" in source
-    assert "zone_x - (0.04 if zone_y < 0.0 else 0.0)" in source
+    assert "zone_x - (0.04 if zone_y < 0.0 else 0.025)" in source
     assert "reachable_release_y = zone_y - math.copysign(0.1, zone_y)" in source
     assert "safe_carry_clearance_m=0.025" in source
     assert "top_down_tcp_orientation_wxyz" in source
@@ -175,8 +175,9 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     assert _literal_constant(tree, "_TEACHER_VERTICAL_STEP_M") == 0.0015
     assert _literal_constant(tree, "_TEACHER_LIFT_STEP_M") == 0.002
     assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.01
+    assert _literal_constant(tree, "_TEACHER_RELEASE_CLEARANCE_M") == 0.005
     assert _literal_constant(tree, "_MOBILE_PLACE_ARM_SLEW_SCALE") == 0.20
-    assert _literal_constant(tree, "_MOBILE_PLACE_FULL_GOAL_RADIUS_M") == 0.060
+    assert _literal_constant(tree, "_MOBILE_PLACE_FULL_GOAL_RADIUS_M") == 0.045
     source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
     assert "phase in {'descend', 'close'}" in source
     assert "phase == 'lift'" in source

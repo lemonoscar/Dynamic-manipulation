@@ -193,12 +193,12 @@ _TEACHER_LIFT_STEP_M = 0.002
 _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
-_TEACHER_RELEASE_CLEARANCE_M = 0.025
+_TEACHER_RELEASE_CLEARANCE_M = 0.005
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_ARM_SLEW_SCALE = 0.20
-_MOBILE_PLACE_FULL_GOAL_RADIUS_M = 0.060
+_MOBILE_PLACE_FULL_GOAL_RADIUS_M = 0.045
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
@@ -3067,12 +3067,12 @@ class ConveyorRuntimeV1:
         # enough wall clearance for the full 48 mm target, not merely its
         # center point. This avoids the X5 lateral workspace boundary after
         # the short mobile carry arc for both mirrored sorting trays.
-        # The loaded negative-yaw placement has a measured floating-base
-        # equilibrium about 44 mm short of the tray center in world X.  Move
-        # that tray's release point into the robot-facing half of the opening
-        # instead of commanding an unreachable extension.  The 40 mm bias is
-        # still well inside the 105 mm goal half-width for every train asset.
-        reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.0)
+        # Loaded placement equilibrates short of the tray center in world X.
+        # Bias both mirrored drops toward the robot-facing half of the open
+        # floor, with the larger audited offset retained for the negative-yaw
+        # turn.  Even the widest 48 mm train part remains fully inside the
+        # 105 mm goal half-width.
+        reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.025)
         reachable_release_y = zone_y - math.copysign(0.10, zone_y)
         if affordance.approach_axis != "-z":
             raise RuntimeError(
