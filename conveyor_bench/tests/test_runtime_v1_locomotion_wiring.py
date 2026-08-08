@@ -198,6 +198,53 @@ def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
     assert arm[3] >= -1.26
 
 
+def test_overhead_arm_must_settle_before_the_object_can_spawn() -> None:
+    tree = _runtime_tree()
+    helper = copy.deepcopy(_method(tree, "_arm_preposition_ready"))
+    helper.decorator_list = []
+    module = ast.fix_missing_locations(
+        ast.Module(body=[helper], type_ignores=[])
+    )
+    namespace = _constants(tree)
+    exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
+    ready = namespace["_arm_preposition_ready"]
+    runtime = SimpleNamespace(_arm_preposition_stable_since_s=None)
+    dwell = namespace["_LOCOMOTION_ARM_PREPOSITION_STABLE_DWELL_S"]
+
+    assert not ready(
+        runtime,
+        joint_error_rad=0.02,
+        max_joint_speed_radps=0.20,
+        sim_time_s=1.0,
+    )
+    assert runtime._arm_preposition_stable_since_s is None
+    assert not ready(
+        runtime,
+        joint_error_rad=0.02,
+        max_joint_speed_radps=0.04,
+        sim_time_s=1.1,
+    )
+    assert not ready(
+        runtime,
+        joint_error_rad=0.02,
+        max_joint_speed_radps=0.04,
+        sim_time_s=1.1 + dwell - 0.01,
+    )
+    assert ready(
+        runtime,
+        joint_error_rad=0.02,
+        max_joint_speed_radps=0.04,
+        sim_time_s=1.1 + dwell,
+    )
+    assert not ready(
+        runtime,
+        joint_error_rad=0.09,
+        max_joint_speed_radps=0.0,
+        sim_time_s=2.0,
+    )
+    assert runtime._arm_preposition_stable_since_s is None
+
+
 def test_high_goal_verify_holds_the_reached_joint_target() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_run_episode"))
 

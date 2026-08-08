@@ -164,7 +164,9 @@ _LOCOMOTION_STOP_PLANAR_SPEED_MPS = 0.08
 _LOCOMOTION_STABLE_DWELL_S = 0.50
 _LOCOMOTION_APPROACH_TIMEOUT_S = 3.0
 _LOCOMOTION_STABILIZE_TIMEOUT_S = 2.0
-_ARM_PREPOSITION_TIMEOUT_S = 5.0
+_LOCOMOTION_ARM_PREPOSITION_TIMEOUT_S = 7.0
+_LOCOMOTION_ARM_PREPOSITION_MAX_JOINT_SPEED_RADPS = 0.08
+_LOCOMOTION_ARM_PREPOSITION_STABLE_DWELL_S = 0.50
 # Deterministic joint-space carry posture.  Match the locomotion checkpoint's
 # nominal arm command so the loaded gait stays inside its training
 # distribution.  The TCP remains above and ahead of the robot head.  Values
@@ -762,6 +764,12 @@ class ConveyorRuntimeV1:
                 "preplace_observation_dwell_s": (
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
                 ),
+                "preposition_stable_dwell_s": (
+                    _LOCOMOTION_ARM_PREPOSITION_STABLE_DWELL_S
+                ),
+                "preposition_max_joint_speed_radps": (
+                    _LOCOMOTION_ARM_PREPOSITION_MAX_JOINT_SPEED_RADPS
+                ),
                 "cartesian_step_m": _TEACHER_CARTESIAN_STEP_M,
                 "vertical_step_m": _TEACHER_VERTICAL_STEP_M,
                 "lift_step_m": _TEACHER_LIFT_STEP_M,
@@ -874,6 +882,7 @@ class ConveyorRuntimeV1:
         )
         self._locomotion_policy_step_count = 0
         self._mobile_stable_since_s: float | None = None
+        self._arm_preposition_stable_since_s: float | None = None
         self.locomotion_policy = (
             load_policy(device=self.options.device)
             if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
@@ -1210,6 +1219,10 @@ class ConveyorRuntimeV1:
                 shadow_ik_iterations = self._last_ik_iterations
 
                 if oracle is None:
+                    (
+                        arm_max_joint_error_rad,
+                        arm_max_joint_speed_radps,
+                    ) = self._arm_preposition_metrics()
                     if approach_stage == "sequential_rearm":
                         phase = approach_stage
                         selected_object_id = resolved.target_instance_id
@@ -1221,22 +1234,14 @@ class ConveyorRuntimeV1:
                             state_before["tcp_base"]
                         )
                         gripper_open = True
-                        arm_error = float(
-                            torch.max(
-                                torch.abs(
-                                    self.robot.data.joint_pos[
-                                        :, self.arm_joint_ids
-                                    ]
-                                    - torch.tensor(
-                                        [_PREGRASP_ARM],
-                                        dtype=torch.float32,
-                                        device=self.sim.device,
-                                    )
-                                )
-                            ).item()
-                        )
                         ready_to_spawn = (
-                            arm_error < 0.080
+                            self._arm_preposition_ready(
+                                joint_error_rad=arm_max_joint_error_rad,
+                                max_joint_speed_radps=(
+                                    arm_max_joint_speed_radps
+                                ),
+                                sim_time_s=sim_time_s,
+                            )
                             and sim_time_s - stage_started_at >= 0.30
                             and sim_time_s
                             >= self._spawn_not_before_s(resolved)
@@ -1244,7 +1249,7 @@ class ConveyorRuntimeV1:
                         if (
                             not ready_to_spawn
                             and sim_time_s - stage_started_at
-                            >= _ARM_PREPOSITION_TIMEOUT_S
+                            >= _LOCOMOTION_ARM_PREPOSITION_TIMEOUT_S
                         ):
                             raise _MobilePreconditionFailure(
                                 FailureReason.TIMEOUT,
@@ -1268,6 +1273,8 @@ class ConveyorRuntimeV1:
                                 *state_before["root_twist"].linear_xyz[:2]
                             ),
                             robot_fallen=state_before["robot_fallen"],
+                            arm_joint_error_rad=arm_max_joint_error_rad,
+                            arm_joint_speed_radps=arm_max_joint_speed_radps,
                         )
                         phase = approach_stage
                         if approach_stage == "arm_preposition":
@@ -1320,20 +1327,6 @@ class ConveyorRuntimeV1:
                             resolved, sim_time_s=sim_time_s
                         )
                         if self.options.m0_mobile_approach_assist:
-                            arm_max_joint_error_rad = float(
-                                torch.max(
-                                    torch.abs(
-                                        self.robot.data.joint_pos[
-                                            :, self.arm_joint_ids
-                                        ]
-                                        - torch.tensor(
-                                            [_PREGRASP_ARM],
-                                            dtype=torch.float32,
-                                            device=self.sim.device,
-                                        )
-                                    )
-                                ).item()
-                            )
                             m0_approach_assist_handoff = {
                                 "sim_time_s": sim_time_s,
                                 "root_x_m": state_before[
@@ -2351,6 +2344,7 @@ class ConveyorRuntimeV1:
                             self._ever_held_target = False
                             self._gripper_open = True
                             self._last_gripper_open = True
+                            self._arm_preposition_stable_since_s = None
                             previous_phase = phase
                             if self._m0_client is not None:
                                 m0_chunk = ()
@@ -2841,6 +2835,7 @@ class ConveyorRuntimeV1:
         self._last_policy_action.zero_()
         self._locomotion_policy_step_count = 0
         self._mobile_stable_since_s = None
+        self._arm_preposition_stable_since_s = None
         self._mobile_carry_stage: str | None = None
         self._mobile_carry_stage_started_s = 0.0
         self._mobile_carry_stable_since_s: float | None = None
@@ -3140,6 +3135,8 @@ class ConveyorRuntimeV1:
         root_x: float,
         root_planar_speed_mps: float,
         robot_fallen: bool,
+        arm_joint_error_rad: float = float("inf"),
+        arm_joint_speed_radps: float = float("inf"),
     ) -> tuple[str, float, tuple[float, float, float], bool]:
         if robot_fallen:
             raise _MobilePreconditionFailure(
@@ -3228,27 +3225,19 @@ class ConveyorRuntimeV1:
                 and sim_time_s - self._mobile_stable_since_s
                 >= _LOCOMOTION_STABLE_DWELL_S
             )
-            arm_error = float(
-                torch.max(
-                    torch.abs(
-                        self.robot.data.joint_pos[:, self.arm_joint_ids]
-                        - torch.tensor(
-                            [_PREGRASP_ARM],
-                            dtype=torch.float32,
-                            device=self.sim.device,
-                        )
-                    )
-                ).item()
-            )
             ready = (
                 base_stable
-                # The rated-effort floating-base drive can retain a small
-                # gravity residual; the Cartesian oracle closes it after the
-                # slow, collision-free joint preposition.
-                and arm_error < 0.080
+                and self._arm_preposition_ready(
+                    joint_error_rad=arm_joint_error_rad,
+                    max_joint_speed_radps=arm_joint_speed_radps,
+                    sim_time_s=sim_time_s,
+                )
                 and elapsed >= 0.30
             )
-            if not ready and elapsed >= _ARM_PREPOSITION_TIMEOUT_S:
+            if (
+                not ready
+                and elapsed >= _LOCOMOTION_ARM_PREPOSITION_TIMEOUT_S
+            ):
                 raise _MobilePreconditionFailure(
                     FailureReason.TIMEOUT,
                     "arm_preposition_timeout",
@@ -3256,6 +3245,48 @@ class ConveyorRuntimeV1:
                 )
             return stage, stage_started_at, (0.0, 0.0, 0.0), ready
         raise RuntimeError(f"unknown mobile pre-oracle stage: {stage}")
+
+    def _arm_preposition_metrics(self) -> tuple[float, float]:
+        measured = self.robot.data.joint_pos[:, self.arm_joint_ids]
+        target = torch.tensor(
+            [_PREGRASP_ARM],
+            dtype=torch.float32,
+            device=self.sim.device,
+        )
+        joint_error_rad = float(
+            torch.max(torch.abs(measured - target)).item()
+        )
+        max_joint_speed_radps = float(
+            torch.max(
+                torch.abs(
+                    self.robot.data.joint_vel[:, self.arm_joint_ids]
+                )
+            ).item()
+        )
+        return joint_error_rad, max_joint_speed_radps
+
+    def _arm_preposition_ready(
+        self,
+        *,
+        joint_error_rad: float,
+        max_joint_speed_radps: float,
+        sim_time_s: float,
+    ) -> bool:
+        stable = (
+            joint_error_rad < 0.080
+            and max_joint_speed_radps
+            <= _LOCOMOTION_ARM_PREPOSITION_MAX_JOINT_SPEED_RADPS
+        )
+        if stable:
+            if self._arm_preposition_stable_since_s is None:
+                self._arm_preposition_stable_since_s = sim_time_s
+        else:
+            self._arm_preposition_stable_since_s = None
+        return (
+            self._arm_preposition_stable_since_s is not None
+            and sim_time_s - self._arm_preposition_stable_since_s
+            >= _LOCOMOTION_ARM_PREPOSITION_STABLE_DWELL_S
+        )
 
     def _mobile_carry_command(
         self,
