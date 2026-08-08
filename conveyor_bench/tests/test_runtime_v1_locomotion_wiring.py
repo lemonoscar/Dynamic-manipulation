@@ -181,11 +181,19 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
 
 
 def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
-    source = ast.unparse(_method(_runtime_tree(), "_apply_tcp_target_base"))
+    tree = _runtime_tree()
+    source = ast.unparse(_method(tree, "_apply_tcp_target_base"))
+    episode = ast.unparse(_method(tree, "_run_episode"))
 
     assert "if distance > max_translation_m" in source
     assert "if angle > max_rotation_rad" in source
+    assert "if solve_full_target" in source
     assert "self.arm_kinematics.solve(target_base.xyz, target_base.wxyz" in source
+    assert "solve_full_target=phase in" in episode
+    start = episode.index("solve_full_target=phase in")
+    full_goal_phases = episode[start : episode.index("},", start)]
+    assert "'close'" in full_goal_phases
+    assert "'lift'" not in full_goal_phases
     assert "for value in raw_delta" in source
     assert "for value in next_position" in source
 

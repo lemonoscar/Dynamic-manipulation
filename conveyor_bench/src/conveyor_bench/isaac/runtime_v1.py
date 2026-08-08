@@ -87,6 +87,7 @@ from conveyor_bench.v1.tasking import (
 
 from .arm_kinematics import (
     CalibratedArmKinematics,
+    IKConvergenceError,
 )
 from .asset_config import (
     ARM_JOINT_NAMES,
@@ -1564,6 +1565,15 @@ class ConveyorRuntimeV1:
                                     resolved, phase
                                 )
                             ),
+                            solve_full_target=phase
+                            in {
+                                "settle",
+                                "select",
+                                "pregrasp",
+                                "track",
+                                "descend",
+                                "close",
+                            },
                         )
                     if oracle_command.terminal:
                         target_command_terminal = True
@@ -3873,6 +3883,7 @@ class ConveyorRuntimeV1:
         *,
         max_translation_m: float,
         max_rotation_rad: float = _TEACHER_MAX_ROTATION_STEP_RAD,
+        solve_full_target: bool = False,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -3884,6 +3895,7 @@ class ConveyorRuntimeV1:
             current_tcp_base,
             max_translation_m=max_translation_m,
             max_rotation_rad=max_rotation_rad,
+            solve_full_target=solve_full_target,
         )
 
     def _apply_tcp_target_base(
@@ -3893,6 +3905,7 @@ class ConveyorRuntimeV1:
         *,
         max_translation_m: float = 0.025,
         max_rotation_rad: float = 0.12,
+        solve_full_target: bool = False,
     ) -> tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -3921,11 +3934,25 @@ class ConveyorRuntimeV1:
         # folded IK branch.  The existing joint slew and tracking window below
         # remain the physical rate limiter, while ``raw_delta`` and
         # ``rotation_delta`` preserve the 25 Hz VLA label contract.
-        solution = self.arm_kinematics.solve(
-            target_base.xyz,
-            target_base.wxyz,
-            seed=self._arm_ik_seed,
-        )
+        if solve_full_target:
+            solution = self.arm_kinematics.solve(
+                target_base.xyz,
+                target_base.wxyz,
+                seed=self._arm_ik_seed,
+            )
+        else:
+            try:
+                solution = self.arm_kinematics.solve(
+                    next_position,
+                    next_orientation,
+                    seed=self._arm_ik_seed,
+                )
+            except IKConvergenceError:
+                solution = self.arm_kinematics.solve(
+                    next_position,
+                    target_base.wxyz,
+                    seed=self._arm_ik_seed,
+                )
         self._arm_ik_seed = solution.joint_positions
         self._last_ik_error_m = solution.position_error_m
         self._last_ik_iterations = solution.iterations
