@@ -99,6 +99,11 @@ V1 冻结 8 个本地程序化物体，注册表为 `assets/objects/registry.jso
 | val/seen | `part_silver_hex`, `part_orange_flange` |
 | unseen | `part_purple_bracket`, `part_cyan_gear` |
 
+当前单物体抓取课程采用确定性的治具对齐上料：蓝色长条和绿色轴绕竖直轴
+旋转 90 度，使四种 train 物体都使用同一条、经过实机模型工作空间校准的
+俯视平行夹抓腕部支路。该约束只固定初始上料朝向，不改变物体几何、质量或
+后续运动；未来的任意朝向抓取应作为独立课程扩展，不得混入本阶段示教数据。
+
 因此粗粒度划分是 6 个 seen、2 个 unseen；seen 内再冻结 4 个 train 与 2 个
 val。manifest 必须记录每个实例的 `asset_id`、类别、seen/unseen 标记、seed、
 目标 ID 和目的分拣盒。不得在导出阶段改变划分。

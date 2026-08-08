@@ -48,6 +48,24 @@ def test_round_parts_have_calibrated_rolling_resistance() -> None:
     )
 
 
+def test_grasp_curriculum_parts_are_fixture_aligned_for_one_wrist_branch(
+) -> None:
+    assets = {asset.object_id: asset for asset in load_object_registry()}
+    curriculum = {
+        "part_red_block",
+        "part_blue_bar",
+        "part_yellow_bushing",
+        "part_green_shaft",
+    }
+
+    assert all(
+        assets[object_id].grasp_affordances[0].finger_closing_axis == "y"
+        for object_id in curriculum
+    )
+    assert assets["part_blue_bar"].stable_poses_wxyz[0][3] > 0.70
+    assert assets["part_green_shaft"].stable_poses_wxyz[0][3] > 0.70
+
+
 def test_compound_geometry_extent_includes_offsets() -> None:
     assets = {asset.object_id: asset for asset in load_object_registry()}
     flange = assets["part_orange_flange"]

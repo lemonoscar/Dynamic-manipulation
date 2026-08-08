@@ -63,12 +63,12 @@
         "dynamic_friction": 0.90,
         "restitution": 0.0
       },
-      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "stable_poses_wxyz": [[0.7071067811865476, 0.0, 0.0, 0.7071067811865475]],
       "grasp_affordances": [
         {
-          "id": "top_parallel_x",
+          "id": "top_parallel_y_fixture_aligned",
           "approach_axis": "-z",
-          "finger_closing_axis": "x",
+          "finger_closing_axis": "y",
           "tcp_offset_xyz": [0.0, 0.0, 0.003],
           "required_opening_m": 0.046
         }
@@ -147,12 +147,12 @@
         "restitution": 0.0,
         "angular_damping": 5.0
       },
-      "stable_poses_wxyz": [[1.0, 0.0, 0.0, 0.0]],
+      "stable_poses_wxyz": [[0.7071067811865476, 0.0, 0.0, 0.7071067811865475]],
       "grasp_affordances": [
         {
-          "id": "top_cross_shaft",
+          "id": "top_cross_shaft_y_fixture_aligned",
           "approach_axis": "-z",
-          "finger_closing_axis": "x",
+          "finger_closing_axis": "y",
           "tcp_offset_xyz": [0.0, 0.0, 0.004],
           "required_opening_m": 0.040
         }
