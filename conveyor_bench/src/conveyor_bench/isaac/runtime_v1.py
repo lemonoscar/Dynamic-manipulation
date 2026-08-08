@@ -1573,6 +1573,7 @@ class ConveyorRuntimeV1:
                                 "track",
                                 "descend",
                                 "close",
+                                "lift",
                             },
                         )
                     if oracle_command.terminal:

@@ -193,7 +193,7 @@ def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
     start = episode.index("solve_full_target=phase in")
     full_goal_phases = episode[start : episode.index("},", start)]
     assert "'close'" in full_goal_phases
-    assert "'lift'" not in full_goal_phases
+    assert "'lift'" in full_goal_phases
     assert "for value in raw_delta" in source
     assert "for value in next_position" in source
 

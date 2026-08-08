@@ -652,8 +652,16 @@ class DynamicSortOracle:
         )
 
     def _safe_carry_z(self, current_object_z: float) -> float:
+        reference_z = (
+            float(current_object_z)
+            if self.config.release_from_high_goal
+            else max(
+                float(current_object_z),
+                self.config.goal_center_world[2],
+            )
+        )
         return (
-            max(float(current_object_z), self.config.goal_center_world[2])
+            reference_z
             + 0.5 * self.config.object_height_m
             + self.config.safe_carry_clearance_m
             + max(0.0, self.config.grasp_offset_world[2])

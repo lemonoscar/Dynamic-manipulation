@@ -567,6 +567,16 @@ def test_high_goal_drop_opens_without_entering_the_tray() -> None:
     assert _position(command) == pytest.approx(high_goal)
 
 
+def test_high_goal_lift_clears_the_object_without_double_counting_bin_height() -> None:
+    ordinary = DynamicSortOracle(config())
+    high_drop = DynamicSortOracle(
+        replace(config(), release_from_high_goal=True)
+    )
+
+    assert ordinary._safe_carry_z(0.20) == pytest.approx(0.58)
+    assert high_drop._safe_carry_z(0.20) == pytest.approx(0.48)
+
+
 def test_high_goal_drop_flag_requires_a_bool() -> None:
     with pytest.raises(ValueError, match="release_from_high_goal"):
         replace(config(), release_from_high_goal=1)
