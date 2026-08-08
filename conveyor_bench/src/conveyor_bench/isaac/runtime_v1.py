@@ -136,10 +136,19 @@ from .scene_v1 import (
 )
 
 
-# Collision-free intercept-ready posture.  With the policy-USD mount and the
-# pad-centered TCP this places the TCP at approximately [0.55, 0.0, 0.30] in
-# the robot-root frame, just above the near-side conveyor lane.
-_PREGRASP_ARM = (0.002, 1.431, 0.746, 0.686, 0.002, 0.0)
+# Collision-free overhead observation posture.  With the policy-USD mount and
+# pad-centered TCP this places the TCP at [0.50, 0.0, 0.22] in the robot-root
+# frame with the same 75-degree downward pitch used for grasp and placement.
+# Starting on this IK branch prevents the floating X5 from folding underneath
+# itself while rotating from the former near-horizontal posture at pregrasp.
+_PREGRASP_ARM = (
+    0.001490198,
+    1.763165248,
+    1.627251730,
+    -1.173088165,
+    0.000385675,
+    0.001439419,
+)
 _LOCOMOTION_PHYSICS_HZ = 400
 _LOCOMOTION_POLICY_HZ = 50
 _LOCOMOTION_DECIMATION = 8
@@ -178,7 +187,7 @@ _TEACHER_PROFILE_ID = "overhead_slow_pick_place_v1"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
 _TEACHER_LIFT_STEP_M = 0.002
-_TEACHER_MAX_ROTATION_STEP_RAD = 0.04
+_TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_RELEASE_CLEARANCE_M = 0.025

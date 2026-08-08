@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
+from conveyor_bench.v1.oracle import top_down_tcp_orientation_wxyz
 from conveyor_bench.v1.protocol import FailureReason, Pose
 from conveyor_bench.v1.stationary import (
     STATIONARY_DESTINATION_ZONE_ID,
@@ -174,10 +175,27 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     assert _literal_constant(tree, "_TEACHER_CARTESIAN_STEP_M") == 0.003
     assert _literal_constant(tree, "_TEACHER_VERTICAL_STEP_M") == 0.0015
     assert _literal_constant(tree, "_TEACHER_LIFT_STEP_M") == 0.002
-    assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.04
+    assert _literal_constant(tree, "_TEACHER_MAX_ROTATION_STEP_RAD") == 0.01
     source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
     assert "phase in {'descend', 'close'}" in source
     assert "phase == 'lift'" in source
+
+
+def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:
+    tree = _runtime_tree()
+    arm = _literal_constant(tree, "_PREGRASP_ARM")
+    kinematics = CalibratedArmKinematics.in_policy_usd_root_frame()
+
+    position, _ = kinematics.forward(arm)
+    solution = kinematics.solve(
+        position,
+        top_down_tcp_orientation_wxyz("y"),
+        seed=arm,
+    )
+
+    assert position == pytest.approx((0.50, 0.0, 0.22), abs=2.0e-4)
+    assert solution.joint_positions == pytest.approx(arm, abs=2.0e-4)
+    assert arm[3] >= -1.26
 
 
 def test_high_goal_verify_holds_the_reached_joint_target() -> None:
