@@ -56,12 +56,13 @@ class ConveyorVLAAL0LeRobotDataset:
         dataset_root = Path(root).expanduser().resolve()
         manifest = _load_manifest(dataset_root)
         try:
-            from lerobot.datasets import LeRobotDataset
+            from lerobot.datasets.lerobot_dataset import LeRobotDataset
         except ImportError as error:
             raise M0MobileError("lerobot is required to train from LeRobot v3") from error
         self.dataset = LeRobotDataset(
             repo_id=str(manifest["repo_id"]),
             root=dataset_root,
+            video_backend="pyav",
         )
         if len(self.dataset) != int(manifest["frame_count"]):
             raise M0MobileError("LeRobot training frame count disagrees with manifest")
@@ -315,7 +316,7 @@ def materialize_lerobot_v3(
             f"AL0 conversion requires lerobot=={expected_version}, got {installed_version}"
         )
     try:
-        from lerobot.datasets import LeRobotDataset
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
     except ImportError as error:
         raise M0MobileError("cannot import LeRobotDataset") from error
 
@@ -345,7 +346,11 @@ def materialize_lerobot_v3(
         )
         report = write_lerobot_episodes(dataset, roots, config)
         dataset.finalize()
-        loaded = LeRobotDataset(repo_id=resolved_repo_id, root=staging)
+        loaded = LeRobotDataset(
+            repo_id=resolved_repo_id,
+            root=staging,
+            video_backend="pyav",
+        )
         _validate_official_reload(loaded, report, config)
         manifest = {
             "schema_version": "conveyor-vla-al0-lerobot-v3-manifest-1",
