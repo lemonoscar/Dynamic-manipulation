@@ -537,3 +537,41 @@ nvidia-smi
 collector，也不得删除锁。只有精确确认原 coordinator 已退出、审计无 orphan 或
 残留 `.inprogress` 后，才能用完全相同的 source commit、dataset root、环境参数和
 production 命令恢复；采集器会跳过已发布 seed 并继续补足成功配额。
+
+## 8. Raw 到 LeRobot v3 训练集
+
+PNG/JSONL raw 是不可变真值，训练不得直接遍历其中的 PNG。质量门禁完成后，使用
+`configs/conveyorvla_al0_lerobot_v3.json` 把成功根列表转换成独立的 LeRobot v3
+派生集：Parquet 保存 `state28` 和展平的 `20×10` action，四路 MP4 分别保存
+head/wrist 的 `t-2` 与 `t` 帧。LeRobot 的 `fps=5` 表示模型查询频率；动作块仍为
+`20×10@25 Hz`，控制真值仍为 50 Hz，三者不得混写。
+
+先用一条 episode 烟测，输出目录必须不存在：
+
+```bash
+python scripts/convert_conveyorvla_al0_to_lerobot.py \
+  --episode-list DATASET_ROOT/production/successful_episode_roots.txt \
+  --max-episodes 1 \
+  --output-root DATASET_ROOT/lerobot/conveyorvla_al0_query5_v3_smoke
+```
+
+官方 reload、首帧四路视频解码、episode/frame 计数和 state/action shape 全部通过
+后，再去掉 `--max-episodes 1` 生成正式派生集。转换器固定要求 `lerobot==0.4.4`、
+H.264、成功且非 assisted 的 `conveyorvla_al0_temporal_v1`；它不会覆盖已有目录，
+也不会修改或删除 raw episode。完整转换来源和 SHA 写入
+`meta/conveyorvla_al0_conversion.json`。
+
+训练入口直接读取上述 LeRobot 根目录，并自动使用 LeRobot train split 的 state
+统计量；不再传 raw episode 或额外统计文件。双卡示例（可见卡会在进程内编号为
+0/1）：
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc_per_node=2 \
+  scripts/train_conveyorvla_al0.py \
+  --lerobot-root DATASET_ROOT/lerobot/conveyorvla_al0_query5_v3 \
+  --output-dir RUN_ROOT/conveyorvla_al0_temporal \
+  --model-root MODEL_ROOT
+```
+
+该路径固定实例化 `ConveyorVLAAL0TemporalPolicy` 和 20 步 DiT action head；旧的
+`--episode-root` 单帧入口只为历史 checkpoint 回归保留。

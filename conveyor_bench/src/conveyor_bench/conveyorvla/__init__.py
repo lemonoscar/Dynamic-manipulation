@@ -6,6 +6,19 @@ contracts.
 """
 
 from .streaming import ActionStreamBuffer, StreamChunk, StreamMerge
+from .lerobot_v3 import (
+    ConveyorVLAAL0LeRobotDataset,
+    DEFAULT_LEROBOT_V3_CONFIG_PATH,
+    LEROBOT_V3_CONFIG_SCHEMA_VERSION,
+    VIDEO_FEATURE_KEYS,
+    iter_query_records,
+    lerobot_features,
+    lerobot_frame_from_record,
+    lerobot_model_example,
+    load_lerobot_v3_config,
+    materialize_lerobot_v3,
+    write_lerobot_episodes,
+)
 from .temporal import (
     TEMPORAL_CONFIG_SCHEMA_VERSION,
     TEMPORAL_PROFILE,
@@ -19,14 +32,25 @@ from .temporal import (
 
 __all__ = [
     "ActionStreamBuffer",
+    "ConveyorVLAAL0LeRobotDataset",
+    "DEFAULT_LEROBOT_V3_CONFIG_PATH",
+    "LEROBOT_V3_CONFIG_SCHEMA_VERSION",
     "StreamChunk",
     "StreamMerge",
     "TEMPORAL_CONFIG_SCHEMA_VERSION",
     "TEMPORAL_PROFILE",
     "TEMPORAL_SCHEMA_VERSION",
     "TemporalSample",
+    "VIDEO_FEATURE_KEYS",
+    "iter_query_records",
+    "lerobot_features",
+    "lerobot_frame_from_record",
+    "lerobot_model_example",
+    "load_lerobot_v3_config",
+    "materialize_lerobot_v3",
     "load_temporal_config",
     "reconstruct_tcp_world",
     "relative_tcp_target",
     "temporal_sample_from_record",
+    "write_lerobot_episodes",
 ]

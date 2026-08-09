@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -12,6 +13,7 @@ import random
 import sys
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Any, Mapping
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,13 @@ from torch.nn.parallel import DistributedDataParallel  # noqa: E402
 from torch.utils.data import ConcatDataset, DataLoader, DistributedSampler  # noqa: E402
 
 from conveyor_bench.m0_dataset import M0MobileDataset  # noqa: E402
+from conveyor_bench.conveyorvla.lerobot_v3 import (  # noqa: E402
+    ConveyorVLAAL0LeRobotDataset,
+)
+from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
+    DEFAULT_TEMPORAL_CONFIG_PATH,
+    load_temporal_config,
+)
 from conveyor_bench.m0_dit import (  # noqa: E402
     GO2_X5_REINITIALIZED_ACTION_KEYS,
     M0DiTActionHead,
@@ -39,6 +48,7 @@ from conveyor_bench.m0_mobile import (  # noqa: E402
 )
 from conveyor_bench.m0_policy import (  # noqa: E402
     ConveyorVLAAL0Policy,
+    ConveyorVLAAL0TemporalPolicy,
     Qwen3VLInterface,
     m0_dit_config,
     transfer_robocasa_policy_weights,
@@ -47,16 +57,26 @@ from conveyor_bench.m0_policy import (  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
         "--episode-root",
         action="append",
         type=Path,
-        required=True,
         help="episode directory containing exports/m0_mobile.jsonl (repeatable)",
     )
-    parser.add_argument("--state-statistics", required=True, type=Path)
+    source.add_argument(
+        "--lerobot-root",
+        type=Path,
+        help="official LeRobot v3 dataset produced by the AL0 converter",
+    )
+    parser.add_argument("--state-statistics", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser.add_argument(
+        "--temporal-config",
+        type=Path,
+        default=DEFAULT_TEMPORAL_CONFIG_PATH,
+    )
     parser.add_argument("--model-root", type=Path)
     parser.add_argument(
         "--initial-action-checkpoint",
@@ -147,7 +167,30 @@ def _reserve_output(path: Path, rank: int, world_size: int) -> Path:
     return output
 
 
-def _datasets(args: argparse.Namespace, config: dict) -> tuple[ConcatDataset, list[dict]]:
+def _datasets(args: argparse.Namespace, config: dict) -> tuple[Any, list[dict]]:
+    if args.lerobot_root is not None:
+        if any(
+            (
+                args.all_belt_speeds,
+                args.belt_speed is not None,
+                args.task_type is not None,
+                args.allow_fixed_base,
+            )
+        ):
+            raise M0MobileError("legacy source filters cannot be used with --lerobot-root")
+        dataset = ConveyorVLAAL0LeRobotDataset(args.lerobot_root, config)
+        return dataset, [
+            {
+                "lerobot_root": str(dataset.root),
+                "repo_id": dataset.manifest["repo_id"],
+                "episodes": dataset.manifest["episode_count"],
+                "records": len(dataset),
+                "query_fps": dataset.manifest["query_fps"],
+                "action_rate_hz": dataset.manifest["action_rate_hz"],
+            }
+        ]
+    if args.state_statistics is None:
+        raise M0MobileError("--state-statistics is required with --episode-root")
     initial_filter = config["data"]["initial_training_filter"]
     if args.all_belt_speeds and not args.task_type:
         raise M0MobileError(
@@ -273,16 +316,30 @@ def _save_action_model(
     return digest.hexdigest()
 
 
-def _publish_state_statistics(source: Path, output: Path) -> str:
+def _publish_state_statistics(source: Path | Mapping[str, Any], output: Path) -> str:
     """Copy the exact normalizer input beside the deployable action head."""
 
-    payload = source.expanduser().resolve().read_bytes()
+    payload = (
+        json.dumps(source, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+        if isinstance(source, Mapping)
+        else source.expanduser().resolve().read_bytes()
+    )
     digest = hashlib.sha256(payload).hexdigest()
     destination = output / "state_statistics.json"
     temporary = output / ".state_statistics.json.tmp"
     temporary.write_bytes(payload)
     os.replace(temporary, destination)
     return digest
+
+
+def _temporal_training_config(base: dict, temporal: dict) -> dict:
+    """Reuse released artifacts/training settings with the temporal AL0 contract."""
+
+    config = copy.deepcopy(base)
+    for key in ("data", "action_model", "normalization", "vision"):
+        config[key] = copy.deepcopy(temporal[key])
+    config["schema_version"] = "conveyor-vla-al0-temporal-training-config-1"
+    return config
 
 
 def _load_initial_action_checkpoint(
@@ -318,7 +375,16 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     device, rank, local_rank, world_size = _distributed_device()
     try:
-        config = load_m0_mobile_config(args.config)
+        base_config = load_m0_mobile_config(args.config)
+        temporal_training = args.lerobot_root is not None
+        config = (
+            _temporal_training_config(
+                base_config,
+                load_temporal_config(args.temporal_config),
+            )
+            if temporal_training
+            else base_config
+        )
         training = config["training"]
         max_steps = _positive(args.max_steps, training["max_train_steps"], "max_steps")
         batch_size = _positive(
@@ -369,7 +435,12 @@ def main(argv: list[str] | None = None) -> int:
             dtype=torch.bfloat16,
             attention_implementation=args.attention_implementation,
         )
-        policy = ConveyorVLAAL0Policy(
+        policy_class = (
+            ConveyorVLAAL0TemporalPolicy
+            if temporal_training
+            else ConveyorVLAAL0Policy
+        )
+        policy = policy_class(
             qwen,
             M0DiTActionHead(m0_dit_config(config)),
             repeated_diffusion_steps=training["repeated_diffusion_steps"],
@@ -465,9 +536,13 @@ def main(argv: list[str] | None = None) -> int:
             dist.barrier()
         if rank == 0:
             action_sha256 = _save_action_model(raw_action_model, output)
-            statistics_sha256 = _publish_state_statistics(
-                args.state_statistics, output
+            statistics_source = (
+                dataset.state_statistics
+                if temporal_training
+                else args.state_statistics
             )
+            assert statistics_source is not None
+            statistics_sha256 = _publish_state_statistics(statistics_source, output)
             report = {
                 "schema_version": "conveyor-bench-m0-mobile-training-report-1",
                 "model_identity": {
@@ -479,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
                 "world_size": world_size,
                 "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
                 "dataset_records": len(dataset),
+                "data_format": "lerobot_v3" if temporal_training else "raw_jsonl",
                 "sources": sources,
                 "max_steps": max_steps,
                 "batch_size_per_device": batch_size,

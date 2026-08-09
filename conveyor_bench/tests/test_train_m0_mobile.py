@@ -12,6 +12,7 @@ pytest.importorskip("safetensors")
 from conveyor_bench.m0_dit import M0DiTActionHead, M0DiTConfig
 from conveyor_bench.m0_mobile import load_m0_mobile_config
 from conveyor_bench.m0_mobile import M0MobileError
+from conveyor_bench.conveyorvla.temporal import load_temporal_config
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "train_m0_mobile.py"
@@ -108,3 +109,15 @@ def test_all_belt_speeds_requires_explicit_task_type(tmp_path) -> None:
 
     with pytest.raises(M0MobileError, match="explicit --task-type"):
         TRAIN._datasets(args, load_m0_mobile_config())
+
+
+def test_temporal_training_reuses_artifacts_with_20_step_contract() -> None:
+    config = TRAIN._temporal_training_config(
+        load_m0_mobile_config(),
+        load_temporal_config(),
+    )
+
+    assert config["action_model"]["action_horizon"] == 20
+    assert config["data"]["history_offsets_model_ticks"] == [-2, 0]
+    assert config["vlm"]["relative_path"] == "Qwen3-VL-4B-Instruct"
+    assert config["training"]["repeated_diffusion_steps"] == 4

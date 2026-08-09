@@ -22,6 +22,8 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
   [CONVEYORVLA_AL0_GUIDE.md](CONVEYORVLA_AL0_GUIDE.md)
 - ConveyorVLA AL0 时序架构与正式采集：
   [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)
+- ConveyorVLA AL0 LeRobot v3 训练格式：
+  [configs/conveyorvla_al0_lerobot_v3.json](configs/conveyorvla_al0_lerobot_v3.json)
 - 下一代动态抓取结构：
   [CONVEYORVLA_AL1_DESIGN.md](CONVEYORVLA_AL1_DESIGN.md)
 - V0 冻结规范：[BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
@@ -102,6 +104,7 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── configs/v0.json             # V0 协议与横向布局快照
 ├── configs/v1.json             # V1 冻结快照
 ├── configs/v2.json             # V2 场景、任务矩阵与门槛快照
+├── configs/conveyorvla_al0_lerobot_v3.json # AL0 5 Hz 查询/25 Hz action 的训练格式
 ├── COLLECTION_GUIDE.md         # V1 门禁、采集、验收与导出操作手册
 ├── CONVEYORVLA_AL0_GUIDE.md    # AL0 服务、离线阶段门禁与 Isaac 在线闭环
 ├── CONVEYORVLA_AL0_EXECUTION_PLAN.md # 时序架构、低速课程与正式采集门槛
@@ -121,6 +124,7 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── scripts/check_v1_camera_gate.py # V1 相机时变与策略可见性门禁
 ├── scripts/export_v1.py        # V1 到 DynamicVLA/AL0 的离线投影
 ├── scripts/collect_conveyorvla_al0_grasp.py # AL0 低速成功配额采集器
+├── scripts/convert_conveyorvla_al0_to_lerobot.py # 成功 raw 到 LeRobot v3
 ├── scripts/smoke_m0_aml.py     # AL0 legacy-profile AML 烟测
 ├── scripts/train_conveyorvla_al0.py
 ├── scripts/serve_conveyorvla_al0.py

@@ -1,0 +1,139 @@
+{
+  "schema_version": "conveyor-vla-al0-lerobot-v3-config-1",
+  "model_identity": {
+    "family": "ConveyorVLA",
+    "variant": "AL0",
+    "name": "ConveyorVLA AL0"
+  },
+  "format": {
+    "dataset_version": "v3.0",
+    "lerobot_package_version": "0.4.4",
+    "repo_id": "local/conveyorvla-al0",
+    "robot_type": "go2_x5_mobile_manipulator",
+    "use_videos": true
+  },
+  "source": {
+    "profile": "conveyorvla_al0_temporal_v1",
+    "schema_version": "conveyor-vla-al0-temporal-v1",
+    "export_relative_path": "exports/conveyorvla_al0_temporal.jsonl",
+    "required_task_scope": "grasp_only",
+    "required_outcome": "success",
+    "require_unassisted": true
+  },
+  "sampling": {
+    "control_hz": 50,
+    "source_model_hz": 25,
+    "query_fps": 5,
+    "query_stride_model_ticks": 5,
+    "query_anchor": "first_eligible_record",
+    "history_offsets_model_ticks": [-2, 0],
+    "history_span_s": 0.08,
+    "action_rate_hz": 25,
+    "action_horizon": 20,
+    "action_horizon_s": 0.8
+  },
+  "features": {
+    "videos": [
+      {
+        "key": "observation.images.head_tminus2",
+        "source_camera_id": "head_rgb",
+        "history_offset_model_ticks": -2,
+        "shape": [224, 224, 3]
+      },
+      {
+        "key": "observation.images.head",
+        "source_camera_id": "head_rgb",
+        "history_offset_model_ticks": 0,
+        "shape": [224, 224, 3]
+      },
+      {
+        "key": "observation.images.wrist_tminus2",
+        "source_camera_id": "wrist_rgb",
+        "history_offset_model_ticks": -2,
+        "shape": [224, 224, 3]
+      },
+      {
+        "key": "observation.images.wrist",
+        "source_camera_id": "wrist_rgb",
+        "history_offset_model_ticks": 0,
+        "shape": [224, 224, 3]
+      }
+    ],
+    "state": {
+      "key": "observation.state",
+      "dtype": "float32",
+      "shape": [28],
+      "names": [
+        "root_linear_velocity_body.x",
+        "root_linear_velocity_body.y",
+        "root_linear_velocity_body.z",
+        "root_angular_velocity_body.x",
+        "root_angular_velocity_body.y",
+        "root_angular_velocity_body.z",
+        "projected_gravity_body.x",
+        "projected_gravity_body.y",
+        "projected_gravity_body.z",
+        "arm_joint_position.1",
+        "arm_joint_position.2",
+        "arm_joint_position.3",
+        "arm_joint_position.4",
+        "arm_joint_position.5",
+        "arm_joint_position.6",
+        "arm_joint_velocity.1",
+        "arm_joint_velocity.2",
+        "arm_joint_velocity.3",
+        "arm_joint_velocity.4",
+        "arm_joint_velocity.5",
+        "arm_joint_velocity.6",
+        "tcp_position_base.x",
+        "tcp_position_base.y",
+        "tcp_position_base.z",
+        "tcp_rotation_vector_base.x",
+        "tcp_rotation_vector_base.y",
+        "tcp_rotation_vector_base.z",
+        "gripper_open_fraction"
+      ]
+    },
+    "action": {
+      "key": "action",
+      "dtype": "float32",
+      "shape": [200],
+      "logical_shape": [20, 10],
+      "flatten_order": "time_major",
+      "step_names": [
+        "base_velocity_body.vx",
+        "base_velocity_body.vy",
+        "base_velocity_body.wz",
+        "tcp_delta_observation_root.x",
+        "tcp_delta_observation_root.y",
+        "tcp_delta_observation_root.z",
+        "tcp_delta_rotation_vector.x",
+        "tcp_delta_rotation_vector.y",
+        "tcp_delta_rotation_vector.z",
+        "gripper_open_fraction"
+      ],
+      "dimension_mask": [true, false, true, true, true, true, true, true, true, true],
+      "semantics": "future mean base velocity plus independent future TCP pose relative to observation root/TCP plus absolute gripper"
+    },
+    "task_key": "task",
+    "observer_camera_is_model_input": false,
+    "object_state_is_model_input": false
+  },
+  "encoding": {
+    "vcodec": "h264",
+    "image_writer_threads": 8,
+    "metadata_buffer_size": 10,
+    "batch_encoding_size": 1,
+    "encoder_threads": 4,
+    "streaming_encoding": false
+  },
+  "validation": {
+    "require_official_reload": true,
+    "require_first_frame_decode": true,
+    "require_exact_episode_count": true,
+    "require_exact_frame_count": true,
+    "require_finite_state_and_action": true,
+    "require_all_four_video_features": true,
+    "never_overwrite_output": true
+  }
+}

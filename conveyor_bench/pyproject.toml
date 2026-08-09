@@ -23,6 +23,10 @@ conveyorvla = [
   "safetensors>=0.6",
   "Pillow>=10",
 ]
+lerobot = [
+  "lerobot==0.4.4",
+  "Pillow>=10,<13",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
