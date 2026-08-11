@@ -22,12 +22,12 @@ LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
 # Observer-only view at about 1.5 times the V1 target distance.  It remains
 # below the lowest candidate-room ceiling while keeping the complete workcell
 # centered in view.
-V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-4.00, -3.00, 2.10)
+V3_OVERVIEW_CAMERA_OFFSET_XYZ = (4.00, -3.50, 2.10)
 V3_OVERVIEW_CAMERA_OFFSET_WXYZ = (
-    0.9491926869,
-    -0.0407995283,
-    0.1384975349,
-    0.2796195172,
+    0.3874960041,
+    -0.1502574083,
+    0.0641746222,
+    0.9072767912,
 )
 V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
 # Collision-mesh raycasts identify this as the center of the large empty room.

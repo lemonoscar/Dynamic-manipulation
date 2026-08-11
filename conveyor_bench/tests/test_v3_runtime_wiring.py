@@ -45,12 +45,12 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
         and len(node.targets) == 1
         and isinstance(node.targets[0], ast.Name)
     }
-    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-4.0, -3.0, 2.1)
+    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (4.0, -3.5, 2.1)
     assert constants["V3_OVERVIEW_CAMERA_OFFSET_WXYZ"] == (
-        0.9491926869,
-        -0.0407995283,
-        0.1384975349,
-        0.2796195172,
+        0.3874960041,
+        -0.1502574083,
+        0.0641746222,
+        0.9072767912,
     )
     assert constants["V3_OVERVIEW_CAMERA_FAR_CLIPPING_M"] == 50.0
     assert constants["V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M"] == (
