@@ -506,6 +506,7 @@ def _parse_manifest(
         result.fail(path, "task object instance IDs must be unique")
     _validate_tasking_split(
         path,
+        episode,
         task.get("metadata"),
         task_asset_ids,
         result,
@@ -674,6 +675,7 @@ def _parse_manifest(
 
 def _validate_tasking_split(
     path: Path,
+    episode: Mapping[str, Any],
     metadata: Any,
     asset_ids: Sequence[str],
     result: ValidationResult,
@@ -713,11 +715,51 @@ def _validate_tasking_split(
 
     if split is None:
         return
-    try:
-        allowed_assets = set(split_object_ids()[split])
-    except (OSError, ValueError) as error:
-        result.fail(path, f"cannot resolve curriculum asset splits: {error}")
-        return
+    episode_metadata = episode.get("metadata")
+    scene = (
+        episode_metadata.get("scene_profile")
+        if isinstance(episode_metadata, Mapping)
+        else None
+    )
+    if (
+        isinstance(scene, Mapping)
+        and scene.get("backend") == "isaac_rtx_native_nurec"
+    ):
+        fixture = scene.get("object_fixture_contract")
+        fixture_objects = (
+            fixture.get("objects") if isinstance(fixture, Mapping) else None
+        )
+        profile_ids = (
+            tuple(
+                item.get("object_id")
+                for item in fixture_objects
+                if isinstance(item, Mapping)
+                and isinstance(item.get("object_id"), str)
+            )
+            if _is_sequence(fixture_objects)
+            else ()
+        )
+        fixtures_valid = (
+            isinstance(fixture, Mapping)
+            and fixture.get("all_rigid_bodies_valid") is True
+            and fixture.get("all_visuals_composed") is True
+            and len(profile_ids) == len(fixture_objects)
+            and len(profile_ids) == len(set(profile_ids))
+            and bool(profile_ids)
+            and all(profile_ids)
+        )
+        if not fixtures_valid:
+            result.fail(path, "V3 object fixture contract is invalid")
+            return
+        allowed_assets = (
+            set(profile_ids) if split is CurriculumSplit.TRAIN else set()
+        )
+    else:
+        try:
+            allowed_assets = set(split_object_ids()[split])
+        except (OSError, ValueError) as error:
+            result.fail(path, f"cannot resolve curriculum asset splits: {error}")
+            return
     leaked_assets = sorted(set(asset_ids) - allowed_assets)
     if leaked_assets:
         result.fail(

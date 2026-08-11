@@ -21,6 +21,7 @@ from isaaclab.utils import configclass
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 from conveyor_bench.v1.assets import ObjectAsset
+from conveyor_bench.v3.objects import V3_VISUAL_FIXTURES
 
 from .scene import _collision
 from .scene_v1 import (
@@ -73,6 +74,8 @@ class V3RigidObjectCfg(RigidObjectSpawnerCfg):
     func: Callable = MISSING
     object_id: str = MISSING
     visual_usd_path: str = MISSING
+    visual_scale_xyz: tuple[float, float, float] = MISSING
+    visual_orientation_wxyz: tuple[float, float, float, float] = MISSING
     geometry: dict[str, Any] = MISSING
     physics_material: sim_utils.RigidBodyMaterialCfg = MISSING
 
@@ -100,6 +103,8 @@ def spawn_v3_rigid_object(
     create_prim(
         f"{prim_path}/Visual",
         usd_path=cfg.visual_usd_path,
+        orientation=cfg.visual_orientation_wxyz,
+        scale=cfg.visual_scale_xyz,
         stage=stage,
     )
 
@@ -153,6 +158,12 @@ def _v3_object_cfg(
     asset: ObjectAsset,
     visual_usd_path: Path,
 ) -> RigidObjectCfg:
+    try:
+        visual_fixture = V3_VISUAL_FIXTURES[asset.object_id]
+    except KeyError as exc:
+        raise KeyError(
+            f"V3 visual fixture is missing for {asset.object_id!r}"
+        ) from exc
     return RigidObjectCfg(
         prim_path=f"{{ENV_REGEX_NS}}/{V3_OBJECT_PRIM_BASENAMES[index]}",
         init_state=RigidObjectCfg.InitialStateCfg(
@@ -163,6 +174,10 @@ def _v3_object_cfg(
             func=spawn_v3_rigid_object,
             object_id=asset.object_id,
             visual_usd_path=str(visual_usd_path),
+            visual_scale_xyz=tuple(visual_fixture["scale_xyz"]),
+            visual_orientation_wxyz=tuple(
+                visual_fixture["orientation_wxyz"]
+            ),
             geometry=dict(asset.geometry),
             mass_props=sim_utils.MassPropertiesCfg(mass=asset.mass_kg),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
@@ -320,14 +335,41 @@ def validate_v3_object_fixtures(
         if not collision.HasAPI(UsdPhysics.CollisionAPI):
             raise RuntimeError(f"V3 object has no collision: {root_path}")
         bounds = cache.ComputeWorldBound(visual).ComputeAlignedRange()
+        minimum = bounds.GetMin()
+        maximum = bounds.GetMax()
         size = tuple(
             float(value)
-            for value in (bounds.GetMax() - bounds.GetMin())
+            for value in (maximum - minimum)
         )
-        if any(value <= 1.0e-4 or value >= 2.0 for value in size):
+        expected_size = (
+            2.0 * float(asset.geometry["radius_m"]),
+            2.0 * float(asset.geometry["radius_m"]),
+            float(asset.geometry["height_m"]),
+        )
+        if any(
+            abs(value - expected) > 0.006
+            for value, expected in zip(size, expected_size, strict=True)
+        ):
             raise RuntimeError(
-                f"V3 object visual has implausible bounds: {asset.object_id}={size}"
+                "V3 object visual/collider size mismatch: "
+                f"{asset.object_id} visual={size}, expected={expected_size}"
             )
+        center = (minimum + maximum) * 0.5
+        root_translation = (
+            UsdGeom.Xformable(root)
+            .ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            .ExtractTranslation()
+        )
+        center_offset = tuple(
+            float(center[index] - root_translation[index])
+            for index in range(3)
+        )
+        if sum(value * value for value in center_offset) > 0.015**2:
+            raise RuntimeError(
+                "V3 object visual is not centered on its collider: "
+                f"{asset.object_id} offset={center_offset}"
+            )
+        visual_fixture = V3_VISUAL_FIXTURES[asset.object_id]
         reports.append(
             {
                 "object_id": asset.object_id,
@@ -337,6 +379,14 @@ def validate_v3_object_fixtures(
                 "collision_prim": str(collision.GetPath()),
                 "visual_usd": str(object_usd_paths[asset.object_id]),
                 "visual_world_aabb_size_m": list(size),
+                "visual_center_offset_from_rigid_root_m": list(center_offset),
+                "source_visual_aabb_size": list(
+                    visual_fixture["source_aabb_size"]
+                ),
+                "visual_scale_xyz": list(visual_fixture["scale_xyz"]),
+                "visual_orientation_wxyz": list(
+                    visual_fixture["orientation_wxyz"]
+                ),
                 "collision_geometry": dict(asset.geometry),
                 "mass_kg": asset.mass_kg,
                 "analytic_collision_fixture": True,

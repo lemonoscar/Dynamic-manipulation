@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 STATIONARY_TARGET_ASSET_ID = "part_red_block"
 STATIONARY_DESTINATION_ZONE_ID = "sort_bin_blue"
 STATIONARY_SPAWN_ORIGIN_XY_M = (0.65, 0.10)
+V3_NUREC_BACKEND = "isaac_rtx_native_nurec"
 
 
 @dataclass(frozen=True)
@@ -71,9 +72,10 @@ def validate_stationary_episode_contract(
         raise ValueError("episode and layout seeds must equal task.seed")
 
     metadata = _mapping(task.get("metadata"), "task.metadata")
+    target_asset_id = _stationary_target_asset_id(episode)
     expected_metadata = {
         "task_family": "single_target",
-        "target_asset_id": STATIONARY_TARGET_ASSET_ID,
+        "target_asset_id": target_asset_id,
         "destination_zone_id": STATIONARY_DESTINATION_ZONE_ID,
         "benchmark_role": "stationary_belt_diagnostic",
         "belt_motion": "stationary",
@@ -117,8 +119,10 @@ def validate_stationary_episode_contract(
     if len(objects) != 1:
         raise ValueError("stationary_sort requires exactly one task object")
     target = _mapping(objects[0], "task.objects[0]")
-    if target.get("asset_id") != STATIONARY_TARGET_ASSET_ID:
-        raise ValueError("stationary task object must use part_red_block")
+    if target.get("asset_id") != target_asset_id:
+        raise ValueError(
+            f"stationary task object must use {target_asset_id}"
+        )
     if target.get("goal_zone_id") != STATIONARY_DESTINATION_ZONE_ID:
         raise ValueError("stationary task object must target sort_bin_blue")
     instance_id = target.get("instance_id")
@@ -146,6 +150,40 @@ def validate_stationary_episode_contract(
     ):
         raise ValueError("stationary task must register sort_bin_blue")
     return scenario
+
+
+def _stationary_target_asset_id(episode: Mapping[str, Any]) -> str:
+    """Resolve the V1 default or one verified profile-owned rigid fixture."""
+
+    metadata = episode.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return STATIONARY_TARGET_ASSET_ID
+    scene = metadata.get("scene_profile")
+    if not isinstance(scene, Mapping) or scene.get("backend") != V3_NUREC_BACKEND:
+        return STATIONARY_TARGET_ASSET_ID
+    fixture = _mapping(
+        scene.get("object_fixture_contract"),
+        "episode.metadata.scene_profile.object_fixture_contract",
+    )
+    if (
+        fixture.get("all_rigid_bodies_valid") is not True
+        or fixture.get("all_visuals_composed") is not True
+    ):
+        raise ValueError("V3 stationary object fixture did not pass")
+    objects = _sequence(fixture.get("objects"), "V3 object fixtures")
+    object_ids = [
+        item.get("object_id")
+        for item in objects
+        if isinstance(item, Mapping)
+    ]
+    if (
+        len(objects) != 1
+        or len(object_ids) != 1
+        or not isinstance(object_ids[0], str)
+        or not object_ids[0]
+    ):
+        raise ValueError("V3 stationary profile requires one object fixture")
+    return object_ids[0]
 
 
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:

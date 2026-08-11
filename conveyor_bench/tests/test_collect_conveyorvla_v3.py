@@ -70,3 +70,14 @@ def test_v3_collection_rejects_out_of_contract_work(
 
     with pytest.raises(module.CollectionError):
         module._resolve(args)
+
+
+def test_v3_stationary_collection_requires_registered_seed(tmp_path: Path) -> None:
+    module = _load()
+    args = _args(tmp_path)
+    args.asset_root.mkdir()
+    args.belt_speed = 0.0
+    args.seed = 0
+
+    with pytest.raises(module.CollectionError, match="registered scenario seeds"):
+        module._resolve(args)

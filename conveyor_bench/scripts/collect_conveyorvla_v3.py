@@ -20,6 +20,7 @@ SCHEMA_VERSION = "conveyorvla-v3-collection-1"
 TARGET = "cola"
 DESTINATION = "sort_bin_blue"
 MAX_EPISODES_PER_PROCESS = 8
+STATIONARY_SEEDS = frozenset((1101, 1102, 1103, 2101, 3101))
 REQUIRED_FILES = (
     "manifest.json",
     "summary.json",
@@ -299,7 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="fixed_base",
     )
     parser.add_argument("--episodes", type=int, default=3)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=1101)
     parser.add_argument("--belt-speed", type=float, default=0.0)
     parser.add_argument("--target-intercept-lead-time", type=float, default=5.0)
     parser.add_argument("--max-duration", type=float, default=60.0)
@@ -330,6 +331,11 @@ def _resolve(args: argparse.Namespace) -> argparse.Namespace:
         raise CollectionError("--seed cannot be negative")
     if not 0.0 <= args.belt_speed <= 0.01:
         raise CollectionError("V3 pilot belt speed must be within [0, 0.01] m/s")
+    requested_seeds = set(range(args.seed, args.seed + args.episodes))
+    if args.belt_speed == 0.0 and not requested_seeds <= STATIONARY_SEEDS:
+        raise CollectionError(
+            "stationary V3 collection requires registered scenario seeds"
+        )
     if args.max_duration <= 0.0:
         raise CollectionError("--max-duration must be positive")
     return args

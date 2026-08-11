@@ -58,10 +58,39 @@ V3_OBJECT_SPLITS = {
 }
 V3_STATIONARY_TARGET_ASSET_ID = COLA_OBJECT.object_id
 
+# The source USD is authored in normalized mesh units with its can axis on Y.
+# These values were measured from the hash-locked USD on Isaac Sim 5.1.  The
+# transform maps that visual to its annotation size (65 x 65 x 120 mm) while
+# the analytic collider remains authored directly in SI units.
+COLA_SOURCE_VISUAL_AABB_SIZE = (
+    1.9999998807907104,
+    3.5763320922851562,
+    2.0000009536743164,
+)
+COLA_VISUAL_SCALE_XYZ = (
+    0.03250000193715107,
+    0.033553930927964805,
+    0.03249998450279975,
+)
+COLA_VISUAL_ORIENTATION_WXYZ = (
+    0.7071067811865476,
+    0.7071067811865475,
+    0.0,
+    0.0,
+)
+V3_VISUAL_FIXTURES = {
+    COLA_OBJECT.object_id: {
+        "source_aabb_size": COLA_SOURCE_VISUAL_AABB_SIZE,
+        "scale_xyz": COLA_VISUAL_SCALE_XYZ,
+        "orientation_wxyz": COLA_VISUAL_ORIENTATION_WXYZ,
+    }
+}
+
 
 __all__ = [
     "COLA_OBJECT",
     "V3_OBJECT_ASSETS",
     "V3_OBJECT_SPLITS",
     "V3_STATIONARY_TARGET_ASSET_ID",
+    "V3_VISUAL_FIXTURES",
 ]

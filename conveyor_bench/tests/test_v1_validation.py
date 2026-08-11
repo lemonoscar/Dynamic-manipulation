@@ -614,6 +614,34 @@ def test_accepts_registered_stationary_scenarios(tmp_path, seed) -> None:
     assert result.ok, result.errors
 
 
+def test_accepts_v3_profile_owned_stationary_cola(tmp_path) -> None:
+    paths = _make_dataset(tmp_path, success=True, with_distractor=False)
+    manifest = _declare_stationary_contract(paths, seed=1101)
+    episode = manifest["episode"]
+    task = episode["task"]
+    task["objects"][0]["asset_id"] = "cola"
+    task["metadata"]["target_asset_id"] = "cola"
+    task["metadata"]["active_asset_ids"] = ["cola"]
+    episode["metadata"]["scene_profile"] = {
+        "backend": "isaac_rtx_native_nurec",
+        "object_fixture_contract": {
+            "all_rigid_bodies_valid": True,
+            "all_visuals_composed": True,
+            "objects": [{"object_id": "cola"}],
+        },
+    }
+    _write_json(paths["manifest"], manifest)
+    events = _read_jsonl(paths["events"])
+    next(
+        event for event in events if event["kind"] == "object_spawned"
+    )["payload"]["asset_id"] = "cola"
+    _write_jsonl(paths["events"], events)
+
+    result = validate_v1_dataset(tmp_path)
+
+    assert result.ok, result.errors
+
+
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     (
