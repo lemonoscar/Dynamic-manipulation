@@ -539,9 +539,10 @@ def test_runtime_consumes_split_local_tasking_contract() -> None:
     assert "curriculum_split" in options_source
     assert "task_family" in options_source
     assert "instruction_language" in options_source
-    assert "split_object_ids()[self.curriculum_split]" in options_source
-    assert "split_object_ids()[self.options.curriculum_split]" in (
-        make_task_source
+    assert "split_ids[self.curriculum_split]" in options_source
+    assert (
+        "self.options.object_split_ids[self.options.curriculum_split]"
+        in make_task_source
     )
 
 

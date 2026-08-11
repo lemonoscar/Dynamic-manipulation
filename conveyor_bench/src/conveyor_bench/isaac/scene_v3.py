@@ -54,8 +54,15 @@ V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M = (
     -0.1381941050,
 )
 V3_LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
-V3_OBJECT_PRIM_BASENAMES = tuple(
-    f"Object{index:02d}" for index in range(8)
+V3_OBJECT_PRIM_BASENAMES = (
+    "Object00",
+    "Object01",
+    "Object02",
+    "Object03",
+    "Object04",
+    "Object05",
+    "Object06",
+    "Object07",
 )
 
 
