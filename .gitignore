@@ -51,5 +51,9 @@ kit/logs/
 outputs/
 conveyor_bench/outputs/
 
+# SSH-delivered V3 NuRec/object sidecar assets (never publish to Git)
+conveyor_bench/.local_assets/
+conveyor_bench/assets_sidecar/
+
 # Local project-planning document (do not publish)
 /毕业设计计划.pdf

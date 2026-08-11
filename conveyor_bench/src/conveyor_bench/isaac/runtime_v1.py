@@ -713,6 +713,7 @@ class ConveyorRuntimeV1:
                 scene_cfg.overview_camera = None
             self.scene = InteractiveScene(scene_cfg)
             stage = omni.usd.get_context().get_stage()
+            self._post_scene_creation(stage)
             self.gripper_collision_contract = (
                 apply_pct_gripper_collision_patch(
                     stage,
@@ -762,6 +763,7 @@ class ConveyorRuntimeV1:
             "locomotion_policy",
             "_tcp_offset",
             "gripper_collision_contract",
+            "scene_stage_contract",
         ):
             if hasattr(self, name):
                 delattr(self, name)
@@ -817,6 +819,17 @@ class ConveyorRuntimeV1:
             lazy_sensor_update=True,
         )
         return scene_cfg
+
+    def _post_scene_creation(self, stage: Any) -> None:
+        """Validate profile-specific USD composition before simulation reset."""
+
+        del stage
+        self.scene_stage_contract: dict[str, Any] = {}
+
+    def _scene_metadata(self) -> dict[str, Any]:
+        """Return additive scene provenance for the episode manifest."""
+
+        return {}
 
     def _viewer_camera_view(
         self,
@@ -1095,6 +1108,7 @@ class ConveyorRuntimeV1:
                     else None
                 ),
                 "layout_id": self._layout_id(),
+                "scene_profile": self._scene_metadata(),
                 "cameras": self._camera_contract(),
                 "canonical_action": {
                     "layout": [

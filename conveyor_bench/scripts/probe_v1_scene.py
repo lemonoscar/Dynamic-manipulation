@@ -17,6 +17,12 @@ from isaaclab.app import AppLauncher
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--scene-profile",
+        choices=("v1", "v3_nurec"),
+        default="v1",
+    )
+    parser.add_argument("--v3-asset-root", type=Path)
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -65,6 +71,19 @@ def _letterbox(image, *, width: int, height: int):
 
 def main() -> int:
     args = build_parser().parse_args()
+    v3_bundle = None
+    v3_runtime_layer = None
+    if args.scene_profile == "v3_nurec":
+        from conveyor_bench.v3.assets import validate_asset_bundle
+
+        v3_bundle = validate_asset_bundle(
+            args.v3_asset_root,
+            verify_all_hashes=True,
+        )
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        v3_runtime_layer = v3_bundle.write_runtime_layer(
+            args.output_dir / "liangzhu_conveyorvla_v3.usda"
+        )
     app = AppLauncher(args)
     simulation_app = app.app
     try:
@@ -115,14 +134,27 @@ def main() -> int:
                 ),
             )
         )
-        scene = InteractiveScene(
-            ConveyorSceneV1Cfg(
+        if args.scene_profile == "v3_nurec":
+            from conveyor_bench.isaac.scene_v3 import (
+                make_conveyor_scene_v3_cfg,
+                validate_liangzhu_stage,
+            )
+
+            assert v3_runtime_layer is not None
+            scene_cfg = make_conveyor_scene_v3_cfg(v3_runtime_layer)
+        else:
+            scene_cfg = ConveyorSceneV1Cfg(
                 num_envs=1,
                 env_spacing=3.0,
                 replicate_physics=True,
                 clone_in_fabric=False,
                 lazy_sensor_update=True,
             )
+        scene = InteractiveScene(scene_cfg)
+        scene_stage_contract = (
+            validate_liangzhu_stage(omni.usd.get_context().get_stage())
+            if args.scene_profile == "v3_nurec"
+            else {}
         )
         apply_pct_gripper_collision_patch(
             omni.usd.get_context().get_stage(),
@@ -276,7 +308,16 @@ def main() -> int:
         cv2.imwrite(str(args.output_dir / "three_camera_scene.png"), mosaic)
 
         report = {
-            "layout_id": "transverse_dynamic_sort_station_v1",
+            "layout_id": (
+                "transverse_dynamic_sort_liangzhu_nurec_v3"
+                if args.scene_profile == "v3_nurec"
+                else "transverse_dynamic_sort_station_v1"
+            ),
+            "scene_profile": args.scene_profile,
+            "scene_stage_contract": scene_stage_contract,
+            "v3_asset_bundle": (
+                v3_bundle.report.to_dict() if v3_bundle is not None else None
+            ),
             "belt_speed_mps": args.belt_speed,
             "belt_surface_velocity": list(
                 surface_api.GetSurfaceVelocityAttr().Get()

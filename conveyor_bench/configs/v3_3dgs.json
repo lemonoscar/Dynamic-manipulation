@@ -1,22 +1,42 @@
 {
-  "schema_version": 1,
-  "profile_id": "conveyor-bench-v3-3dgs",
-  "status": "design",
+  "schema_version": 2,
+  "profile_id": "conveyor-bench-v3-liangzhu-nurec",
+  "status": "integration",
   "collection_ready": false,
+  "collection_blockers": [
+    "native_nurec_remote_render_gate",
+    "liangzhu_collision_clearance_gate",
+    "carry_to_preplace_teacher_transition",
+    "real_object_rigid_body_fixture_gate"
+  ],
   "version_boundary": {
     "canonical_protocol": "conveyor-bench-v1",
     "base_scene_config": "configs/v1.json",
-    "initial_scene_id": "transverse_dynamic_sort_station_v3_3dgs",
+    "initial_scene_id": "transverse_dynamic_sort_liangzhu_nurec_v3",
     "scope": "near_conveyor_single_target",
     "frozen_training_contract": true
   },
   "runtime": {
-    "backend": "hybrid_two_pass_3dgs",
+    "backend": "isaac_rtx_native_nurec",
+    "composition": "single_pass_registered_compositing",
     "network_required": false,
     "runtime_downloads_allowed": false,
-    "external_project_files_required": false,
-    "project_relative_assets_only": true,
-    "deterministic_offline_compositing": true
+    "repository_embedded_large_assets": false,
+    "ssh_sidecar_asset_bundle_required": true,
+    "deterministic_offline_compositing": false,
+    "fallback_backend": "two_pass_depth_composite_only_after_native_gate_failure"
+  },
+  "asset_delivery": {
+    "method": "ssh_sidecar",
+    "root_environment_variable": "CONVEYOR_BENCH_V3_ASSET_ROOT",
+    "manifest": "TRANSFER_MANIFEST.sha256",
+    "hash_algorithm": "sha256",
+    "symlinks_allowed": false,
+    "overwrite_existing_bundle": false,
+    "required_top_level_directories": [
+      "liangzhu",
+      "objects"
+    ]
   },
   "rates_hz": {
     "physics": 400,
@@ -26,107 +46,113 @@
   },
   "physics_layer": {
     "source_scene": "transverse_dynamic_sort_station_v1",
-    "engine": "Isaac Sim/PhysX",
-    "reuse_without_geometry_changes": [
+    "engine": "Isaac Sim PhysX",
+    "reuse_without_contract_changes": [
       "go2_x5_robot",
       "surface_velocity_conveyor",
-      "object_registry",
-      "receptacles",
       "contact_sensors",
       "teacher",
-      "success_evaluator"
+      "success_evaluator",
+      "recorder"
     ],
-    "collision_source": "existing_procedural_v1_colliders",
+    "static_collision_asset": "liangzhu/usd/liangzhu_collision.usda",
+    "static_collision_prim": "/World/PhysicsScene/CollisionScene/LiangzhuCollision",
+    "procedural_ground_enabled": false,
     "gaussian_splats_have_collision": false
   },
   "gaussian_layer": {
-    "asset_root": "assets/workcells/conveyor_station_v3_3dgs",
-    "asset_manifest": "assets/workcells/conveyor_station_v3_3dgs/ASSET_MANIFEST.json",
-    "visual_ply": "assets/workcells/conveyor_station_v3_3dgs/scene_static_gaussians.ply",
-    "calibration": "assets/workcells/conveyor_station_v3_3dgs/calibration_sim_from_gs.json",
-    "capture_masks": "assets/workcells/conveyor_station_v3_3dgs/capture_masks",
-    "photometric_calibration": "assets/workcells/conveyor_station_v3_3dgs/photometric_calibration.json",
-    "renderer": "gsplat",
-    "render_mode": "RGB+D",
-    "coordinate_policy": "transform_gaussians_into_sim_world_on_load",
-    "ply_contract": {
-      "format": "binary_little_endian_1.0",
-      "scalar_type": "float32",
-      "required_vertex_properties": [
-        "x",
-        "y",
-        "z",
-        "f_dc_0",
-        "f_dc_1",
-        "f_dc_2",
-        "opacity",
-        "scale_0",
-        "scale_1",
-        "scale_2",
-        "rot_0",
-        "rot_1",
-        "rot_2",
-        "rot_3"
-      ]
+    "asset_container": "liangzhu/usdz/liangzhu.usdz",
+    "source_scene": "liangzhu/liangzhu.usda",
+    "source_runtime_manifest": "liangzhu/runtime_asset_manifest.json",
+    "source_visual_prim": "/World/VisualScene/GaussianScene",
+    "nurec_archive_member": "liangzhu_cropped_raw.nurec",
+    "renderer": "Omniverse RTX native NuRec",
+    "render_mode": "RGB registered compositing",
+    "source_rotate_xyz_deg": [
+      270.0,
+      0.0,
+      0.0
+    ],
+    "sim_translation_xyz_m": [
+      1.4849319648011197,
+      -5.126136502764003,
+      0.13819410500645898
+    ],
+    "sim_scale_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "task_frame": {
+    "source_robot_root_xyz_m": [
+      -1.4849319648011197,
+      5.126136502764003,
+      0.29281728532721385
+    ],
+    "source_robot_root_to_ground_m": 0.43101139033367283,
+    "sim_robot_anchor_xy_m": [
+      0.0,
+      0.0
+    ],
+    "conveyor_center_xy_m": [
+      0.7,
+      0.0
+    ],
+    "conveyor_center_source_xy_m": [
+      -0.7849319648011197,
+      5.126136502764003
+    ],
+    "conveyor_long_axis": "world_y",
+    "transport_direction_world": [
+      0.0,
+      -1.0,
+      0.0
+    ],
+    "candidate_lateral_offsets_m": [
+      -0.25,
+      0.0,
+      0.25
+    ],
+    "belt_top_z_policy": "raycast_collision_then_clearance_verify"
+  },
+  "object_assets": {
+    "first_pilot_ids": [
+      "cola",
+      "apple",
+      "orange"
+    ],
+    "unseen_gate_ids": [
+      "bottle"
+    ],
+    "deferred_ids": [
+      "blanket"
+    ],
+    "destination_id": "box2",
+    "usd_paths": {
+      "cola": "objects/cola/MesaTask-10K/MesaTask_Assets/can/0364ab96f338493c972248102b462aa4/usd/0364ab96f338493c972248102b462aa4.usd",
+      "apple": "objects/apple/MesaTask-10K/MesaTask_Assets/apple/0176be079c2449e7aaebfb652910a854/usd/0176be079c2449e7aaebfb652910a854.usd",
+      "orange": "objects/orange/MesaTask-10K/MesaTask_Assets/orange/0896dc31d5154c97aa3f24e8ec1277aa/usd/0896dc31d5154c97aa3f24e8ec1277aa.usd",
+      "bottle": "objects/bottle/MesaTask-10K/MesaTask_Assets/body-care_products/ec67d7141333464ca1061320452f06a2/usd/ec67d7141333464ca1061320452f06a2.usd",
+      "box2": "objects/box2/box2.usd"
     },
-    "load_defaults": {
-      "max_gaussians_preview": 2000000,
-      "max_gaussians_collection": 0,
-      "chunk_gaussians": 500000,
-      "sample_stride": 1,
-      "opacity_threshold": 0.0,
-      "radius_clip": 0.0,
-      "rasterize_mode": "antialiased"
-    }
+    "pilot_policy": "one_target_one_destination_no_classification",
+    "real_mesh_physics_required_before_formal_collection": true
   },
   "visual_partition": {
-    "static_in_3dgs": [
-      "room_shell",
-      "floor",
-      "fixed_lighting_appearance",
-      "fixed_conveyor_frame",
-      "fixed_safety_fence",
-      "fixed_background_furniture"
+    "static_in_nurec": [
+      "liangzhu_room",
+      "liangzhu_floor",
+      "fixed_background"
     ],
     "dynamic_in_isaac": [
       "go2_x5_robot",
       "arm_and_gripper",
-      "moving_belt_surface",
+      "conveyor_frame_and_belt",
       "task_objects",
-      "receptacles",
-      "task_markers"
+      "destination_receptacle"
     ],
-    "excluded_from_static_capture": [
-      "go2_x5_robot",
-      "arm_and_gripper",
-      "moving_belt_surface",
-      "task_objects",
-      "receptacles",
-      "task_markers",
-      "people"
-    ]
-  },
-  "camera_trajectory": {
-    "schema": "conveyor_bench.camera_trajectory.v1",
-    "output": "camera_poses.jsonl",
-    "pose_source": "USD_world_transform_after_fabric_update",
-    "pose_convention": "T_sim_world_from_camera_usd",
-    "camera_axes": {
-      "forward": "-Z",
-      "up": "+Y",
-      "right": "+X"
-    },
-    "record_each_camera_tick": true,
-    "required_fields": [
-      "frame_index",
-      "sim_step",
-      "timestamp_s",
-      "camera_id",
-      "intrinsics_3x3",
-      "T_sim_world_from_camera_4x4",
-      "near_m",
-      "far_m"
-    ]
+    "procedural_v1_room_enabled": false
   },
   "cameras": {
     "head_rgb": {
@@ -158,9 +184,6 @@
       ],
       "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
       "calibration_source": "dwa_play_nav_cs",
-      "focal_length_mm": 18.0,
-      "horizontal_aperture_mm": 30.040158257372415,
-      "vertical_aperture_mm": 22.530118693029312,
       "clipping_range_m": [
         0.1,
         100000.0
@@ -198,9 +221,6 @@
       "raw_hand_eye_position_xyz_m": [0.0559054476, 0.0026732239, 0.076714932],
       "visual_alignment_offset_camera_xyz_m": [0.0, -0.02, 0.0],
       "calibration_source": "hand_eye_calibration_with_visual_alignment_v3",
-      "focal_length_mm": 18.0,
-      "horizontal_aperture_mm": 30.040158257372415,
-      "vertical_aperture_mm": 22.530118693029312,
       "clipping_range_m": [
         0.03,
         5.0
@@ -226,8 +246,6 @@
         0.25774106
       ],
       "orientation_convention": "world",
-      "focal_length_mm": 18.0,
-      "horizontal_aperture_mm": 20.955,
       "clipping_range_m": [
         0.05,
         8.0
@@ -235,29 +253,20 @@
     }
   },
   "render_products": {
-    "isaac_foreground": [
-      "rgb",
-      "depth_m",
-      "instance_id",
-      "alpha_derived_from_instance_id"
+    "canonical": [
+      "rgb"
     ],
-    "gaussian_background": [
-      "rgb",
+    "optional_dynamic_supervision": [
       "depth_m",
-      "alpha"
+      "instance_id"
     ],
-    "composite": {
-      "rule": "nearest_valid_depth_with_alpha",
-      "depth_epsilon_m": 0.003,
-      "output_format": "lossless_png",
-      "atomic_episode_publication": true,
-      "intermediate_retention": "failures_and_debug_samples_only"
-    }
+    "native_registered_composite_is_canonical_rgb": true,
+    "output_format": "lossless_png",
+    "atomic_episode_publication": true
   },
   "recording": {
     "canonical_episode_protocol": "conveyor-bench-v1",
     "canonical_camera_index": "camera_frames.jsonl",
-    "additional_camera_pose_index": "camera_poses.jsonl",
     "policy_camera_ids": [
       "head_rgb",
       "wrist_rgb"
@@ -271,23 +280,28 @@
   },
   "acceptance_gates": {
     "asset": {
-      "all_required_files_local": true,
+      "transfer_manifest_required": true,
+      "all_hashes_verified_before_scene_load": true,
       "symlinks_allowed": false,
-      "sha256_manifest_required": true,
       "runtime_network_access": false
     },
-    "calibration": {
-      "minimum_control_points": 12,
-      "median_reprojection_error_px_max": 1.5,
-      "p95_reprojection_error_px_max": 3.0,
-      "scale_error_percent_max": 1.0
+    "scene": {
+      "nurec_volume_count_min": 1,
+      "nurec_field_count_min": 2,
+      "collision_mesh_count_min": 1,
+      "candidate_placement_preview_count": 3,
+      "robot_or_conveyor_collision_at_reset_allowed": 0
     },
     "render": {
-      "held_out_static_psnr_db_min": 25.0,
-      "held_out_static_ssim_min": 0.85,
-      "dynamic_static_edge_error_px_p95_max": 3.0,
       "missing_or_duplicate_frames_allowed": 0,
-      "black_or_frozen_policy_frames_allowed": 0
+      "black_or_frozen_policy_frames_allowed": 0,
+      "three_camera_manual_preview_required": true
+    },
+    "task": {
+      "stationary_successes_required": 5,
+      "low_speed_dynamic_successes_required": 5,
+      "carry_to_preplace_transition_required": true,
+      "formal_collection_requires_real_mesh_objects": true
     },
     "data": {
       "v1_strict_validator_required": true,
@@ -297,12 +311,13 @@
     }
   },
   "implementation_stages": [
-    "A_asset_capture_and_calibration",
-    "B_local_ply_loader_and_gsplat_renderer",
-    "C_three_camera_pose_export",
-    "D_isaac_foreground_and_depth_aware_compositor",
-    "E_single_episode_stationary_smoke",
-    "F_low_speed_dynamic_smoke",
-    "G_twenty_episode_pilot_collection"
+    "A_ssh_asset_transfer_and_hash_gate",
+    "B_native_nurec_scene_and_collision_smoke",
+    "C_three_candidate_conveyor_placement_preview",
+    "D_carry_to_preplace_teacher_fix",
+    "E_real_object_rigid_fixture_and_stationary_gate",
+    "F_low_speed_dynamic_pilot",
+    "G_raw_to_lerobot_round_trip",
+    "H_formal_remote_collection"
   ]
 }

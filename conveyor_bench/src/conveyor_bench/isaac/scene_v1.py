@@ -422,6 +422,7 @@ class ProceduralWorkcellCfg(SpawnerCfg):
 
     func: Callable = MISSING
     include_local_sort_trays: bool = True
+    include_room_context: bool = True
 
 
 def _make_materials(
@@ -950,22 +951,25 @@ def spawn_conveyor_workcell(
         catch_material,
     )
 
-    # Simple industrial room context; these are deliberately outside robot reach.
-    wall = _static_visual_material(
-        f"{prim_path}/Looks/wall", (0.63, 0.66, 0.70)
-    )
-    _static_box(
-        f"{prim_path}/room/back_wall",
-        (2.15, 0.0, 1.25),
-        (0.08, 3.40, 2.50),
-        wall,
-    )
-    _static_box(
-        f"{prim_path}/room/side_wall",
-        (0.75, 1.70, 1.25),
-        (2.85, 0.08, 2.50),
-        wall,
-    )
+    # V1 keeps the small procedural room. V3 disables only this backdrop so
+    # the native NuRec reconstruction can own the static environment without
+    # duplicating walls or changing the conveyor/contact geometry.
+    if cfg.include_room_context:
+        wall = _static_visual_material(
+            f"{prim_path}/Looks/wall", (0.63, 0.66, 0.70)
+        )
+        _static_box(
+            f"{prim_path}/room/back_wall",
+            (2.15, 0.0, 1.25),
+            (0.08, 3.40, 2.50),
+            wall,
+        )
+        _static_box(
+            f"{prim_path}/room/side_wall",
+            (0.75, 1.70, 1.25),
+            (2.85, 0.08, 2.50),
+            wall,
+        )
     return stage.GetPrimAtPath(prim_path)
 
 

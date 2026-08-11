@@ -1,17 +1,16 @@
-# Conveyor station V3 3DGS assets
+# Conveyor station V3 NuRec asset contract
 
-本目录是 `configs/v3_3dgs.json` 约定的本地资产落点。设计分支不提交虚构或占位的
-Gaussian 数据；在真实采集、训练和标定完成前，V3 必须保持
-`collection_ready=false`。
+本目录只保存可审计的代码侧说明，不保存大体积场景数据。Liangzhu NuRec、碰撞 USD
+和 object USD 由 SSH 传到服务器的 sidecar 目录，永远不进入 Git。
 
-放量前必须在本目录物化以下文件，且不得使用指向仓库外的软链接：
+运行时资产根由 `CONVEYOR_BENCH_V3_ASSET_ROOT` 指定，且必须包含
+`TRANSFER_MANIFEST.sha256`、`liangzhu/` 和 `objects/`。完整契约、坐标变换、门禁与
+采集阶段见 [BENCHMARK_V3_3DGS_SPEC.md](../../../BENCHMARK_V3_3DGS_SPEC.md)。
 
-- `scene_static_gaussians.ply`：静态工位 Gaussian splat；
-- `calibration_sim_from_gs.json`：`S_sim_from_gs`、控制点与误差报告；
-- `capture_masks/`：与每张训练图像同名、排除机器人、皮带、零件、盒子和人员的
-  逐帧 mask；
-- `photometric_calibration.json`：固定曝光、白平衡和 Isaac 灯光匹配记录；
-- `ASSET_MANIFEST.json`：文件 SHA-256、顶点数、来源、许可证与训练配置。
+代码入口：
 
-完整分层、相机和门禁定义见
-[BENCHMARK_V3_3DGS_SPEC.md](../../../BENCHMARK_V3_3DGS_SPEC.md)。
+- `scripts/validate_v3_asset_bundle.py`：路径、软链接、成员和 SHA-256 校验；
+- `src/conveyor_bench/v3/assets.py`：生成原生 NuRec/碰撞组合层；
+- `src/conveyor_bench/isaac/scene_v3.py`：V1 动态层与 Liangzhu 静态层组合；
+- `scripts/probe_v1_scene.py --scene-profile v3_nurec`：三相机场景 smoke；
+- `scripts/run_benchmark_v3.py`：通过所有门禁后的单回合/正式采集入口。
