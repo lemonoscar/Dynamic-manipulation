@@ -4,6 +4,27 @@
 `integration`，`collection_ready=false`。这表示代码已经具备资产校验和场景组合入口，
 但在远端画面、碰撞、示教状态机和真实物品刚体四项门禁通过前，不能开始正式放量。
 
+### 2026-08-11 远端烟测结论
+
+GPU 2 上的原生 NuRec 组合已实测成立，不再是待验证假设：转移清单 68/68 通过，
+舞台中检测到 1 个 NuRec volume、2 个 field、1 个 Liangzhu 碰撞网格，head、wrist、
+overview 三路 RGB 均成功落盘。正式代码提交为 `48cf495`，远端报告保存在：
+
+```text
+/diff/wallx_workspace/dzb/conveyorvla-v3-5b3c0f5-20260811-r1/
+  conveyor_bench/outputs/v3_nurec_probe_gpu2_a2/result/report.json
+```
+
+这次烟测同时拒绝了当前布局，故仍保持 `collection_ready=false`：
+
+- 原 PCT 机器人锚点附近存在 Liangzhu 固定家具，head/wrist 抓取区出现近距离遮挡；
+- 低速运行 2 秒后，测试零件受到场景碰撞干涉并跌至地面以下，碰撞净空门禁失败；
+- 当前 probe 仍使用 canonical 程序化零件，真实 cola/apple/orange 刚体 fixture 尚未接入；
+- carry→preplace 的既有教师状态转移阻塞尚未修复。
+
+因此下一步不是放宽位移阈值或开始堆数据，而是执行三个候选工作位的视觉/碰撞筛选，
+冻结无干涉锚点后再接真实 USD 物品。失败烟测被保留为布局选择的回归证据。
+
 ## 1. 当前选择
 
 现有 Liangzhu 资产不是普通 Gaussian PLY，而是 Omniverse NuRec USDZ：

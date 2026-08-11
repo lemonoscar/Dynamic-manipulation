@@ -28,6 +28,9 @@ def test_v3_preserves_v1_timing_and_camera_contract() -> None:
 
     assert v3["status"] == "integration"
     assert v3["collection_ready"] is False
+    assert "native_nurec_remote_render_gate" not in v3["collection_blockers"]
+    assert "nurec_workcell_visibility_clearance_gate" in v3["collection_blockers"]
+    assert "liangzhu_collision_clearance_gate" in v3["collection_blockers"]
     assert "carry_to_preplace_teacher_transition" in v3["collection_blockers"]
     assert v3["version_boundary"]["canonical_protocol"] == v1["protocol_version"]
     assert v3["rates_hz"] == v1["rates_hz"]

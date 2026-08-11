@@ -4,7 +4,7 @@
   "status": "integration",
   "collection_ready": false,
   "collection_blockers": [
-    "native_nurec_remote_render_gate",
+    "nurec_workcell_visibility_clearance_gate",
     "liangzhu_collision_clearance_gate",
     "carry_to_preplace_teacher_transition",
     "real_object_rigid_body_fixture_gate"
