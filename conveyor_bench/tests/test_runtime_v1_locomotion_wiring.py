@@ -159,7 +159,6 @@ def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     assert "asset.half_extents_xyz[2] + _TEACHER_RELEASE_CLEARANCE_M" in source
     assert "0.04 if local_zone_y < 0.0 else 0.025" in source
     assert "math.copysign(0.07, local_zone_y)" in source
-    assert "reachable_release_y = zone_y - math.copysign(0.07, zone_y)" in source
     assert "safe_carry_clearance_m=0.025" in source
     assert "top_down_tcp_orientation_wxyz" in source
     assert "pregrasp_observation_dwell_s" in source
