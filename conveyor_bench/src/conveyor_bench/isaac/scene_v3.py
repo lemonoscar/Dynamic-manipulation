@@ -156,6 +156,23 @@ def place_workcell_in_liangzhu_open_room(
     }
 
 
+def reset_v3_conveyor_world_pose(scene: Any) -> dict[str, Any]:
+    """Place the kinematic belt at its translated environment world pose."""
+
+    conveyor = scene["conveyor"]
+    root_state = conveyor.data.default_root_state.clone()
+    root_state[:, :3] += scene.env_origins
+    root_state[:, 7:] = 0.0
+    conveyor.write_root_pose_to_sim(root_state[:, :7])
+    conveyor.write_root_velocity_to_sim(root_state[:, 7:])
+    return {
+        "position_world_xyz_m": [
+            float(value) for value in root_state[0, :3].detach().cpu().tolist()
+        ],
+        "source": "default_root_state_plus_environment_origin",
+    }
+
+
 def validate_liangzhu_stage(stage: Any) -> dict[str, Any]:
     """Fail before simulation reset if NuRec or collision did not compose."""
 
@@ -211,5 +228,6 @@ __all__ = [
     "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
     "make_conveyor_scene_v3_cfg",
     "place_workcell_in_liangzhu_open_room",
+    "reset_v3_conveyor_world_pose",
     "validate_liangzhu_stage",
 ]

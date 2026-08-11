@@ -146,6 +146,7 @@ def main() -> int:
                 V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M,
                 make_conveyor_scene_v3_cfg,
                 place_workcell_in_liangzhu_open_room,
+                reset_v3_conveyor_world_pose,
                 validate_liangzhu_stage,
             )
 
@@ -189,6 +190,11 @@ def main() -> int:
         )
         simulation.reset()
         scene.reset()
+        conveyor_placement = (
+            reset_v3_conveyor_world_pose(scene)
+            if args.scene_profile == "v3_nurec"
+            else None
+        )
 
         robot = scene["robot"]
         arm_ids, _ = robot.find_joints(list(ARM_JOINT_NAMES), preserve_order=True)
@@ -343,6 +349,7 @@ def main() -> int:
             "scene_profile": args.scene_profile,
             "scene_stage_contract": scene_stage_contract,
             "workcell_placement": workcell_placement,
+            "conveyor_placement": conveyor_placement,
             "v3_asset_bundle": (
                 v3_bundle.report.to_dict() if v3_bundle is not None else None
             ),
