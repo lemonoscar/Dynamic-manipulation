@@ -3115,6 +3115,7 @@ class ConveyorRuntimeV1:
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
+        self._place_lift_anchor_xy_world: tuple[float, float] | None = None
         self._gripper_requested_open = True
         self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
         self._gripper_transition_elapsed_s = (
@@ -3996,21 +3997,35 @@ class ConveyorRuntimeV1:
             state["tcp_world"].xyz, dtype=np.float64
         )
         target = np.asarray(oracle_target.xyz, dtype=np.float64)
-        delta = target - current
         # Lift to the requested carry height before translating toward a tray.
         # A direct joint-space solve of the distant high goal can dip through
         # the near wall even though both endpoints are collision-free.
         vertical_gap = float(target[2] - current[2])
-        if vertical_gap > waypoint_step_m:
-            delta = np.asarray(
-                (0.0, 0.0, min(vertical_gap, waypoint_step_m)),
+        if vertical_gap > 0.005:
+            if self._place_lift_anchor_xy_world is None:
+                self._place_lift_anchor_xy_world = (
+                    float(current[0]),
+                    float(current[1]),
+                )
+            waypoint = np.asarray(
+                (
+                    *self._place_lift_anchor_xy_world,
+                    float(target[2]),
+                ),
                 dtype=np.float64,
             )
         else:
-            distance = float(np.linalg.norm(delta))
-            if distance > waypoint_step_m:
-                delta *= waypoint_step_m / distance
-        waypoint = current + delta
+            self._place_lift_anchor_xy_world = None
+            delta = target - current
+            planar_distance = float(np.linalg.norm(delta[:2]))
+            if planar_distance > waypoint_step_m:
+                delta[:2] *= waypoint_step_m / planar_distance
+                delta[2] = vertical_gap
+            else:
+                distance = float(np.linalg.norm(delta))
+                if distance > waypoint_step_m:
+                    delta *= waypoint_step_m / distance
+            waypoint = current + delta
         return Pose(
             tuple(float(value) for value in waypoint),
             oracle_target.wxyz,

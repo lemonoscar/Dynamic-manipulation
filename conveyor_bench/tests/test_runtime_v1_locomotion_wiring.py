@@ -156,13 +156,27 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
     orientation = (1.0, 0.0, 0.0, 0.0)
     state = {"tcp_world": Pose((0.0, 0.0, 0.20), orientation)}
     goal = Pose((0.20, 0.20, 0.30), orientation)
+    runtime = SimpleNamespace(_place_lift_anchor_xy_world=None)
 
     waypoint = namespace["_mobile_place_target"](
-        SimpleNamespace(), goal, state
+        runtime, goal, state
     )
 
-    assert waypoint.xyz == pytest.approx((0.0, 0.0, 0.203))
+    assert waypoint.xyz == pytest.approx((0.0, 0.0, 0.30))
     assert waypoint.wxyz == orientation
+    drifted = {"tcp_world": Pose((0.05, -0.02, 0.22), orientation)}
+    waypoint = namespace["_mobile_place_target"](
+        runtime, goal, drifted
+    )
+    assert waypoint.xyz == pytest.approx((0.0, 0.0, 0.30))
+
+    lifted = {"tcp_world": Pose((0.0, 0.0, 0.298), orientation)}
+    waypoint = namespace["_mobile_place_target"](
+        runtime, goal, lifted
+    )
+    assert waypoint.xyz == pytest.approx(
+        (0.0021213203, 0.0021213203, 0.30)
+    )
 
 
 def test_scene_applies_registry_rigid_body_damping() -> None:
