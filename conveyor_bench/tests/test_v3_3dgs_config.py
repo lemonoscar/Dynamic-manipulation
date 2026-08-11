@@ -88,12 +88,13 @@ def test_v3_task_frame_maps_pct_robot_and_conveyor_consistently() -> None:
     config = _load("configs/v3_3dgs.json")
     task = config["task_frame"]
     translation = config["gaussian_layer"]["sim_translation_xyz_m"]
-    source_robot = task["source_robot_root_xyz_m"]
+    workcell_ground = task["open_room_workcell_ground_xyz_m"]
 
-    assert math.isclose(source_robot[0] + translation[0], 0.0, abs_tol=1e-12)
-    assert math.isclose(source_robot[1] + translation[1], 0.0, abs_tol=1e-12)
-    source_ground_z = source_robot[2] - task["source_robot_root_to_ground_m"]
-    assert math.isclose(source_ground_z + translation[2], 0.0, abs_tol=1e-12)
+    assert translation == [0.0, 0.0, 0.0]
+    assert workcell_ground == [-12.0, 14.0, -0.0993]
+    assert task["sim_robot_anchor_xy_m"] == workcell_ground[:2]
+    assert task["placement_method"] == "collision_mesh_raycast_open_room"
+    assert task["nurec_parent_transform_policy"].startswith("identity")
 
     source_conveyor = task["conveyor_center_source_xy_m"]
     sim_conveyor = task["conveyor_center_xy_m"]

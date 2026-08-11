@@ -8,7 +8,7 @@ from typing import Any
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.utils import configclass
-from pxr import UsdGeom, UsdPhysics
+from pxr import Gf, UsdGeom, UsdPhysics
 
 from .scene_v1 import (
     ConveyorSceneV1Cfg,
@@ -24,6 +24,11 @@ LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
 # context to audit where the robot and conveyor were placed.
 V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-5.10, -3.50, 4.70)
 V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
+# Collision-mesh raycasts identify this as the center of the large empty room.
+# The z value is the authored floor height at (x, y).  We move the dynamic
+# Isaac environment here and deliberately leave the calibrated NuRec scene at
+# identity.
+V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M = (-12.0, 14.0, -0.0993)
 
 
 @configclass
@@ -78,6 +83,55 @@ def make_conveyor_scene_v3_cfg(
     return cfg
 
 
+def place_workcell_in_liangzhu_open_room(
+    scene: Any,
+    stage: Any,
+    ground_xyz_m: tuple[float, float, float] = (
+        V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M
+    ),
+) -> dict[str, Any]:
+    """Move the one task environment into the calibrated NuRec open room."""
+
+    if len(scene.env_prim_paths) != 1:
+        raise ValueError(
+            "V3 NuRec placement currently requires exactly one env"
+        )
+    env_prim_path = scene.env_prim_paths[0]
+    prim = stage.GetPrimAtPath(env_prim_path)
+    if not prim.IsValid():
+        raise RuntimeError(f"environment prim is missing: {env_prim_path}")
+
+    xformable = UsdGeom.Xformable(prim)
+    translate_op = next(
+        (
+            op
+            for op in xformable.GetOrderedXformOps()
+            if op.GetOpType() == UsdGeom.XformOp.TypeTranslate
+        ),
+        None,
+    )
+    if translate_op is None:
+        translate_op = xformable.AddTranslateOp(
+            precision=UsdGeom.XformOp.PrecisionDouble
+        )
+    vector_type = (
+        Gf.Vec3d
+        if translate_op.GetPrecision() == UsdGeom.XformOp.PrecisionDouble
+        else Gf.Vec3f
+    )
+    ground_xyz_m = tuple(float(value) for value in ground_xyz_m)
+    translate_op.Set(vector_type(*ground_xyz_m))
+
+    # Runtime reset/spawn code consumes env_origins when converting local task
+    # coordinates into simulation-world poses.
+    scene.env_origins[0] = scene.env_origins.new_tensor(ground_xyz_m)
+    return {
+        "environment_prim": env_prim_path,
+        "workcell_ground_world_xyz_m": list(ground_xyz_m),
+        "nurec_scene_translation_xyz_m": [0.0, 0.0, 0.0],
+    }
+
+
 def validate_liangzhu_stage(stage: Any) -> dict[str, Any]:
     """Fail before simulation reset if NuRec or collision did not compose."""
 
@@ -128,6 +182,8 @@ __all__ = [
     "SCENE_ID",
     "V3_OVERVIEW_CAMERA_FAR_CLIPPING_M",
     "V3_OVERVIEW_CAMERA_OFFSET_XYZ",
+    "V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M",
     "make_conveyor_scene_v3_cfg",
+    "place_workcell_in_liangzhu_open_room",
     "validate_liangzhu_stage",
 ]

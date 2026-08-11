@@ -47,6 +47,11 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
     }
     assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-5.1, -3.5, 4.7)
     assert constants["V3_OVERVIEW_CAMERA_FAR_CLIPPING_M"] == 50.0
+    assert constants["V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M"] == (
+        -12.0,
+        14.0,
+        -0.0993,
+    )
 
     v1_source = _source(SCENE_V1_PATH)
     assert "include_room_context: bool = True" in v1_source
@@ -60,6 +65,7 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
     assert [ast.unparse(base) for base in runtime.bases] == ["ConveyorRuntimeV1"]
     assert "verify_all_hashes=True" in source
     assert "make_conveyor_scene_v3_cfg" in source
+    assert "place_workcell_in_liangzhu_open_room" in source
     assert "validate_liangzhu_stage" in source
     assert "isaac_rtx_native_nurec" in source
     assert "ssh_sidecar_bundle" in source
@@ -71,8 +77,8 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
 
     assert "v3_nurec" in probe
     assert "--v3-asset-root" in probe
-    assert "--v3-scene-translation-xyz" in probe
     assert "validate_asset_bundle" in probe
+    assert "place_workcell_in_liangzhu_open_room" in probe
     assert "--asset-root" in runner
     assert "RuntimeOptionsV3" in runner
     assert "run_collection_v3" in runner

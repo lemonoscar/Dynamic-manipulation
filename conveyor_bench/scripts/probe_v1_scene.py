@@ -23,13 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--v3-asset-root", type=Path)
     parser.add_argument(
-        "--v3-scene-translation-xyz",
-        type=float,
-        nargs=3,
-        metavar=("X", "Y", "Z"),
-        help="Diagnostic override for the Liangzhu-to-simulation translation.",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -88,14 +81,8 @@ def main() -> int:
             verify_all_hashes=True,
         )
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        runtime_layer_kwargs = {}
-        if args.v3_scene_translation_xyz is not None:
-            runtime_layer_kwargs["scene_translation_xyz_m"] = tuple(
-                args.v3_scene_translation_xyz
-            )
         v3_runtime_layer = v3_bundle.write_runtime_layer(
             args.output_dir / "liangzhu_conveyorvla_v3.usda",
-            **runtime_layer_kwargs,
         )
     app = AppLauncher(args)
     simulation_app = app.app
@@ -150,6 +137,7 @@ def main() -> int:
         if args.scene_profile == "v3_nurec":
             from conveyor_bench.isaac.scene_v3 import (
                 make_conveyor_scene_v3_cfg,
+                place_workcell_in_liangzhu_open_room,
                 validate_liangzhu_stage,
             )
 
@@ -164,6 +152,13 @@ def main() -> int:
                 lazy_sensor_update=True,
             )
         scene = InteractiveScene(scene_cfg)
+        workcell_placement = (
+            place_workcell_in_liangzhu_open_room(
+                scene, omni.usd.get_context().get_stage()
+            )
+            if args.scene_profile == "v3_nurec"
+            else None
+        )
         scene_stage_contract = (
             validate_liangzhu_stage(omni.usd.get_context().get_stage())
             if args.scene_profile == "v3_nurec"
@@ -211,20 +206,25 @@ def main() -> int:
             root_state[:, :3] += scene.env_origins
             if index in active_indices:
                 slot = active_indices.index(index)
-                root_state[:, 0] = OBJECT_LANE_X_M
-                root_state[:, 1] = active_y[slot]
+                root_state[:, 0] = OBJECT_LANE_X_M + scene.env_origins[:, 0]
+                root_state[:, 1] = active_y[slot] + scene.env_origins[:, 1]
                 root_state[:, 2] = (
-                    BELT_TOP_Z_M + asset.half_extents_xyz[2] + 0.003
+                    BELT_TOP_Z_M
+                    + asset.half_extents_xyz[2]
+                    + 0.003
+                    + scene.env_origins[:, 2]
                 )
                 initial_positions[asset.object_id] = (
-                    OBJECT_LANE_X_M,
-                    active_y[slot],
+                    OBJECT_LANE_X_M + float(scene.env_origins[0, 0].item()),
+                    active_y[slot] + float(scene.env_origins[0, 1].item()),
                     float(root_state[0, 2].item()),
                 )
             else:
-                root_state[:, 0] = 3.0
-                root_state[:, 1] = -0.7 + index * 0.2
-                root_state[:, 2] = 0.15
+                root_state[:, 0] = 3.0 + scene.env_origins[:, 0]
+                root_state[:, 1] = (
+                    -0.7 + index * 0.2 + scene.env_origins[:, 1]
+                )
+                root_state[:, 2] = 0.15 + scene.env_origins[:, 2]
             root_state[:, 3:7] = torch.tensor(
                 [asset.stable_poses_wxyz[0]],
                 device=simulation.device,
@@ -328,6 +328,7 @@ def main() -> int:
             ),
             "scene_profile": args.scene_profile,
             "scene_stage_contract": scene_stage_contract,
+            "workcell_placement": workcell_placement,
             "v3_asset_bundle": (
                 v3_bundle.report.to_dict() if v3_bundle is not None else None
             ),

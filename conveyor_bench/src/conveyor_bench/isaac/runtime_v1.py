@@ -2987,9 +2987,11 @@ class ConveyorRuntimeV1:
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
             root_state[:, :3] += self.scene.env_origins
-            root_state[:, 0] = 3.0
-            root_state[:, 1] = -0.8 + index * 0.18
-            root_state[:, 2] = 0.15
+            root_state[:, 0] = 3.0 + self.scene.env_origins[:, 0]
+            root_state[:, 1] = (
+                -0.8 + index * 0.18 + self.scene.env_origins[:, 1]
+            )
+            root_state[:, 2] = 0.15 + self.scene.env_origins[:, 2]
             root_state[:, 7:] = 0.0
             rigid_object.write_root_pose_to_sim(root_state[:, :7])
             rigid_object.write_root_velocity_to_sim(root_state[:, 7:])
@@ -3032,8 +3034,8 @@ class ConveyorRuntimeV1:
         root_state = self.robot.data.default_root_state.clone()
         root_state[:, :3] += self.scene.env_origins
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
-            root_state[:, 0] = -0.22
-            root_state[:, 2] = 0.30
+            root_state[:, 0] = -0.22 + self.scene.env_origins[:, 0]
+            root_state[:, 2] = 0.30 + self.scene.env_origins[:, 2]
             if (
                 resolved is not None
                 and resolved.manifest.task_type
@@ -3128,10 +3130,17 @@ class ConveyorRuntimeV1:
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
             root_state[:, :3] += self.scene.env_origins
-            root_state[:, 0] = resolved.spawn_x_by_id[asset.object_id]
-            root_state[:, 1] = resolved.spawn_y_by_id[asset.object_id]
+            root_state[:, 0] = (
+                resolved.spawn_x_by_id[asset.object_id]
+                + self.scene.env_origins[:, 0]
+            )
+            root_state[:, 1] = (
+                resolved.spawn_y_by_id[asset.object_id]
+                + self.scene.env_origins[:, 1]
+            )
             root_state[:, 2] = (
                 BELT_TOP_Z_M + asset.half_extents_xyz[2] + 0.003
+                + self.scene.env_origins[:, 2]
             )
             root_state[:, 3:7] = torch.tensor(
                 [asset.stable_poses_wxyz[0]],

@@ -32,9 +32,9 @@ LIANGZHU_COLLISION_USD_RELATIVE_PATH = Path(
     "liangzhu/usd/liangzhu_collision.usda"
 )
 
-# Translate the PCT robot anchor onto the canonical ConveyorBench task origin
-# and lift the audited Liangzhu floor to z=0.  The source ground height is the
-# authored robot z minus the measured root-to-ground distance.
+# The NuRec scene must remain in its authored world frame.  Registered
+# compositing uses that frame for camera calibration, so moving this parent
+# Xform produces a plausible USD stage but incorrect RGB images.
 LIANGZHU_SOURCE_ROBOT_XYZ_M = (
     -1.4849319648011197,
     5.126136502764003,
@@ -44,11 +44,7 @@ LIANGZHU_SOURCE_ROOT_TO_GROUND_M = 0.43101139033367283
 LIANGZHU_SOURCE_GROUND_Z_M = (
     LIANGZHU_SOURCE_ROBOT_XYZ_M[2] - LIANGZHU_SOURCE_ROOT_TO_GROUND_M
 )
-LIANGZHU_SCENE_TRANSLATION_XYZ_M = (
-    -LIANGZHU_SOURCE_ROBOT_XYZ_M[0],
-    -LIANGZHU_SOURCE_ROBOT_XYZ_M[1],
-    -LIANGZHU_SOURCE_GROUND_Z_M,
-)
+LIANGZHU_SCENE_TRANSLATION_XYZ_M = (0.0, 0.0, 0.0)
 
 OBJECT_USD_RELATIVE_PATHS = {
     "cola": Path(
@@ -256,10 +252,6 @@ class V3AssetBundle:
     def write_runtime_layer(
         self,
         output_path: Path,
-        *,
-        scene_translation_xyz_m: tuple[float, float, float] = (
-            LIANGZHU_SCENE_TRANSLATION_XYZ_M
-        ),
     ) -> Path:
         """Write a deterministic native NuRec/collision composition layer."""
 
@@ -268,9 +260,7 @@ class V3AssetBundle:
         scene_path = self.scene_usda.as_posix()
         if "@" in scene_path or "\n" in scene_path:
             raise ValueError("scene asset path cannot be represented in USDA")
-        if len(scene_translation_xyz_m) != 3:
-            raise ValueError("scene translation must contain exactly 3 values")
-        tx, ty, tz = (float(value) for value in scene_translation_xyz_m)
+        tx, ty, tz = LIANGZHU_SCENE_TRANSLATION_XYZ_M
         payload = f'''#usda 1.0
 (
     defaultPrim = "LiangzhuScene"

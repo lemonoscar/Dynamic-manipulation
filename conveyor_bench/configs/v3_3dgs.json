@@ -74,9 +74,9 @@
       0.0
     ],
     "sim_translation_xyz_m": [
-      1.4849319648011197,
-      -5.126136502764003,
-      0.13819410500645898
+      0.0,
+      0.0,
+      0.0
     ],
     "sim_scale_xyz": [
       1.0,
@@ -85,24 +85,31 @@
     ]
   },
   "task_frame": {
-    "source_robot_root_xyz_m": [
+    "pct_reference_robot_root_xyz_m": [
       -1.4849319648011197,
       5.126136502764003,
       0.29281728532721385
     ],
-    "source_robot_root_to_ground_m": 0.43101139033367283,
+    "pct_reference_robot_root_to_ground_m": 0.43101139033367283,
+    "open_room_workcell_ground_xyz_m": [
+      -12.0,
+      14.0,
+      -0.0993
+    ],
     "sim_robot_anchor_xy_m": [
-      0.0,
-      0.0
+      -12.0,
+      14.0
     ],
     "conveyor_center_xy_m": [
-      0.7,
-      0.0
+      -11.3,
+      14.0
     ],
     "conveyor_center_source_xy_m": [
-      -0.7849319648011197,
-      5.126136502764003
+      -11.3,
+      14.0
     ],
+    "placement_method": "collision_mesh_raycast_open_room",
+    "nurec_parent_transform_policy": "identity_for_registered_camera_calibration",
     "conveyor_long_axis": "world_y",
     "transport_direction_world": [
       0.0,
