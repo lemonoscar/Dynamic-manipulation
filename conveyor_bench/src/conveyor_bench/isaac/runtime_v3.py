@@ -22,6 +22,7 @@ from conveyor_bench.v3.objects import (
 from .runtime_v1 import ConveyorRuntimeV1, RuntimeOptionsV1
 from .scene_v3 import (
     SCENE_ID,
+    V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M,
     make_conveyor_scene_v3_cfg,
     place_workcell_in_liangzhu_task_area,
     validate_liangzhu_stage,
@@ -94,6 +95,9 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
 
     def _layout_id(self) -> str:
         return SCENE_ID
+
+    def _task_world_origin_xyz(self) -> tuple[float, float, float]:
+        return V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M
 
     def _episode_asset_hashes(self, resolved) -> dict[str, str]:
         return {

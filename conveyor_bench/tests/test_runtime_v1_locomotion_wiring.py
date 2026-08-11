@@ -157,7 +157,8 @@ def test_mobile_release_is_a_reachable_drop_above_the_tray_rim() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_make_oracle"))
 
     assert "asset.half_extents_xyz[2] + _TEACHER_RELEASE_CLEARANCE_M" in source
-    assert "zone_x - (0.04 if zone_y < 0.0 else 0.025)" in source
+    assert "0.04 if local_zone_y < 0.0 else 0.025" in source
+    assert "math.copysign(0.07, local_zone_y)" in source
     assert "reachable_release_y = zone_y - math.copysign(0.07, zone_y)" in source
     assert "safe_carry_clearance_m=0.025" in source
     assert "top_down_tcp_orientation_wxyz" in source
@@ -754,6 +755,7 @@ def test_m0_pregrasp_staging_pose_uses_only_registered_scene_geometry() -> None:
 
     runtime = SimpleNamespace(
         _intercept_y_world=lambda _resolved: 0.10,
+        _task_world_origin_xyz=lambda: (0.0, 0.0, 0.0),
     )
     pose = namespace["_m0_pregrasp_staging_pose"](runtime, resolved)
 
@@ -823,6 +825,10 @@ def test_forbidden_belt_intrusion_is_spatially_scoped() -> None:
     assert not intrudes((0.50, 0.0, 0.31))
     assert not intrudes((0.70, 0.90, 0.31))
     assert not intrudes((0.70, 0.0, 0.33))
+    assert intrudes(
+        (-0.7849319648, 5.1261365028, 0.171805895),
+        task_origin_world_xyz=(-1.4849319648, 5.1261365028, -0.138194105),
+    )
 
 
 def test_mobile_preoracle_timeout_and_fall_are_task_failures() -> None:

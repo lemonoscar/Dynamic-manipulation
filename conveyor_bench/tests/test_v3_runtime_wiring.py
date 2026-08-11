@@ -7,6 +7,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENE_PATH = PROJECT_ROOT / "src/conveyor_bench/isaac/scene_v3.py"
 RUNTIME_PATH = PROJECT_ROOT / "src/conveyor_bench/isaac/runtime_v3.py"
+RUNTIME_V1_PATH = PROJECT_ROOT / "src/conveyor_bench/isaac/runtime_v1.py"
 SCENE_V1_PATH = PROJECT_ROOT / "src/conveyor_bench/isaac/scene_v1.py"
 PROBE_PATH = PROJECT_ROOT / "scripts/probe_v1_scene.py"
 RUN_PATH = PROJECT_ROOT / "scripts/run_benchmark_v3.py"
@@ -79,6 +80,18 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
     assert "validate_liangzhu_stage" in source
     assert "isaac_rtx_native_nurec" in source
     assert "ssh_sidecar_bundle" in source
+    assert "def _task_world_origin_xyz" in source
+    assert "V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M" in source
+
+
+def test_v3_task_frame_is_translated_before_teacher_control() -> None:
+    runtime_v1 = _source(RUNTIME_V1_PATH)
+
+    assert "origin_y = self._task_world_origin_xyz()[1]" in runtime_v1
+    assert "task_origin = self._task_world_origin_xyz()" in runtime_v1
+    assert '"task_world_origin_xyz_m": task_origin' in runtime_v1
+    assert "resolved.manifest.belt_surface_z_m" in runtime_v1
+    assert "task_origin_world_xyz=self._task_world_origin_xyz()" in runtime_v1
 
 
 def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:

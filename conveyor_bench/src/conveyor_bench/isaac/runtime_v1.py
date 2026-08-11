@@ -908,6 +908,11 @@ class ConveyorRuntimeV1:
     def _layout_id(self) -> str:
         return LAYOUT_ID
 
+    def _task_world_origin_xyz(self) -> tuple[float, float, float]:
+        """Return the world-space origin of the procedural task frame."""
+
+        return (0.0, 0.0, 0.0)
+
     def _camera_contract(self) -> dict[str, Any]:
         return _camera_contract_v1()
 
@@ -926,11 +931,12 @@ class ConveyorRuntimeV1:
         )
 
     def _intercept_y_world(self, resolved: _ResolvedTask) -> float:
+        origin_y = self._task_world_origin_xyz()[1]
         if resolved.manifest.task_type is TaskType.STATIONARY_SORT:
-            return float(
+            return origin_y + float(
                 resolved.spawn_y_by_id[resolved.target_asset.object_id]
             )
-        return _MOBILE_INTERCEPT_Y_WORLD_M
+        return origin_y + _MOBILE_INTERCEPT_Y_WORLD_M
 
     def _extra_episode_metadata(
         self, resolved: _ResolvedTask
@@ -1473,6 +1479,10 @@ class ConveyorRuntimeV1:
                             stage_started_at=stage_started_at,
                             sim_time_s=sim_time_s,
                             root_x=state_before["root_pose"].xyz[0],
+                            target_root_x=(
+                                self._task_world_origin_xyz()[0]
+                                + _LOCOMOTION_APPROACH_TARGET_X_M
+                            ),
                             root_planar_speed_mps=math.hypot(
                                 *state_before["root_twist"].linear_xyz[:2]
                             ),
@@ -1594,7 +1604,10 @@ class ConveyorRuntimeV1:
                         is RobotMode.WHOLE_BODY_POLICY
                         and phase in {"track", "descend", "close"}
                         and state_before["root_pose"].xyz[0]
-                        < _MOBILE_ROOT_HOLD_MIN_X_M
+                        < (
+                            self._task_world_origin_xyz()[0]
+                            + _MOBILE_ROOT_HOLD_MIN_X_M
+                        )
                     ):
                         # The locomotion actor has a tested forward dead-zone
                         # and no audited reverse/lateral command.  Apply its
@@ -2838,8 +2851,21 @@ class ConveyorRuntimeV1:
             candidates, self.options.active_object_count - 1
         )
         assets = (target, *distractors)
+        task_origin = self._task_world_origin_xyz()
         receptacles = {
-            item.zone_id: item for item in load_receptacles()
+            item.zone_id: replace(
+                item,
+                center_xyz_m=tuple(
+                    float(value + offset)
+                    for value, offset in zip(
+                        item.center_xyz_m, task_origin, strict=True
+                    )
+                ),
+                floor_top_z_m=(
+                    float(item.floor_top_z_m + task_origin[2])
+                ),
+            )
+            for item in load_receptacles()
         }
         zone_id = self.options.destination_zone_id or (
             "sort_bin_blue" if seed % 2 == 0 else "sort_bin_yellow"
@@ -2942,9 +2968,14 @@ class ConveyorRuntimeV1:
             scored_object_ids=(target.object_id,),
             seed=seed,
             belt_speed_mps=self.options.belt_speed_mps,
-            belt_surface_z_m=BELT_TOP_Z_M,
+            belt_surface_z_m=BELT_TOP_Z_M + task_origin[2],
             transport_direction_xyz=TRANSPORT_DIRECTION_WORLD,
-            exit_plane_point_xyz=EXIT_PLANE_POINT_WORLD,
+            exit_plane_point_xyz=tuple(
+                float(value + offset)
+                for value, offset in zip(
+                    EXIT_PLANE_POINT_WORLD, task_origin, strict=True
+                )
+            ),
             max_duration_s=self.options.max_duration_s,
             metadata={
                 "tasking_schema_version": TASKING_SCHEMA_VERSION,
@@ -2981,6 +3012,8 @@ class ConveyorRuntimeV1:
                     asset.object_id for asset in distractors
                 ),
                 "layout_id": self._layout_id(),
+                "task_world_origin_xyz_m": task_origin,
+                "spawn_coordinate_frame": "task_local",
                 "benchmark_role": (
                     "stationary_belt_diagnostic"
                     if stationary
@@ -3248,12 +3281,15 @@ class ConveyorRuntimeV1:
 
         asset = resolved.target_asset
         affordance = asset.grasp_affordances[0]
+        task_origin = self._task_world_origin_xyz()
         return Pose(
             (
-                resolved.spawn_x_by_id[asset.object_id]
+                task_origin[0]
+                + resolved.spawn_x_by_id[asset.object_id]
                 + affordance.tcp_offset_xyz[0],
                 self._intercept_y_world(resolved),
-                BELT_TOP_Z_M
+                task_origin[2]
+                + BELT_TOP_Z_M
                 + asset.half_extents_xyz[2]
                 + affordance.tcp_offset_xyz[2]
                 + _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M,
@@ -3279,6 +3315,7 @@ class ConveyorRuntimeV1:
         )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
+        local_zone_y = zone_y - self._task_world_origin_xyz()[1]
         # Bias toward the tray's robot-facing inner quadrant while retaining
         # enough wall clearance for the full 48 mm target, not merely its
         # center point. This avoids the X5 lateral workspace boundary after
@@ -3288,8 +3325,12 @@ class ConveyorRuntimeV1:
         # floor, with the larger audited offset retained for the negative-yaw
         # turn.  Even the widest 48 mm train part remains fully inside the
         # 105 mm goal half-width.
-        reachable_release_x = zone_x - (0.040 if zone_y < 0.0 else 0.025)
-        reachable_release_y = zone_y - math.copysign(0.07, zone_y)
+        reachable_release_x = zone_x - (
+            0.040 if local_zone_y < 0.0 else 0.025
+        )
+        reachable_release_y = zone_y - math.copysign(
+            0.07, local_zone_y
+        )
         if affordance.approach_axis != "-z":
             raise RuntimeError(
                 "overhead teacher requires a registered -z approach axis"
@@ -3386,7 +3427,10 @@ class ConveyorRuntimeV1:
         if speed is None or speed <= 0.0:
             return 15.0
         spawn_y = resolved.spawn_y_by_id[resolved.target_asset.object_id]
-        intercept_y = self._intercept_y_world(resolved)
+        intercept_y = (
+            self._intercept_y_world(resolved)
+            - self._task_world_origin_xyz()[1]
+        )
         travel_s = max(
             0.0,
             (spawn_y - intercept_y) / speed,
@@ -3404,6 +3448,7 @@ class ConveyorRuntimeV1:
         stage_started_at: float,
         sim_time_s: float,
         root_x: float,
+        target_root_x: float = _LOCOMOTION_APPROACH_TARGET_X_M,
         root_planar_speed_mps: float,
         robot_fallen: bool,
         arm_joint_error_rad: float = float("inf"),
@@ -3430,7 +3475,7 @@ class ConveyorRuntimeV1:
                 )
             return stage, stage_started_at, (0.0, 0.0, 0.0), False
         if stage == "mobile_approach":
-            if root_x >= _LOCOMOTION_APPROACH_TARGET_X_M:
+            if root_x >= target_root_x:
                 self._mobile_stable_since_s = None
                 return (
                     "mobile_stabilize",
@@ -3447,7 +3492,7 @@ class ConveyorRuntimeV1:
             return stage, stage_started_at, (0.20, 0.0, 0.0), False
         if stage == "mobile_stabilize":
             position_ready = (
-                abs(root_x - _LOCOMOTION_APPROACH_TARGET_X_M)
+                abs(root_x - target_root_x)
                 <= _LOCOMOTION_APPROACH_POSITION_TOLERANCE_M
             )
             speed_ready = (
@@ -3479,7 +3524,7 @@ class ConveyorRuntimeV1:
             return stage, stage_started_at, (0.0, 0.0, 0.0), False
         if stage == "arm_preposition":
             position_ready = (
-                abs(root_x - _LOCOMOTION_APPROACH_TARGET_X_M)
+                abs(root_x - target_root_x)
                 <= _LOCOMOTION_APPROACH_POSITION_TOLERANCE_M
             )
             speed_ready = (
@@ -4680,7 +4725,9 @@ class ConveyorRuntimeV1:
         for asset in resolved.assets:
             rigid_object = self.objects[asset.object_id]
             position = _tensor_tuple(rigid_object.data.root_pos_w[0])
-            active = position[0] < 2.0
+            active = (
+                position[0] - self._task_world_origin_xyz()[0] < 2.0
+            )
             object_active[asset.object_id] = active
             object_states.append(
                 ObjectState(
@@ -4727,10 +4774,14 @@ class ConveyorRuntimeV1:
             "gripper_opening_m": gripper_opening_m,
             "gripper_open_fraction": gripper_open_fraction,
             "robot_fallen": (
-                root_pose.xyz[2] < 0.20 or float(root_up[2].item()) < 0.55
+                root_pose.xyz[2] - self._task_world_origin_xyz()[2] < 0.20
+                or float(root_up[2].item()) < 0.55
             ),
             "root_tilt_rad": root_tilt_rad,
-            "forbidden_collision": _tcp_intrudes_belt(tcp_world.xyz),
+            "forbidden_collision": _tcp_intrudes_belt(
+                tcp_world.xyz,
+                task_origin_world_xyz=self._task_world_origin_xyz(),
+            ),
             "object_active": object_active,
         }
 
@@ -4790,7 +4841,9 @@ class ConveyorRuntimeV1:
             target_held=target.in_gripper,
             gripper_close_ready=self._gripper_close_ready,
             target_lifted=(
-                target.pose_world.xyz[2] - BELT_TOP_Z_M >= 0.04
+                target.pose_world.xyz[2]
+                - resolved.manifest.belt_surface_z_m
+                >= 0.04
             ),
             target_in_goal=target_in_goal,
             target_released=(
@@ -5077,7 +5130,11 @@ def _wrap_angle(angle_rad: float) -> float:
     return math.atan2(math.sin(angle_rad), math.cos(angle_rad))
 
 
-def _tcp_intrudes_belt(position_world: Sequence[float]) -> bool:
+def _tcp_intrudes_belt(
+    position_world: Sequence[float],
+    *,
+    task_origin_world_xyz: Sequence[float] = (0.0, 0.0, 0.0),
+) -> bool:
     """Return whether the TCP penetrates the conveyor's occupied prism.
 
     A global height threshold incorrectly labelled a low TCP over the robot
@@ -5086,7 +5143,12 @@ def _tcp_intrudes_belt(position_world: Sequence[float]) -> bool:
     threshold only inside that footprint.
     """
 
-    x, y, z = (float(value) for value in position_world)
+    x, y, z = (
+        float(value) - float(offset)
+        for value, offset in zip(
+            position_world, task_origin_world_xyz, strict=True
+        )
+    )
     safety_margin_m = 0.04
     inside_x = (
         abs(x - BELT_CENTER_X_M)
