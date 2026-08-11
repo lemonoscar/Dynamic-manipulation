@@ -31,7 +31,7 @@ def test_v3_preserves_v1_timing_and_camera_contract() -> None:
     assert "native_nurec_remote_render_gate" not in v3["collection_blockers"]
     assert "nurec_workcell_visibility_clearance_gate" in v3["collection_blockers"]
     assert "liangzhu_collision_clearance_gate" in v3["collection_blockers"]
-    assert "translated_environment_conveyor_contact_gate" in v3[
+    assert "translated_environment_conveyor_contact_gate" not in v3[
         "collection_blockers"
     ]
     assert "carry_to_preplace_teacher_transition" in v3["collection_blockers"]
@@ -56,6 +56,9 @@ def test_v3_uses_native_nurec_and_separate_collision() -> None:
     assert config["physics_layer"]["gaussian_splats_have_collision"] is False
     assert config["physics_layer"]["procedural_ground_enabled"] is False
     assert config["physics_layer"]["local_invisible_floor_patch_enabled"] is True
+    assert config["physics_layer"][
+        "translated_kinematic_belt_contact_verified"
+    ] is True
     assert config["gaussian_layer"]["asset_container"].endswith(".usdz")
     assert config["gaussian_layer"]["nurec_archive_member"].endswith(".nurec")
     assert config["visual_partition"]["procedural_v1_room_enabled"] is False

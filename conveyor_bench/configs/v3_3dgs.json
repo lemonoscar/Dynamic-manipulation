@@ -6,7 +6,6 @@
   "collection_blockers": [
     "nurec_workcell_visibility_clearance_gate",
     "liangzhu_collision_clearance_gate",
-    "translated_environment_conveyor_contact_gate",
     "carry_to_preplace_teacher_transition",
     "real_object_rigid_body_fixture_gate"
   ],
@@ -61,7 +60,7 @@
     "procedural_ground_enabled": false,
     "local_invisible_floor_patch_enabled": true,
     "local_floor_patch_size_xyz_m": [3.0, 3.4, 0.02],
-    "translated_kinematic_belt_contact_verified": false,
+    "translated_kinematic_belt_contact_verified": true,
     "gaussian_splats_have_collision": false
   },
   "gaussian_layer": {
