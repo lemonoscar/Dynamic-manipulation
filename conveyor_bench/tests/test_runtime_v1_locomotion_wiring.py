@@ -169,7 +169,7 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     tree = _runtime_tree()
 
     assert _literal_constant(tree, "_TEACHER_PROFILE_ID") == (
-        "overhead_slow_pick_place_v1"
+        "overhead_slow_pick_place_v2"
     )
     assert _literal_constant(tree, "_TEACHER_CARTESIAN_STEP_M") == 0.003
     assert _literal_constant(tree, "_TEACHER_VERTICAL_STEP_M") == 0.0015
@@ -186,6 +186,52 @@ def test_teacher_cartesian_steps_are_slow_enough_for_25hz_chunks() -> None:
     source = ast.unparse(_method(tree, "_teacher_translation_step_m"))
     assert "phase in {'descend', 'close'}" in source
     assert "phase == 'lift'" in source
+
+
+def test_gripper_target_uses_smooth_measured_start_trajectory() -> None:
+    tree = _runtime_tree()
+    helpers = [
+        copy.deepcopy(
+            next(
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == name
+            )
+        )
+        for name in ("_smoothstep5", "_gripper_opening_at")
+    ]
+    namespace = {
+        "_GRIPPER_MOVE_DURATION_S": _literal_constant(
+            tree, "_GRIPPER_MOVE_DURATION_S"
+        )
+    }
+    exec(
+        compile(
+            ast.fix_missing_locations(
+                ast.Module(body=helpers, type_ignores=[])
+            ),
+            str(RUNTIME_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    opening_at = namespace["_gripper_opening_at"]
+
+    assert opening_at(0.044, 0.0, 0.0) == pytest.approx(0.044)
+    assert opening_at(0.044, 0.0, 0.35) == pytest.approx(0.022)
+    assert opening_at(0.044, 0.0, 0.70) == pytest.approx(0.0)
+    source = ast.unparse(_method(tree, "_apply_gripper"))
+    assert "self.robot.data.joint_pos" in source
+    assert "self._gripper_transition_start_m = measured_opening" in source
+    assert "_GRIPPER_HOLD_DURATION_S" in source
+
+
+def test_close_phase_keeps_transport_tracking_after_contact() -> None:
+    episode = ast.unparse(_method(_runtime_tree(), "_run_episode"))
+
+    assert "and phase == 'descend'" in episode
+    assert "phase in {'descend', 'close'}" not in episode
+    assert "2.0 * gripper_command_open_fraction - 1.0" in episode
 
 
 def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:

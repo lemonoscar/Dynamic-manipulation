@@ -1,6 +1,7 @@
 # ConveyorVLA AL0：动态抓取架构与正式采集执行方案
 
-状态：2026-08-08 正在执行新工位与俯视慢速 teacher 重新标定。旧提交
+状态：2026-08-11 已把参考工程的实测起点平滑夹爪轨迹融合进现有动态 oracle、
+canonical recorder 和 LeRobot 导出链路。旧提交
 `d7b6f0963bef0864b8101571981b7d02e40c3122` 的 production 数据保留作历史诊断，
 但不得与新几何/新 teacher 数据混合；新一轮 production 只能在新的单回合和
 并行 pilot 重新通过后启动。
@@ -10,7 +11,8 @@
 本阶段不是训练分类器，也不是继续扩大旧的 `0.06 m/s` 多物体分拣矩阵。终点是：
 
 1. 保留可复现的 ConveyorVLA AL0 单帧兼容基线；
-2. 增加不破坏旧 checkpoint/schema 的 `conveyorvla_al0_temporal_v1` profile；
+2. 使用模型张量形状不变、数据 schema 显式隔离的
+   `conveyorvla_al0_temporal_v2` profile；
 3. 让新数据具备双帧运动观测、可跳过的未来动作和严格时钟身份；
 4. 在 4xH20 的 GPU 2/3 上通过单回合和并行 pilot；
 5. 启动 384 条低速单物体成功示教的正式、可恢复采集。
@@ -49,7 +51,8 @@ head[t-2,t] + wrist[t-2,t] + state28[t]
 - TCP 六维不是逐步增量，而是每一行独立描述未来 TCP 相对观测时刻
   root/TCP 的目标；移动底盘产生的世界位姿变化也包含在该目标中；
 - 旋转通过四元数组合后转 rotation vector，禁止直接跨姿态相减；
-- gripper 为绝对 `0=close, 1=open`，base-y 继续按机器人合同屏蔽。
+- gripper 为未来实测关节开度 `0=close, 1=open`，包含连续闭合过程；base-y
+  继续按机器人合同屏蔽。
 
 因此即使模型迟到，丢弃前若干行不会改变剩余行的参考系。
 
@@ -84,11 +87,13 @@ mobile_settle → mobile_approach → mobile_stabilize → arm_preposition
 训练指令统一为“抓取传送带零件并安全抬升”，不会把目标分拣盘作为模型条件。
 投放部分仍在 canonical episode 中供未来扩展，但不进入当前 grasp-only profile。
 
-canonical 示教器冻结为 `overhead_slow_pick_place_v1`：抓取和投放均使用距竖直
+canonical 示教器冻结为 `overhead_slow_pick_place_v2`：抓取和投放均使用距竖直
 `15°` 的俯视姿态，并按零件 `finger_closing_axis` 对齐夹爪；预抓取和预放置
 各保持 `0.5 s` 视觉观察。50 Hz 下普通移动、竖直下探、抬升单步上限分别为
-`3.0/1.5/2.0 mm`。新 episode 必须在 metadata 中携带 profile ID；缺失该字段
-的旧 episode 即使物理成功，也不能进入本轮训练清单。
+`3.0/1.5/2.0 mm`。夹爪从实测开度出发，以五次 smoothstep 在 `0.7 s` 内闭合
+并保持 `0.3 s`；双指接触后 CLOSE 目标继续随运输方向更新。新 episode 必须在
+metadata 中携带 profile ID；缺失该字段的旧 episode 即使物理成功，也不能进入
+本轮训练清单。
 
 ### 矩阵
 

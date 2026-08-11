@@ -189,11 +189,12 @@
     ],
     "gripper_semantics": {
       "open": 1.0,
-      "close": -1.0
+      "close": -1.0,
+      "intermediate": "continuous_commanded_open_fraction_mapped_to_minus1_plus1"
     }
   },
   "demonstration_teacher": {
-    "profile_id": "overhead_slow_pick_place_v1",
+    "profile_id": "overhead_slow_pick_place_v2",
     "approach": "overhead_top_down",
     "tcp_pitch_from_horizontal_deg": 75.0,
     "pregrasp_observation_dwell_s": 0.5,
@@ -201,8 +202,12 @@
     "cartesian_step_m_at_50hz": 0.003,
     "vertical_step_m_at_50hz": 0.0015,
     "lift_step_m_at_50hz": 0.002,
-    "max_rotation_step_rad_at_50hz": 0.04,
-    "release_clearance_above_rim_m": 0.025
+    "max_rotation_step_rad_at_50hz": 0.01,
+    "release_clearance_above_rim_m": 0.025,
+    "gripper_interpolation": "smoothstep5",
+    "gripper_move_duration_s": 0.7,
+    "gripper_hold_duration_s": 0.3,
+    "gripper_close_motion": "track_transport_after_contact"
   },
   "cameras": {
     "capture_format": "lossless_png",

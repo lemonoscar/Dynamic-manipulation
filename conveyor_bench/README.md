@@ -8,8 +8,9 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
 隔离 ConveyorVLA AL0 的移动、抓取与投放能力；它不会计入动态 benchmark 分数。
 当前 V1/V2 近端工位的皮带面为 `0.34 m`，尺寸 `0.252 × 1.56 m`，默认低速
 为 `0.01 m/s`。新示教统一使用俯视抓取和俯视投放：预抓取/预放置各观察
-`0.5 s`，下探最高 `0.075 m/s`，episode metadata 标记为
-`overhead_slow_pick_place_v1`，避免和早期水平进给轨迹混用。
+`0.5 s`，下探最高 `0.075 m/s`；夹爪从实测开度平滑运动 `0.7 s` 并保持
+`0.3 s`，接触后继续追踪运动零件。episode metadata 标记为
+`overhead_slow_pick_place_v2`，避免和早期水平进给或二值夹爪轨迹混用。
 
 新增的 V3 视觉 profile 沿用 V1 物理与训练契约，以本地 3DGS 静态工位、Isaac
 动态前景和深度合成替换程序化背景。该 profile 当前只完成方案冻结，尚未放入真实
@@ -356,7 +357,8 @@ V1 固定三时钟为 physics `400 Hz`、control `50 Hz`、camera/model
 base 速度在 body frame，TCP 平移和 rotation-vector 增量在
 robot-root/base frame；固定机身模式前三维必须为零。`head_rgb` 与
 `wrist_rgb` 是 `policy_observation`，`overview_rgb` 永远只可
-`observer_only`。
+`observer_only`。canonical gripper 的 `[-1,1]` 保留连续命令开度；AL0
+temporal v2 的未来动作标签使用实测夹爪开度。
 
 8 个本地物品冻结为 6 seen（其中 4 train、2 val）和 2 unseen；完整 ID 与
 划分见 V1 规范。采集 CLI 进一步冻结为互斥的 `train` 4 个、`val` 2 个和

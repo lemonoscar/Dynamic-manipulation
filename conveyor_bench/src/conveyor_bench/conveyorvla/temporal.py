@@ -11,9 +11,10 @@ from typing import Any, Callable, Mapping, Sequence
 from conveyor_bench.m0_mobile import M0MobileError, M0MobileNormalizer
 
 
-TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-1"
-TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v1"
-TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v1"
+TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-2"
+TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v2"
+TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v2"
+GRIPPER_ACTION_SOURCE = "future_measured_joint_open_fraction"
 DEFAULT_TEMPORAL_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs"
@@ -123,6 +124,10 @@ def temporal_sample_from_record(
         raise M0MobileError("record has an unsupported temporal profile")
     if record.get("policy_task_scope") != "grasp_only":
         raise M0MobileError("temporal record must use grasp_only task scope")
+    if record.get("gripper_action_source") != GRIPPER_ACTION_SOURCE:
+        raise M0MobileError(
+            "temporal record must use future measured gripper actions"
+        )
 
     root = Path(episode_root).expanduser().resolve()
     raw_clips = _sequence(record.get("camera_clips"), "camera_clips")
@@ -272,6 +277,7 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
         "action_horizon": ACTION_HORIZON,
         "action_rate_hz": MODEL_HZ,
         "control_rate_hz": CONTROL_HZ,
+        "gripper_action_source": GRIPPER_ACTION_SOURCE,
     }
     for key, value in expected.items():
         if data.get(key) != value:
@@ -415,6 +421,7 @@ __all__ = [
     "CONTROL_HZ",
     "DEFAULT_TEMPORAL_CONFIG_PATH",
     "GRASP_TRAINING_PHASES",
+    "GRIPPER_ACTION_SOURCE",
     "HISTORY_OFFSETS_MODEL_TICKS",
     "MODEL_HZ",
     "STATE_DIM",

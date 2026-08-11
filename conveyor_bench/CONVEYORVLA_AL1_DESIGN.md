@@ -1,12 +1,14 @@
 # ConveyorVLA AL1：面向动态抓取的时序与流式控制方案
 
-状态：研究依据与后续晋级候选，尚未替代 AL0。本文冻结于 2026-08-06。
+状态：研究依据与后续晋级候选，尚未替代 AL0。原方案冻结于 2026-08-06；
+2026-08-11 已把 P0 数据合同和慢速夹爪执行融合为
+`conveyorvla_al0_temporal_v2`，模型仍命名为 AL0。
 
 当前正式执行方案已经收敛到
 [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。为了不把
-未经闭环验证的结构提前命名成新一代模型，本文件中的机制先作为
-`conveyorvla_al0_temporal_v1` 实验 profile 落地；只有取得规定的动态成功率增益
-后才晋级为 AL1。
+未经闭环验证的结构提前命名成新一代模型，本文件中的机制先在 AL0 的 temporal
+profile 中验证。`temporal_v1` 只保留为历史数据；当前 `temporal_v2` 只有取得
+规定的动态成功率增益后才晋级为 AL1。
 
 ## 结论
 
@@ -108,11 +110,12 @@ AL1 输出 `20×10`，覆盖 0.8 s，与 model/camera 的 25 Hz 对齐；Isaac �
 - `base_vx/base_vy/base_wz`：该未来 tick 的速度命令；
 - `tcp_xyz/tcp_rot`：相对观察时刻 TCP pose 的未来目标，而不是“再走一步”的
   增量；旋转用四元数复合后转 rotation vector，不能简单跨大角度相加；
-- `gripper`：绝对开/闭状态，并带开闭迟滞。
+- `gripper`：未来实测的连续开度 `0=close, 1=open`。
 
 采集到的 50 Hz 示教在导出时组合成 25 Hz waypoint：速度取时间平均，TCP 由
-真实 future pose 计算相对目标，gripper 保留事件边沿。运行时由 50 Hz Cartesian
-servo 插值到下一个 waypoint，不能把同一个位移增量重复执行两次。
+真实 future pose 计算相对目标，gripper 保留完整的平滑开闭轨迹。运行时由
+50 Hz Cartesian servo 插值到下一个 waypoint，不能把同一个位移增量重复执行
+两次。
 
 这一设计使 chunk 的第 `k` 行是独立的未来目标。推理迟到时可以安全丢弃前 `k`
 行；AL0 的逐步增量 action 不具备这个性质。现有 DiT 的权重形状不依赖 horizon，
@@ -140,7 +143,8 @@ skip = current_control_tick - observation_control_tick
 由于 AL1 action 是 25 Hz，而控制是 50 Hz，control tick 必须先映射到 action
 index。已过期行直接丢弃，新旧 chunk 按目标 tick 合并；无新动作时继续执行旧
 chunk 的尚未过期后缀。若剩余少于安全下限或 chunk identity 倒退，则保持当前
-安全姿态并记录 fail-closed 原因。夹爪边沿不能做数值 blend。
+安全姿态并记录 fail-closed 原因。跨 chunk 只选择具有最新时钟身份的夹爪目标；
+连续运动由底层夹爪轨迹生成器负责。
 
 ### 4. 训练：先保留语义，再学习时机
 
@@ -165,7 +169,8 @@ chunk 的尚未过期后缀。若剩余少于安全下限或 chunk identity 倒�
 
 ### P0：数据与时钟合同
 
-- 新增 `conveyorvla_al1` exporter，不修改 `m0_mobile_v1`；
+- 使用独立 `conveyorvla_al0_temporal_v2` exporter，保留历史
+  `m0_mobile_v1`/`temporal_v1` 数据不变；
 - 复用 canonical `history_offsets_steps=(-2,0)`；
 - 输出 capture/control/model tick、20 步 25 Hz future-pose action；
 - 增加时钟、边界 padding、pose composition 和无观测泄漏测试。

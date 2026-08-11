@@ -395,7 +395,7 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     first = records[0]
 
     assert len(records) == 8
-    assert first["profile"] == "conveyorvla_al0_temporal_v1"
+    assert first["profile"] == "conveyorvla_al0_temporal_v2"
     assert first["observation_model_tick"] == 2
     assert first["observation_control_tick"] == 5
     assert first["history_model_ticks"] == (0, 2)
@@ -409,6 +409,10 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     assert first["model_action10_chunk"][0][:3] == pytest.approx((0.1, 0.2, 0.3))
     assert first["model_action10_chunk"][0][3] == pytest.approx(0.01)
     assert first["model_action10_chunk"][5][3] == pytest.approx(0.06)
+    assert first["model_action10_chunk"][0][9] == pytest.approx(0.0)
+    assert first["gripper_action_source"] == (
+        "future_measured_joint_open_fraction"
+    )
     assert first["future_offsets_model_ticks"] == tuple(range(1, 21))
     assert first["object_state_is_model_input"] is False
 

@@ -211,7 +211,7 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 # cross-track error, inside the 0.045 m position gate.  Drive that chord
 # straight instead of asking the loaded policy for another coupled turn.
 _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
-_TEACHER_PROFILE_ID = "overhead_slow_pick_place_v1"
+_TEACHER_PROFILE_ID = "overhead_slow_pick_place_v2"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
 _TEACHER_LIFT_STEP_M = 0.002
@@ -221,6 +221,10 @@ _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_INTERCEPT_MIN_HALF_WIDTH_M = 0.005
 _TEACHER_INTERCEPT_DWELL_MARGIN_S = 0.10
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
+_GRIPPER_OPEN_POSITION_M = 0.044
+_GRIPPER_CLOSED_POSITION_M = 0.0
+_GRIPPER_MOVE_DURATION_S = 0.70
+_GRIPPER_HOLD_DURATION_S = 0.30
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
@@ -259,6 +263,22 @@ def _teacher_intercept_entry_tolerance_m(
             + _TEACHER_INTERCEPT_DWELL_MARGIN_S
         ),
     )
+
+
+def _smoothstep5(value: float) -> float:
+    value = min(1.0, max(0.0, float(value)))
+    return value * value * value * (
+        value * (value * 6.0 - 15.0) + 10.0
+    )
+
+
+def _gripper_opening_at(
+    start_m: float,
+    target_m: float,
+    elapsed_s: float,
+) -> float:
+    progress = _smoothstep5(elapsed_s / _GRIPPER_MOVE_DURATION_S)
+    return (1.0 - progress) * float(start_m) + progress * float(target_m)
 
 
 class _MobilePreconditionFailure(Exception):
@@ -581,6 +601,14 @@ class ConveyorRuntimeV1:
             )
         self.physics_dt = 1.0 / self.benchmark.physics_hz
         self.control_dt = 1.0 / self.benchmark.control_hz
+        self._gripper_requested_open = True
+        self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
+        self._gripper_transition_elapsed_s = (
+            _GRIPPER_MOVE_DURATION_S + _GRIPPER_HOLD_DURATION_S
+        )
+        self._gripper_target_opening_m = _GRIPPER_OPEN_POSITION_M
+        self._gripper_trajectory_phase = "ready"
+        self._gripper_close_ready = False
         self.physics_decimation = (
             self.benchmark.physics_hz // self.benchmark.control_hz
         )
@@ -830,6 +858,15 @@ class ConveyorRuntimeV1:
                 "max_rotation_step_rad": (
                     _TEACHER_MAX_ROTATION_STEP_RAD
                 ),
+                "gripper_control": {
+                    "interpolation": "smoothstep5",
+                    "move_duration_s": _GRIPPER_MOVE_DURATION_S,
+                    "hold_duration_s": _GRIPPER_HOLD_DURATION_S,
+                    "open_position_m": _GRIPPER_OPEN_POSITION_M,
+                    "closed_position_m": _GRIPPER_CLOSED_POSITION_M,
+                    "close_motion": "track_transport_after_contact",
+                    "training_label": "future_measured_joint_open_fraction",
+                },
                 "release_position_tolerance_m": (
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
                 ),
@@ -1427,12 +1464,13 @@ class ConveyorRuntimeV1:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase in {"descend", "close"}
+                        and phase == "descend"
                         and not oracle_command.terminal
                     ):
                         # Descend on the interception line and let the moving
-                        # part enter the gripper.  Chasing it sideways couples
-                        # an unsupported lateral base motion into the Go2.
+                        # part enter the gripper.  Once bilateral contact
+                        # starts, CLOSE follows the transport axis while the
+                        # fingers finish their slow trajectory.
                         target_tcp_pose_world = Pose(
                             (
                                 target_tcp_pose_world.xyz[0],
@@ -2088,7 +2126,9 @@ class ConveyorRuntimeV1:
                             m0_staging_handoff_metadata
                         )
 
-                self._apply_gripper(gripper_open)
+                gripper_command_open_fraction = self._apply_gripper(
+                    gripper_open
+                )
                 applied_policy_action = self._apply_base_command(base_command)
                 for _ in range(self.physics_decimation):
                     self.scene.write_data_to_sim()
@@ -2328,7 +2368,7 @@ class ConveyorRuntimeV1:
                         *tuple(float(value) for value in base_command),
                         *canonical_ee_delta,
                         *canonical_rotvec,
-                        1.0 if gripper_open else -1.0,
+                        2.0 * gripper_command_open_fraction - 1.0,
                     )
                 )
                 if m0_step_metadata is not None:
@@ -2349,6 +2389,10 @@ class ConveyorRuntimeV1:
                     policy_action=applied_policy_action,
                     oracle_target_base=last_command_target_base,
                     m0_step_metadata=m0_step_metadata,
+                    gripper_requested_open=gripper_open,
+                    gripper_command_open_fraction=(
+                        gripper_command_open_fraction
+                    ),
                 )
                 buffered_samples.append(sample)
 
@@ -2921,6 +2965,14 @@ class ConveyorRuntimeV1:
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
+        self._gripper_requested_open = True
+        self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
+        self._gripper_transition_elapsed_s = (
+            _GRIPPER_MOVE_DURATION_S + _GRIPPER_HOLD_DURATION_S
+        )
+        self._gripper_target_opening_m = _GRIPPER_OPEN_POSITION_M
+        self._gripper_trajectory_phase = "ready"
+        self._gripper_close_ready = False
 
     def _reset_robot_state(
         self, resolved: _ResolvedTask | None = None
@@ -2963,7 +3015,9 @@ class ConveyorRuntimeV1:
         joint_positions = self.robot.data.joint_pos.clone()
         joint_velocities = torch.zeros_like(joint_positions)
         joint_positions[:, self.arm_joint_ids] = target
-        joint_positions[:, self.gripper_joint_ids] = 0.044
+        joint_positions[:, self.gripper_joint_ids] = (
+            _GRIPPER_OPEN_POSITION_M
+        )
         self.robot.write_joint_state_to_sim(
             joint_positions, joint_velocities
         )
@@ -3172,6 +3226,7 @@ class ConveyorRuntimeV1:
                 settle_duration_s=0.50,
                 select_duration_s=0.25,
                 grasp_contact_dwell_s=0.15,
+                close_timeout_s=1.50,
                 pregrasp_observation_dwell_s=(
                     _TEACHER_PREGRASP_OBSERVATION_DWELL_S
                 ),
@@ -4098,7 +4153,10 @@ class ConveyorRuntimeV1:
             ),
             state["tcp_base"].xyz,
             state["tcp_base"].wxyz,
-            min(1.0, max(0.0, gripper_position / 0.044)),
+            min(
+                1.0,
+                max(0.0, gripper_position / _GRIPPER_OPEN_POSITION_M),
+            ),
         )
 
     @staticmethod
@@ -4314,8 +4372,42 @@ class ConveyorRuntimeV1:
             self._arm_target, joint_ids=self.arm_joint_ids
         )
 
-    def _apply_gripper(self, open_gripper: bool) -> None:
-        opening = 0.044 if open_gripper else 0.0
+    def _apply_gripper(self, open_gripper: bool) -> float:
+        measured_opening = float(
+            self.robot.data.joint_pos[0, self.gripper_joint_ids]
+            .mean()
+            .item()
+        )
+        measured_opening = min(
+            _GRIPPER_OPEN_POSITION_M,
+            max(_GRIPPER_CLOSED_POSITION_M, measured_opening),
+        )
+        if open_gripper != self._gripper_requested_open:
+            self._gripper_requested_open = open_gripper
+            self._gripper_transition_start_m = measured_opening
+            self._gripper_transition_elapsed_s = 0.0
+        target_opening = (
+            _GRIPPER_OPEN_POSITION_M
+            if open_gripper
+            else _GRIPPER_CLOSED_POSITION_M
+        )
+        opening = _gripper_opening_at(
+            self._gripper_transition_start_m,
+            target_opening,
+            self._gripper_transition_elapsed_s,
+        )
+        if self._gripper_transition_elapsed_s < _GRIPPER_MOVE_DURATION_S:
+            self._gripper_trajectory_phase = "moving"
+        elif self._gripper_transition_elapsed_s < (
+            _GRIPPER_MOVE_DURATION_S + _GRIPPER_HOLD_DURATION_S
+        ):
+            self._gripper_trajectory_phase = "holding"
+        else:
+            self._gripper_trajectory_phase = "ready"
+        self._gripper_target_opening_m = opening
+        self._gripper_close_ready = (
+            not open_gripper and self._gripper_trajectory_phase == "ready"
+        )
         self.robot.set_joint_position_target(
             torch.full(
                 (1, len(self.gripper_joint_ids)),
@@ -4326,6 +4418,11 @@ class ConveyorRuntimeV1:
             joint_ids=self.gripper_joint_ids,
         )
         self._gripper_open = open_gripper
+        self._gripper_transition_elapsed_s = min(
+            _GRIPPER_MOVE_DURATION_S + _GRIPPER_HOLD_DURATION_S,
+            self._gripper_transition_elapsed_s + self.control_dt,
+        )
+        return min(1.0, max(0.0, opening / _GRIPPER_OPEN_POSITION_M))
 
     def _apply_base_command(
         self,
@@ -4415,6 +4512,15 @@ class ConveyorRuntimeV1:
             self.right_contact_sensor, resolved.assets
         )
         bilateral = set(left_contacts).intersection(right_contacts)
+        gripper_opening_m = float(
+            self.robot.data.joint_pos[0, self.gripper_joint_ids]
+            .mean()
+            .item()
+        )
+        gripper_open_fraction = min(
+            1.0,
+            max(0.0, gripper_opening_m / _GRIPPER_OPEN_POSITION_M),
+        )
 
         distances = {
             asset.object_id: float(
@@ -4494,6 +4600,8 @@ class ConveyorRuntimeV1:
             "objects": tuple(object_states),
             "left_contacts": left_contacts,
             "right_contacts": right_contacts,
+            "gripper_opening_m": gripper_opening_m,
+            "gripper_open_fraction": gripper_open_fraction,
             "robot_fallen": (
                 root_pose.xyz[2] < 0.20 or float(root_up[2].item()) < 0.55
             ),
@@ -4556,6 +4664,7 @@ class ConveyorRuntimeV1:
             left_contact_object_ids=state["left_contacts"],
             right_contact_object_ids=state["right_contacts"],
             target_held=target.in_gripper,
+            gripper_close_ready=self._gripper_close_ready,
             target_lifted=(
                 target.pose_world.xyz[2] - BELT_TOP_Z_M >= 0.04
             ),
@@ -4596,6 +4705,8 @@ class ConveyorRuntimeV1:
         policy_action: tuple[float, ...],
         oracle_target_base: tuple[float, float, float] | None,
         m0_step_metadata: dict[str, Any] | None,
+        gripper_requested_open: bool,
+        gripper_command_open_fraction: float,
     ) -> StepSample:
         future_labels: list[FutureObjectState] = []
         for obj in state["objects"]:
@@ -4670,6 +4781,22 @@ class ConveyorRuntimeV1:
                 "locomotion_policy_action": policy_action,
                 "oracle_next_tcp_target_base_xyz": oracle_target_base,
                 "held_instance_id": self._held_instance_id,
+                "gripper_control": {
+                    "requested_open": gripper_requested_open,
+                    "trajectory_phase": self._gripper_trajectory_phase,
+                    "interpolation": "smoothstep5",
+                    "move_duration_s": _GRIPPER_MOVE_DURATION_S,
+                    "hold_duration_s": _GRIPPER_HOLD_DURATION_S,
+                    "command_opening_m": self._gripper_target_opening_m,
+                    "command_open_fraction": (
+                        gripper_command_open_fraction
+                    ),
+                    "measured_opening_m": state["gripper_opening_m"],
+                    "measured_open_fraction": state[
+                        "gripper_open_fraction"
+                    ],
+                    "close_ready": self._gripper_close_ready,
+                },
                 "root_tilt_rad": state["root_tilt_rad"],
                 "mobile_carry_stage": self._mobile_carry_stage,
                 "ik_position_error_m": self._last_ik_error_m,

@@ -1,13 +1,13 @@
 {
-  "schema_version": "conveyor-vla-al0-temporal-config-1",
+  "schema_version": "conveyor-vla-al0-temporal-config-2",
   "model_identity": {
     "family": "ConveyorVLA",
     "variant": "AL0",
-    "profile": "temporal_v1",
+    "profile": "temporal_v2",
     "name": "ConveyorVLA AL0"
   },
   "data": {
-    "profile": "conveyorvla_al0_temporal_v1",
+    "profile": "conveyorvla_al0_temporal_v2",
     "camera_order": [
       "head_rgb",
       "wrist_rgb"
@@ -30,6 +30,7 @@
     "tcp_target_reference": "observation_root_and_tcp",
     "base_action_semantics": "future_model_tick_mean_body_velocity",
     "gripper_semantics": "absolute_0_close_1_open",
+    "gripper_action_source": "future_measured_joint_open_fraction",
     "object_state_is_model_input": false,
     "overview_camera_is_model_input": false,
     "policy_task_scope": "grasp_only"
@@ -101,13 +102,17 @@
     "training_requires_success": true,
     "diagnostic_assistance_allowed": false,
     "demonstration_teacher": {
-      "profile_id": "overhead_slow_pick_place_v1",
+      "profile_id": "overhead_slow_pick_place_v2",
       "overhead_approach_pitch_deg": 75.0,
       "pregrasp_observation_dwell_s": 0.5,
       "preplace_observation_dwell_s": 0.5,
       "maximum_vertical_speed_mps": 0.075,
       "maximum_lift_speed_mps": 0.1,
-      "maximum_cartesian_speed_mps": 0.15
+      "maximum_cartesian_speed_mps": 0.15,
+      "gripper_interpolation": "smoothstep5",
+      "gripper_move_duration_s": 0.7,
+      "gripper_hold_duration_s": 0.3,
+      "gripper_close_motion": "track_transport_after_contact"
     }
   }
 }

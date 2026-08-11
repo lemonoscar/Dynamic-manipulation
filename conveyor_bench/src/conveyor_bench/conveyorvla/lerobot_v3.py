@@ -22,6 +22,7 @@ from .temporal import (
     ACTION_HORIZON,
     CAMERA_IDS,
     CONTROL_HZ,
+    GRIPPER_ACTION_SOURCE,
     HISTORY_OFFSETS_MODEL_TICKS,
     MODEL_HZ,
     STATE_DIM,
@@ -479,6 +480,7 @@ def _validate_config(config: Mapping[str, Any]) -> None:
         or action.get("flatten_order") != "time_major"
         or len(_sequence(action.get("step_names"), "features.action.step_names")) != ACTION_DIM
         or action.get("dimension_mask") != list(ACTION_DIMENSION_MASK)
+        or action.get("gripper_action_source") != GRIPPER_ACTION_SOURCE
     ):
         raise M0MobileError("features.action must preserve the AL0 20x10 time-major contract")
     if features.get("observer_camera_is_model_input") is not False or features.get("object_state_is_model_input") is not False:

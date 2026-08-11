@@ -37,7 +37,7 @@ def test_grasp_curriculum_is_two_speeds_four_shapes_and_unique_seeds() -> None:
     }
     assert len(seeds) == len(set(seeds)) == 584
     assert all(len(cell.seeds("production")) == 72 for cell in cells)
-    assert collector.TEACHER_PROFILE_ID == "overhead_slow_pick_place_v1"
+    assert collector.TEACHER_PROFILE_ID == "overhead_slow_pick_place_v2"
 
 
 def test_collection_command_is_single_target_slow_and_temporally_balanced(

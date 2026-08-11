@@ -219,6 +219,7 @@ class OracleObservation:
     left_contact_object_ids: tuple[str, ...] = ()
     right_contact_object_ids: tuple[str, ...] = ()
     target_held: bool = False
+    gripper_close_ready: bool = True
     target_lifted: bool = False
     target_in_goal: bool = False
     target_released: bool = False
@@ -246,6 +247,8 @@ class OracleObservation:
                 raise ValueError(f"{name} must not contain duplicates")
             if any(not isinstance(object_id, str) or not object_id for object_id in object_ids):
                 raise ValueError(f"{name} must contain non-empty object ids")
+        if not isinstance(self.gripper_close_ready, bool):
+            raise ValueError("gripper_close_ready must be a bool")
 
 
 @dataclass(frozen=True)
@@ -419,8 +422,13 @@ class DynamicSortOracle:
             if target_contact and observation.target_held:
                 if self._contact_started_at is None:
                     self._contact_started_at = observation.sim_time_s
+                # The stationary interception pose is useful until first
+                # contact.  During the slow close trajectory, follow the
+                # moving part along the belt instead of holding a stale pose.
+                descent_target = grasp_target
                 if (
-                    observation.sim_time_s - self._contact_started_at
+                    observation.gripper_close_ready
+                    and observation.sim_time_s - self._contact_started_at
                     >= self.config.grasp_contact_dwell_s
                 ):
                     safe_z = self._safe_carry_z(

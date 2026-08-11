@@ -1090,7 +1090,7 @@ def iter_conveyorvla_al0_temporal_records(
 
     benchmark = config or BenchmarkConfig.v1()
     if benchmark.control_hz != 50 or benchmark.model_hz != 25:
-        raise ExportError("AL0 temporal v1 requires 50 Hz control and 25 Hz model clocks")
+        raise ExportError("AL0 temporal v2 requires 50 Hz control and 25 Hz model clocks")
     episode_path, episode, task, source_result = _episode_context(
         episode_directory
     )
@@ -1170,9 +1170,7 @@ def iter_conveyorvla_al0_temporal_records(
                 future_tcp_xyz,
                 future_tcp_wxyz,
             )
-            gripper = canonical_to_m0_mobile_action(
-                _canonical_action(target)
-            )[9]
+            _, _, gripper = _joint_vectors(target)
             action_chunk.append(base_action + tcp_target + (gripper,))
 
         observation_sim_step = _integer(source.get("sim_step"), "sim_step")
@@ -1256,10 +1254,14 @@ def iter_conveyorvla_al0_temporal_records(
             "model_action10_chunk": tuple(action_chunk),
             "action_semantics": (
                 "future mean base velocity plus independent future TCP pose "
-                "relative to observation root/TCP plus absolute gripper"
+                "relative to observation root/TCP plus future realized "
+                "gripper opening"
             ),
             "tcp_target_frame": "observation_robot_root",
             "model_gripper_convention": "0=close,1=open",
+            "gripper_action_source": (
+                "future_measured_joint_open_fraction"
+            ),
             "action_dimension_mask": M0_MOBILE_ACTION_DIMENSION_MASK,
         }
 

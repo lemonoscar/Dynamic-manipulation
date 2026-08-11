@@ -13,8 +13,8 @@
     "use_videos": true
   },
   "source": {
-    "profile": "conveyorvla_al0_temporal_v1",
-    "schema_version": "conveyor-vla-al0-temporal-v1",
+    "profile": "conveyorvla_al0_temporal_v2",
+    "schema_version": "conveyor-vla-al0-temporal-v2",
     "export_relative_path": "exports/conveyorvla_al0_temporal.jsonl",
     "required_task_scope": "grasp_only",
     "required_outcome": "success",
@@ -113,7 +113,8 @@
         "gripper_open_fraction"
       ],
       "dimension_mask": [true, false, true, true, true, true, true, true, true, true],
-      "semantics": "future mean base velocity plus independent future TCP pose relative to observation root/TCP plus absolute gripper"
+      "semantics": "future mean base velocity plus independent future TCP pose relative to observation root/TCP plus future measured gripper opening",
+      "gripper_action_source": "future_measured_joint_open_fraction"
     },
     "task_key": "task",
     "observer_camera_is_model_input": false,

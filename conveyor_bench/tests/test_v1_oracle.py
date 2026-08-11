@@ -56,6 +56,7 @@ def observation(
     target_velocity_world=TARGET_VELOCITY,
     tcp_position_world=(0.0, 0.0, 0.0),
     target_held: bool = False,
+    gripper_close_ready: bool = True,
     target_lifted: bool = False,
     target_in_goal: bool = False,
     target_released: bool = False,
@@ -75,6 +76,7 @@ def observation(
         left_contact_object_ids=left_contact_object_ids,
         right_contact_object_ids=right_contact_object_ids,
         target_held=target_held,
+        gripper_close_ready=gripper_close_ready,
         target_lifted=target_lifted,
         target_in_goal=target_in_goal,
         target_released=target_released,
@@ -240,6 +242,34 @@ def test_intercept_staging_waits_for_target_entry():
     assert command.phase is OraclePhase.CLOSE
     assert command.gripper_command == 0.0
     assert _position(command)[1] == pytest.approx(0.08)
+
+
+def test_close_tracks_contacted_part_and_waits_for_gripper_hold() -> None:
+    oracle = DynamicSortOracle(
+        replace(config(), intercept_staging_y_world=0.08)
+    )
+    oracle._transition(OraclePhase.CLOSE, 0.0)
+    contact = {
+        "target_position_world": (0.50, 0.05, 0.20),
+        "target_velocity_world": (0.0, 0.10, 0.0),
+        "left_contact_object_ids": (TARGET_ID,),
+        "right_contact_object_ids": (TARGET_ID,),
+        "target_held": True,
+    }
+
+    command = oracle.step(
+        observation(0.10, gripper_close_ready=False, **contact)
+    )
+
+    assert command.phase is OraclePhase.CLOSE
+    assert _position(command)[1] == pytest.approx(0.05)
+    assert _position(command)[1] != pytest.approx(0.08)
+
+    command = oracle.step(
+        observation(0.20, gripper_close_ready=True, **contact)
+    )
+
+    assert command.phase is OraclePhase.LIFT
 
 
 def run_success_trace(

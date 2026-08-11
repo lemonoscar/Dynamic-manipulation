@@ -30,11 +30,13 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 工位参数和来源记录在
 [assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json](assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json)。
 
-新采集必须使用 `overhead_slow_pick_place_v1` 示教：机械臂先在零件上方保持
+新采集必须使用 `overhead_slow_pick_place_v2` 示教：机械臂先在零件上方保持
 俯视观察，再以最高 `0.075 m/s` 的竖直速度下探；抓稳后竖直抬升，到分拣盘
 上方再次保持 `0.5 s` 俯视观察后释放。夹爪采用距竖直 `15°` 的可达俯视姿态，
-并按物体 affordance 对齐闭合轴。episode metadata 中缺少该 profile ID 的旧
-轨迹不得与新一轮训练集混合。
+并按物体 affordance 对齐闭合轴。闭爪从实测关节开度起步，以五次 smoothstep
+在 `0.7 s` 内运动并保持 `0.3 s`；首次双指接触后，TCP 继续沿运输方向追踪零件，
+而不是停在旧截取点。episode metadata 中缺少该 profile ID 的旧轨迹不得与
+新一轮训练集混合。
 
 ### 1.2 物体、划分与任务
 
@@ -58,6 +60,8 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 - physics/control/camera-model 固定为 `400/50/25 Hz`；
 - canonical action 为 body-frame base 3D、robot-root/base-frame TCP delta
   6D 和 gripper 1D，共 10D；
+- canonical gripper 为连续命令开度：`+1` 全开、`-1` 全闭，中间值保留慢速
+  夹爪轨迹；
 - `head_rgb`：狗头前缘、沿机身 `+X` 水平前视，策略可见；
 - `wrist_rgb`：夹爪正上方、向下俯视抓取区，策略可见；
 - `overview_rgb`：远处第三视角，只供人工观察、回放与质量检查。
@@ -453,9 +457,10 @@ V1 非完整底盘的 carry navigation 采用 stop-turn-drive：目标方位误�
 ## 7. ConveyorVLA AL0 时序抓取采集
 
 当前主线只采单活动物体、低速动态抓取，不训练分类。新 profile
-`conveyorvla_al0_temporal_v1` 为 head/wrist 各两帧 `[t-2,t]`、当前
+`conveyorvla_al0_temporal_v2` 为 head/wrist 各两帧 `[t-2,t]`、当前
 `state28` 和未来 `20×10@25 Hz` 独立目标；overview、物体真值及投放目标均不
-作为模型输入。完整架构合同见
+作为模型输入。动作第 10 维取未来时刻的实测夹爪关节开度，而不是二值 teacher
+请求；因此 `0.7 s` 闭合过程会成为可学习的连续时序。完整架构合同见
 [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
 
 正式矩阵为四种 train 零件 × `0.01/0.02 m/s`，每格目标 48 条成功且通过全部
@@ -501,9 +506,10 @@ renderer ordinal；每张卡最多一个 worker。每个仿真进程最多 8 条
 `collection_report.json` 中 production 的 `training_eligible_episodes=384`，
 而不是启动次数达到 384。
 
-### 4xH20 当前正式运行
+### 4xH20 历史正式运行（temporal v1）
 
-2026-08-06 已冻结并启动以下实例：
+2026-08-06 曾冻结并启动以下实例。它保留 `temporal_v1` 和旧夹爪标签，仅作
+历史证据，不得与当前 `temporal_v2` 数据合并：
 
 ```text
 source commit: d7b6f0963bef0864b8101571981b7d02e40c3122
@@ -557,7 +563,7 @@ python scripts/convert_conveyorvla_al0_to_lerobot.py \
 
 官方 reload、首帧四路视频解码、episode/frame 计数和 state/action shape 全部通过
 后，再去掉 `--max-episodes 1` 生成正式派生集。转换器固定要求 `lerobot==0.4.4`、
-H.264、成功且非 assisted 的 `conveyorvla_al0_temporal_v1`；它不会覆盖已有目录，
+H.264、成功且非 assisted 的 `conveyorvla_al0_temporal_v2`；它不会覆盖已有目录，
 也不会修改或删除 raw episode。完整转换来源和 SHA 写入
 `meta/conveyorvla_al0_conversion.json`。
 

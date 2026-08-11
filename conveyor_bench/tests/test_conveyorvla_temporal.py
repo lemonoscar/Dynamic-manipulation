@@ -15,6 +15,7 @@ from conveyor_bench.conveyorvla.streaming import (
 from conveyor_bench.conveyorvla.temporal import (
     ACTION_DIMENSION_MASK,
     ACTION_HORIZON,
+    GRIPPER_ACTION_SOURCE,
     TEMPORAL_PROFILE,
     TEMPORAL_SCHEMA_VERSION,
     load_temporal_config,
@@ -190,6 +191,7 @@ def test_temporal_record_loader_keeps_only_policy_inputs(tmp_path: Path) -> None
         "schema_version": TEMPORAL_SCHEMA_VERSION,
         "profile": TEMPORAL_PROFILE,
         "policy_task_scope": "grasp_only",
+        "gripper_action_source": GRIPPER_ACTION_SOURCE,
         "sample_id": "sample-a",
         "source_episode_id": "episode-a",
         "instruction": "grasp the part",
