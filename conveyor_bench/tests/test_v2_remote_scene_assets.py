@@ -16,6 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENE_V1_PATH = (
     PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "scene_v1.py"
 )
+ASSET_CONFIG_PATH = (
+    PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "asset_config.py"
+)
 REMOTE_SCENE_PATH = (
     PROJECT_ROOT
     / "src"
@@ -206,6 +209,23 @@ def test_frozen_camera_contract_matches_scene_mount_constants() -> None:
     assert remote["overview_rgb"]["mount"]["wxyz"] == pytest.approx(
         remote_constants["REMOTE_OVERVIEW_CAMERA_OFFSET_WXYZ"]
     )
+    for contract in (near, remote):
+        for camera_id in ("head_rgb", "wrist_rgb"):
+            camera = contract[camera_id]
+            assert camera["resolution"] == [640, 480]
+            assert camera["model"] == "opencv_pinhole"
+            expected_intrinsics = (
+                (383.44608095, 0.0, 324.33479864),
+                (0.0, 383.52724198, 238.90275478),
+                (0.0, 0.0, 1.0),
+            )
+            for actual, expected in zip(
+                camera["intrinsics"],
+                expected_intrinsics,
+                strict=True,
+            ):
+                assert actual == pytest.approx(expected)
+            assert camera["distortion_coefficients"] == [0.0] * 12
 
 
 def test_go2_camera_mounts_match_the_audited_arm_vla_reference() -> None:
@@ -215,14 +235,51 @@ def test_go2_camera_mounts_match_the_audited_arm_vla_reference() -> None:
         (0.5, -0.5, 0.5, -0.5)
     )
     assert constants["HEAD_CAMERA_ORIENTATION_CONVENTION"] == "ros"
-    assert constants["WRIST_CAMERA_OFFSET_XYZ"] == pytest.approx((0.0, 0.0, 0.10))
+    assert constants["FRONT_CAMERA_PRIM_PATH"] == (
+        "{ENV_REGEX_NS}/Robot/base/head_cam"
+    )
+    assert constants["WRIST_CAMERA_PRIM_PATH"] == (
+        "{ENV_REGEX_NS}/Robot/arm_link6/arm_vla_camera"
+    )
+    assert constants["WRIST_CAMERA_OFFSET_XYZ"] == pytest.approx(
+        (0.0666580792, 0.0028071889, 0.0935779972)
+    )
     assert constants["WRIST_CAMERA_OFFSET_WXYZ"] == pytest.approx(
-        (0.353553, -0.612372, 0.612372, -0.353553)
+        (0.3377891849, -0.6214992221, 0.6185057335, -0.3421810063)
     )
     assert constants["WRIST_CAMERA_ORIENTATION_CONVENTION"] == "ros"
+    assert constants["D436_CAMERA_RESOLUTION_WH"] == (640, 480)
+    assert constants["D436_CAMERA_FX_PX"] == pytest.approx(383.44608095)
+    assert constants["D436_CAMERA_FY_PX"] == pytest.approx(383.52724198)
+    assert constants["D436_CAMERA_CX_PX"] == pytest.approx(324.33479864)
+    assert constants["D436_CAMERA_CY_PX"] == pytest.approx(238.90275478)
+    assert constants["WRIST_CAMERA_NEAR_CLIPPING_M"] == pytest.approx(0.03)
     assert constants["BELT_DARK_GREEN_RGB"] == pytest.approx((0.015, 0.10, 0.035))
 
     scene_source = ast.unparse(_class(_tree(SCENE_V1_PATH), "ConveyorSceneV1Cfg"))
-    assert "focal_length=24.0" in scene_source
+    assert "height=D436_CAMERA_RESOLUTION_WH[1]" in scene_source
+    assert "width=D436_CAMERA_RESOLUTION_WH[0]" in scene_source
+    assert "func=make_d436_camera_spawn_function()" in scene_source
     assert "convention=HEAD_CAMERA_ORIENTATION_CONVENTION" in scene_source
     assert "convention=WRIST_CAMERA_ORIENTATION_CONVENTION" in scene_source
+
+
+def test_mobile_runtime_uses_pct_urdf_and_original_finray_colliders() -> None:
+    asset_tree = _tree(ASSET_CONFIG_PATH)
+    constants = _constants(asset_tree)
+    assert constants["TCP_OFFSET_X_M"] == pytest.approx(0.15757)
+    asset_source = ast.unparse(asset_tree)
+    policy_source = ast.unparse(
+        _function(asset_tree, "make_go2_x5_policy_cfg")
+    )
+    assert "UrdfFileCfg" in asset_source
+    assert "UsdFileCfg" not in policy_source
+
+    collision_source = ast.unparse(
+        _function(_tree(SCENE_V1_PATH), "apply_pct_gripper_collision_patch")
+    )
+    assert "convexDecomposition" in SCENE_V1_PATH.read_text(encoding="utf-8")
+    assert "PhysicsMeshCollisionAPI" in collision_source
+    assert "geometry_replaced" in collision_source
+    assert "SetActive" not in collision_source
+    assert "prim_type='Cube'" not in collision_source

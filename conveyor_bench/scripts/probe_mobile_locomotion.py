@@ -513,7 +513,7 @@ def _run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "physics_hz": PHYSICS_HZ,
                 "policy_hz": POLICY_HZ,
                 "decimation": DECIMATION,
-                "robot_asset": "assets/robots/go2_x5/go2_x5.usd",
+                "robot_asset": "assets/robots/go2_x5/go2_x5.urdf",
                 "fix_base": False,
                 "spawned_is_fixed_base": bool(robot.is_fixed_base),
                 "observation_dimension": 260,

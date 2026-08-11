@@ -25,7 +25,17 @@
   },
   "scene": {
     "workcell_manifest": "assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json",
-    "robot_asset": "assets/robots/go2_x5/go2_x5.usd",
+    "robot_asset": "assets/robots/go2_x5/go2_x5.urdf",
+    "robot_asset_contract": {
+      "reference_repository": "arm-vla-grasp-sim",
+      "reference_branch": "pct_scene",
+      "reference_commit": "c7fe62c7f9f8dcda89fef9c7e363594d7e486375",
+      "runtime_spawn_format": "urdf",
+      "tcp_parent": "arm_link6",
+      "tcp_offset_xyz_m": [0.15757, 0.0, 0.0],
+      "gripper_collision_geometry": "original_finray_mesh",
+      "gripper_collision_approximation": "convexDecomposition"
+    },
     "locomotion_policy": "assets/policies/go2_x5_pct_dog_only/policy.pt",
     "belt_center_xyz_m": [
       0.7,
@@ -216,19 +226,64 @@
     "offline_gate": "scripts/check_v1_camera_gate.py",
     "head_rgb": {
       "resolution": [
-        224,
-        224
+        640,
+        480
       ],
       "fps": 25,
-      "role": "policy_observation"
+      "role": "policy_observation",
+      "model": "opencv_pinhole",
+      "intrinsics": [
+        [383.44608095, 0.0, 324.33479864],
+        [0.0, 383.52724198, 238.90275478],
+        [0.0, 0.0, 1.0]
+      ],
+      "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "mount": {
+        "parent": "base",
+        "prim_path": "{ENV_REGEX_NS}/Robot/base/head_cam",
+        "xyz_m": [0.28, 0.0, 0.07],
+        "wxyz": [0.5, -0.5, 0.5, -0.5],
+        "orientation_convention": "ros"
+      },
+      "calibration_source": "dwa_play_nav_cs",
+      "fallback_optics": {
+        "focal_length_mm": 18.0,
+        "horizontal_aperture_mm": 30.040158257372415,
+        "vertical_aperture_mm": 22.530118693029312
+      },
+      "clipping_range_m": [0.1, 100000.0]
     },
     "wrist_rgb": {
       "resolution": [
-        224,
-        224
+        640,
+        480
       ],
       "fps": 25,
-      "role": "policy_observation"
+      "role": "policy_observation",
+      "model": "opencv_pinhole",
+      "intrinsics": [
+        [383.44608095, 0.0, 324.33479864],
+        [0.0, 383.52724198, 238.90275478],
+        [0.0, 0.0, 1.0]
+      ],
+      "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "mount": {
+        "parent": "arm_link6",
+        "prim_path": "{ENV_REGEX_NS}/Robot/arm_link6/arm_vla_camera",
+        "xyz_m": [0.0666580792, 0.0028071889, 0.0935779972],
+        "wxyz": [0.3377891849, -0.6214992221, 0.6185057335, -0.3421810063],
+        "orientation_convention": "ros"
+      },
+      "calibration_frame": "arm_link6_T_camera_color_optical",
+      "raw_hand_eye_position_xyz_m": [0.0559054476, 0.0026732239, 0.076714932],
+      "visual_alignment_offset_camera_xyz_m": [0.0, -0.02, 0.0],
+      "calibration_source": "hand_eye_calibration_with_visual_alignment_v3",
+      "fallback_optics": {
+        "focal_length_mm": 18.0,
+        "horizontal_aperture_mm": 30.040158257372415,
+        "vertical_aperture_mm": 22.530118693029312
+      },
+      "clipping_range_m": [0.03, 5.0]
     },
     "overview_rgb": {
       "resolution": [

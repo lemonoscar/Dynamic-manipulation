@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from xml.etree import ElementTree
@@ -173,6 +174,58 @@ def test_go2_x5_composed_asset_dependencies_are_fully_locked() -> None:
         if name.startswith("robots/go2_x5/configuration/")
     }
     assert locked_configuration_names == configuration_names
+
+
+def test_go2_x5_urdf_and_mesh_snapshot_match_pct_scene() -> None:
+    robot_root = ASSET_ROOT / "robots" / "go2_x5"
+    urdf_path = robot_root / "go2_x5.urdf"
+    assert sha256_file(urdf_path) == (
+        "d52f9690ec3828692e1bcafaea14f08ae0b790126bc55c3619288d508cb1e23e"
+    )
+
+    mesh_root = robot_root / "meshes"
+    rows = []
+    mesh_paths = (
+        candidate for candidate in mesh_root.rglob("*") if candidate.is_file()
+    )
+    for path in sorted(mesh_paths):
+        rows.append(
+            f"{path.relative_to(mesh_root).as_posix()}\0{sha256_file(path)}\n"
+        )
+    assert len(rows) == 18
+    assert hashlib.sha256("".join(rows).encode()).hexdigest() == (
+        "3b19b8340431661e8107c14cc4310cee2ddf02efaa30a956a1430be91f959015"
+    )
+
+    root = ElementTree.parse(urdf_path).getroot()
+    joints = {joint.get("name"): joint for joint in root.findall("joint")}
+    arm_mount = joints["arm_base_joint"].find("origin")
+    tcp = joints["grasp_tcp_fixed_joint"].find("origin")
+    assert arm_mount is not None and arm_mount.get("xyz") == "0.12 0 0.05"
+    assert tcp is not None and tcp.get("xyz") == "0.15757 0.0 0.0"
+    assert "front_camera_joint" in joints
+
+    expected_usd_sha256 = {
+        "configuration/go2_x5_base.usd": (
+            "68400cedea2c9548b556a238c386e2bf9f1b6729f7eb956cf0a04102cd9cdacc"
+        ),
+        "configuration/go2_x5_physics.usd": (
+            "c9e7616d4747f8c85e0872ab1c2db2cb702b7b79bf855aff2863fea2b096c1c5"
+        ),
+        "configuration/go2_x5_robot.usd": (
+            "045b0ea9586b937280ae6850f392d7dbad5508b48ec57e082ff1f2acdcb2de29"
+        ),
+        "configuration/go2_x5_sensor.usd": (
+            "ba7935f81bd54b6cabddf0ac2cf30c28f7d66caf9282b458e368570c917abe24"
+        ),
+        "go2_x5.usd": (
+            "b2936b1c65d20b608aa2b05985e73c79e8a59ac97c5d57d18741f7715250b1bc"
+        ),
+    }
+    assert {
+        relative_path: sha256_file(robot_root / relative_path)
+        for relative_path in expected_usd_sha256
+    } == expected_usd_sha256
 
 
 def test_verify_asset_lock_remains_compatible_with_flat_v1_schema(

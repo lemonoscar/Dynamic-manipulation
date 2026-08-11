@@ -67,7 +67,7 @@ from .scene import (
     ConveyorSceneCfg,
     apply_surface_velocity,
 )
-from .scene_v1 import install_gripper_collision_proxies
+from .scene_v1 import apply_pct_gripper_collision_patch
 
 
 @dataclass(frozen=True)
@@ -149,7 +149,7 @@ class ConveyorRuntime:
             self.scene = InteractiveScene(scene_cfg)
             stage = omni.usd.get_context().get_stage()
             self.gripper_collision_contract = (
-                install_gripper_collision_proxies(
+                apply_pct_gripper_collision_patch(
                     stage,
                     "/World/envs/env_0/Robot",
                 )

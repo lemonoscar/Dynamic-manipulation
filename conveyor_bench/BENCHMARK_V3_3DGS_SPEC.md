@@ -116,8 +116,8 @@ V3 保留现有已校准安装：head 为 `base` 前向相机，wrist 位于 `ar
 
 | camera | 分辨率 | 频率 | 权限 |
 | --- | ---: | ---: | --- |
-| `head_rgb` | 224×224 | 25 Hz | policy observation |
-| `wrist_rgb` | 224×224 | 25 Hz | policy observation |
+| `head_rgb` | 640×480 | 25 Hz | policy observation |
+| `wrist_rgb` | 640×480 | 25 Hz | policy observation |
 | `overview_rgb` | 480×320 | 25 Hz | observer only |
 
 每个相机 tick 在 Fabric transform 更新之后读取 USD world transform，并写入

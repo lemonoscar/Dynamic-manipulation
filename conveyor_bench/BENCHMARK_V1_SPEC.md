@@ -126,12 +126,12 @@ val。manifest 必须记录每个实例的 `asset_id`、类别、seen/unseen 标
 算法评测以 `whole_body_policy` 的移动—动态抓取—携带—放置闭环为主；
 `fixed_base` 仅作为去除底盘移动能力后的机械臂消融。
 
-X5 的 canonical TCP 位于 `arm_link6 + (0.125, 0, 0) m`，对应双指可用平行
-接触垫中心。原 FinRay 可视 mesh 保留；运行时在第一次 reset 前关闭其会填满
-弯曲指间空间的整体 convex-hull 碰撞，并在 `arm_link7/8` 下安装测量得到的
-薄接触垫 compound collider。该代理不新增刚体或质量，双指 contact sensor
-仍绑定原 finger link；model ID、几何、摩擦、contact/rest offset 和拓扑检查
-结果必须写入 episode manifest。
+X5 的 canonical TCP 与 PCT 一致，位于
+`arm_link6 + (0.15757, 0, 0) m` 的 FinRay tip frame。原 FinRay 可视和碰撞
+mesh 均保留；运行时在第一次 reset 前仅对 `arm_link7/8` 的原始碰撞 mesh
+应用 `convexDecomposition`、2 mm contact offset 和零 rest offset，不创建
+代理几何或额外刚体。双指 contact sensor 仍绑定原 finger link；patch 结果
+必须写入 episode manifest。
 
 ## 5. 三时钟与同步
 
@@ -181,8 +181,8 @@ world-frame 或模型专用动作回写成 canonical action。
 
 | 相机 | 分辨率 | 频率 | 权限 |
 | --- | ---: | ---: | --- |
-| `head_rgb` | 224×224 | 25 Hz | `policy_observation` |
-| `wrist_rgb` | 224×224 | 25 Hz | `policy_observation` |
+| `head_rgb` | 640×480 | 25 Hz | `policy_observation` |
+| `wrist_rgb` | 640×480 | 25 Hz | `policy_observation` |
 | `overview_rgb` | 480×320 | 25 Hz | `observer_only` |
 
 训练或在线策略只能读取 head、wrist、语言和允许的机器人本体状态。
@@ -190,14 +190,23 @@ world-frame 或模型专用动作回写成 canonical action。
 `--save-camera-frames` 时，三路图像以无损 PNG 写入 `cameras/<camera_id>/`，
 并由 `camera_frames.jsonl` 映射到 physics step 和采样时间。
 
-冻结外参为：
+冻结外参与 PCT `pct_scene@c7fe62c7` 一致：
 
-- `head_rgb` 挂载在 `base` 的 `(0.355, 0.0, 0.18) m`，沿机身 `+X`
-  水平直面前方；
-- `wrist_rgb` 挂载在 `arm_link6` 的 `(0.025, 0.0, 0.115) m`，位于夹爪
-  中线上方并向下俯视约 `42.5°`；
+- `head_rgb` 挂载在 `base` 的 `(0.28, 0.0, 0.07) m`，ROS `wxyz` 为
+  `(0.5, -0.5, 0.5, -0.5)`，沿机身 `+X` 水平直面前方；
+- `wrist_rgb` 挂载在 `arm_link6` 的
+  `(0.0666580792, 0.0028071889, 0.0935779972) m`，ROS `wxyz` 为
+  `(0.3377891849, -0.6214992221, 0.6185057335, -0.3421810063)`；这是
+  `arm_link6_T_camera_color_optical` 手眼标定加 PCT v3 视觉对齐后的位姿；
 - `overview_rgb` 固定在环境坐标 `(-2.10, -1.60, 2.40) m`，从拉远的
   斜上方覆盖机器人、传送带和两个分拣盘。
+
+两路机器人相机共用 D436 640×480 OpenCV 内参：
+`fx=383.44608095, fy=383.52724198, cx=324.33479864,
+cy=238.90275478`，12 项畸变系数均为零。head 裁剪面为
+`[0.1, 100000] m`，wrist 为 `[0.03, 5.0] m`。AL0 模型输入不是原始标定
+图像：LeRobot 转换器会中心裁剪到 480×480 后缩放为 224×224，并记录等效
+内参。
 
 相机运行必须保持 Fabric 开启，不得传入 `--disable_fabric`。PhysX 在 Fabric
 关闭时仍可能推进，但 RTX/Hydra 可能读取冻结的初始几何，产生看似有效却不

@@ -219,7 +219,12 @@ def lerobot_frame_from_record(
         sample.camera_paths[1][1],
     )
     frame = {
-        key: _rgb_array(load_image(path), key, _video_shape(config, key))
+        key: _rgb_array(
+            load_image(path),
+            key,
+            _video_shape(config, key),
+            _mapping(config["image_preprocessing"], "image_preprocessing"),
+        )
         for key, path in zip(VIDEO_FEATURE_KEYS, ordered_paths, strict=True)
     }
     state = np.asarray(sample.state, dtype=np.float32)
@@ -487,6 +492,23 @@ def _validate_config(config: Mapping[str, Any]) -> None:
         raise M0MobileError("observer camera and object state must not be model inputs")
     if features.get("task_key") != "task":
         raise M0MobileError("features.task_key must be 'task'")
+    preprocessing = _mapping(
+        config.get("image_preprocessing"),
+        "image_preprocessing",
+    )
+    expected_preprocessing = {
+        "camera_ids": list(CAMERA_IDS),
+        "raw_shape_hwc": [480, 640, 3],
+        "center_crop_xyxy": [80, 0, 560, 480],
+        "output_shape_hwc": [224, 224, 3],
+        "resize": "bilinear",
+        "legacy_preprocessed_frames_allowed": True,
+    }
+    for key, expected in expected_preprocessing.items():
+        if preprocessing.get(key) != expected:
+            raise M0MobileError(
+                f"image_preprocessing.{key} must be {expected!r}"
+            )
     encoding = _mapping(config.get("encoding"), "encoding")
     if encoding.get("vcodec") != "h264" or encoding.get("streaming_encoding") is not False:
         raise M0MobileError("AL0 offline conversion must use non-streaming H.264")
@@ -545,11 +567,46 @@ def _video_shape(config: Mapping[str, Any], key: str) -> tuple[int, int, int]:
     raise M0MobileError(f"unknown video feature: {key}")
 
 
-def _rgb_array(value: Any, key: str, shape: tuple[int, int, int]) -> np.ndarray:
+def _rgb_array(
+    value: Any,
+    key: str,
+    shape: tuple[int, int, int],
+    preprocessing: Mapping[str, Any],
+) -> np.ndarray:
     array = np.asarray(value)
-    if array.shape != shape or array.dtype != np.uint8:
-        raise M0MobileError(f"{key} must be uint8 HWC with shape {shape}, got {array.shape}/{array.dtype}")
-    return np.ascontiguousarray(array)
+    if array.dtype != np.uint8:
+        raise M0MobileError(
+            f"{key} must be uint8 HWC, got {array.shape}/{array.dtype}"
+        )
+    if array.shape == shape:
+        return np.ascontiguousarray(array)
+
+    raw_shape = tuple(preprocessing["raw_shape_hwc"])
+    if array.shape != raw_shape:
+        raise M0MobileError(
+            f"{key} must have raw shape {raw_shape} or model shape {shape}, "
+            f"got {array.shape}"
+        )
+    left, top, right, bottom = (
+        int(value) for value in preprocessing["center_crop_xyxy"]
+    )
+    crop = np.ascontiguousarray(array[top:bottom, left:right])
+    try:
+        from PIL import Image
+    except ImportError as error:
+        raise M0MobileError(
+            "Pillow is required to resize calibrated D436 frames"
+        ) from error
+    resized = Image.fromarray(crop).resize(
+        (shape[1], shape[0]),
+        resample=Image.Resampling.BILINEAR,
+    )
+    result = np.asarray(resized, dtype=np.uint8)
+    if result.shape != shape:
+        raise M0MobileError(
+            f"{key} preprocessing produced {result.shape}, expected {shape}"
+        )
+    return np.ascontiguousarray(result)
 
 
 def _load_rgb(path: Path) -> np.ndarray:

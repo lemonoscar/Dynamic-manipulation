@@ -8,17 +8,21 @@ from conveyor_bench.v1.oracle import (
 )
 
 
-def test_forward_matches_simulator_probe():
+def test_forward_matches_canonical_pct_urdf():
     kinematics = CalibratedArmKinematics()
 
     position, rotation = kinematics.forward((0.0, 1.2, 1.2, 0.0, 0.0, 0.0))
 
-    # With the 0.125 m TCP, the live fixed-URDF probe measured
-    # [0.47356, 0.00100, 0.49643] in the root frame, or z=0.87643
-    # at the nominal 0.38 m fixed-root height. FK evaluated at the measured
-    # joints agreed within 3 micrometres.
-    assert np.allclose(position, (0.47354, 0.0010, 0.87656), atol=1.0e-4)
-    assert np.allclose(rotation, np.eye(3), atol=1.0e-6)
+    # Independent forward composition of the PCT mount, six joint origins and
+    # 0.15757 m FinRay tip frame at this pose.
+    assert np.allclose(
+        position,
+        (0.543607549, -0.000503568, 0.832558317),
+        atol=1.0e-7,
+    )
+    # PCT authors the two half-turns as +/-3.1416, hence the few-microradian
+    # residual instead of an analytically exact identity.
+    assert np.allclose(rotation, np.eye(3), atol=7.0e-6)
 
 
 def test_solver_reaches_pregrasp_grasp_and_lift_targets():
@@ -49,7 +53,7 @@ def test_policy_arm_reaches_low_belt_from_overhead() -> None:
         solution = kinematics.solve(target, orientation, seed=seed)
         assert solution.position_error_m < 0.001
         assert solution.orientation_error < 0.005
-        assert solution.joint_positions[3] >= -1.26
+        assert solution.joint_positions[3] >= -1.30
         seed = solution.joint_positions
 
 
@@ -107,7 +111,7 @@ def test_root_frame_solver_removes_fixed_world_root_height():
     assert np.allclose(world_rotation, root_rotation, atol=1.0e-9)
 
 
-def test_policy_usd_root_frame_matches_live_mobile_probe():
+def test_historical_policy_frame_alias_uses_the_canonical_urdf_mount():
     solver = CalibratedArmKinematics.in_policy_usd_root_frame()
     joints = (
         -0.0002719297,
@@ -120,13 +124,15 @@ def test_policy_usd_root_frame_matches_live_mobile_probe():
 
     position, _ = solver.forward(joints)
 
-    # The live policy-USD probe measured this TCP in the articulation-root
-    # frame; calibrated FK differed by 0.429 mm.
+    canonical, _ = CalibratedArmKinematics.in_robot_root_frame().forward(
+        joints
+    )
     assert np.allclose(
         position,
-        (0.34349683, -0.00054965, 0.33769384),
-        atol=5.0e-4,
+        (0.37591213, -0.00055590, 0.34086516),
+        atol=1.0e-7,
     )
+    assert np.allclose(position, canonical, atol=1.0e-12)
 
 
 def test_constructor_rejects_nonpositive_solution_tolerances():

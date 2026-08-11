@@ -25,11 +25,11 @@ from isaaclab.sim.utils import (
     get_current_stage,
 )
 from isaaclab.utils import configclass
-from pxr import Gf, UsdGeom, UsdPhysics
+from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdPhysics
 
 from conveyor_bench.v1.assets import ObjectAsset, load_object_registry, load_receptacles
 
-from .asset_config import make_go2_x5_cfg
+from .asset_config import TCP_OFFSET_X_M, make_go2_x5_cfg
 from .scene import _collision, _spawn_direct_cuboid
 
 
@@ -51,17 +51,44 @@ OBJECT_EXIT_Y_M = BELT_CENTER_Y_M - BELT_LENGTH_M * 0.5 + 0.03
 OBJECT_LANE_X_M = 0.65
 EXIT_PLANE_POINT_WORLD = (OBJECT_LANE_X_M, OBJECT_EXIT_Y_M, BELT_TOP_Z_M)
 
-# Calibrated sensor mounts copied from arm-vla-grasp-sim's Go2-X5 runtime.
-# Both are link-relative ROS optical-frame transforms rather than idealized
-# world-frame views.  The head camera looks straight ahead from ``base``;
-# the wrist camera sits above the gripper on ``arm_link6`` and looks slightly
-# down through the usable FinRay grasp region.
+# Exact robot-camera contract from arm-vla-grasp-sim pct_scene@c7fe62c7.
+FRONT_CAMERA_PRIM_PATH = "{ENV_REGEX_NS}/Robot/base/head_cam"
 HEAD_CAMERA_OFFSET_XYZ = (0.28, 0.0, 0.07)
 HEAD_CAMERA_OFFSET_WXYZ = (0.5, -0.5, 0.5, -0.5)
 HEAD_CAMERA_ORIENTATION_CONVENTION = "ros"
-WRIST_CAMERA_OFFSET_XYZ = (0.0, 0.0, 0.10)
-WRIST_CAMERA_OFFSET_WXYZ = (0.353553, -0.612372, 0.612372, -0.353553)
+WRIST_CAMERA_PRIM_PATH = "{ENV_REGEX_NS}/Robot/arm_link6/arm_vla_camera"
+WRIST_CAMERA_CALIBRATION_FRAME = "arm_link6_T_camera_color_optical"
+WRIST_CAMERA_HAND_EYE_POS_XYZ_M = (
+    0.0559054476,
+    0.0026732239,
+    0.0767149320,
+)
+WRIST_CAMERA_VISUAL_ALIGNMENT_OFFSET_CAMERA_XYZ_M = (0.0, -0.02, 0.0)
+WRIST_CAMERA_OFFSET_XYZ = (
+    0.0666580792,
+    0.0028071889,
+    0.0935779972,
+)
+WRIST_CAMERA_OFFSET_WXYZ = (
+    0.3377891849,
+    -0.6214992221,
+    0.6185057335,
+    -0.3421810063,
+)
 WRIST_CAMERA_ORIENTATION_CONVENTION = "ros"
+D436_CAMERA_RESOLUTION_WH = (640, 480)
+D436_CAMERA_FX_PX = 383.44608095
+D436_CAMERA_FY_PX = 383.52724198
+D436_CAMERA_CX_PX = 324.33479864
+D436_CAMERA_CY_PX = 238.90275478
+D436_CAMERA_DISTORTION_COEFFICIENTS = (0.0,) * 12
+D436_CAMERA_FALLBACK_FOCAL_LENGTH_MM = 18.0
+D436_CAMERA_FALLBACK_FX_FY_PX = 383.486661465
+D436_CAMERA_FALLBACK_CX_PX = 320.0
+D436_CAMERA_FALLBACK_CY_PX = 240.0
+D436_CAMERA_FALLBACK_HORIZONTAL_APERTURE_MM = 30.040158257372415
+D436_CAMERA_FALLBACK_VERTICAL_APERTURE_MM = 22.530118693029312
+WRIST_CAMERA_NEAR_CLIPPING_M = 0.03
 # Observer-only view, deliberately farther away than V0.
 OVERVIEW_CAMERA_OFFSET_XYZ = (-2.10, -1.60, 2.40)
 OVERVIEW_CAMERA_OFFSET_WXYZ = (
@@ -77,32 +104,125 @@ OVERVIEW_CAMERA_ORIENTATION_CONVENTION = "world"
 # intentionally share this value so no grey edge leaks into camera frames.
 BELT_DARK_GREEN_RGB = (0.015, 0.10, 0.035)
 
-# The vendored FinRay finger meshes contain a wide mounting flange and a
-# curved, open finger. Isaac Sim imports each complete mesh as one convex
-# collision hull, filling the open space between the flange and contact pad.
-# That artificial wedge strikes a part while the gripper is still open and
-# roughly 50 mm above the pad-centred TCP. Keep the detailed mesh for
-# rendering, but replace only its collision with thin boxes measured at the
-# usable parallel contact-pad section of link7/link8.
-GRIPPER_COLLISION_MODEL_ID = "x5_finray_parallel_pad_proxy_v1"
-GRIPPER_PAD_STATIC_FRICTION = 1.35
-GRIPPER_PAD_DYNAMIC_FRICTION = 1.15
-GRIPPER_PAD_RESTITUTION = 0.0
+
+def enable_d436_lens_distortion_schema() -> dict[str, Any]:
+    """Enable the renderer schema used by the PCT D436 calibration."""
+
+    extension_name = "omni.usd.schema.omni_lens_distortion"
+    try:
+        import omni.kit.app
+
+        manager = omni.kit.app.get_app().get_extension_manager()
+        enabled_before = bool(manager.is_extension_enabled(extension_name))
+        if not enabled_before:
+            manager.set_extension_enabled_immediate(extension_name, True)
+        enabled_after = bool(manager.is_extension_enabled(extension_name))
+    except Exception as exc:
+        return {
+            "requested": True,
+            "extension": extension_name,
+            "enabled": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "requested": True,
+        "extension": extension_name,
+        "enabled_before": enabled_before,
+        "enabled": enabled_after,
+    }
+
+
+def _apply_d436_opencv_pinhole_schema(prim: Any) -> bool:
+    try:
+        schema_applied = prim.ApplyAPI("OmniLensDistortionOpenCvPinholeAPI")
+    except Exception:
+        return False
+    if not schema_applied:
+        return False
+    attributes: tuple[tuple[str, Any], ...] = (
+        ("omni:lensdistortion:model", "opencvPinhole"),
+        (
+            "omni:lensdistortion:opencvPinhole:imageSize",
+            Gf.Vec2i(*D436_CAMERA_RESOLUTION_WH),
+        ),
+        ("omni:lensdistortion:opencvPinhole:fx", D436_CAMERA_FX_PX),
+        ("omni:lensdistortion:opencvPinhole:fy", D436_CAMERA_FY_PX),
+        ("omni:lensdistortion:opencvPinhole:cx", D436_CAMERA_CX_PX),
+        ("omni:lensdistortion:opencvPinhole:cy", D436_CAMERA_CY_PX),
+    )
+    coefficient_names = (
+        "k1", "k2", "p1", "p2", "k3", "k4",
+        "k5", "k6", "s1", "s2", "s3", "s4",
+    )
+    attributes += tuple(
+        (f"omni:lensdistortion:opencvPinhole:{name}", value)
+        for name, value in zip(
+            coefficient_names,
+            D436_CAMERA_DISTORTION_COEFFICIENTS,
+            strict=True,
+        )
+    )
+    for attribute_name, value in attributes:
+        attribute = prim.GetAttribute(attribute_name)
+        if not attribute.IsValid() or not attribute.Set(value):
+            return False
+    return True
+
+
+def make_d436_camera_spawn_function() -> Any:
+    """Apply PCT's OpenCV schema before Isaac Lab clones the camera."""
+
+    from isaaclab.sim.spawners.sensors.sensors import spawn_camera
+
+    @clone
+    def spawn_calibrated_d436_camera(
+        prim_path: str,
+        cfg: Any,
+        translation: tuple[float, float, float] | None = None,
+        orientation: tuple[float, float, float, float] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        prim = spawn_camera.__wrapped__(
+            prim_path,
+            cfg,
+            translation=translation,
+            orientation=orientation,
+            **kwargs,
+        )
+        _apply_d436_opencv_pinhole_schema(prim)
+        return prim
+
+    return spawn_calibrated_d436_camera
+
+
+def apply_d436_runtime_intrinsics(sensor: Any) -> dict[str, Any]:
+    """Keep Isaac Lab's exposed K equal to the renderer's effective K."""
+
+    matrices = sensor._data.intrinsic_matrices
+    camera_prim = sensor._sensor_prims[0].GetPrim()
+    model = camera_prim.GetAttribute("omni:lensdistortion:model")
+    schema_applied = bool(model.IsValid() and model.Get() == "opencvPinhole")
+    fx = D436_CAMERA_FX_PX if schema_applied else D436_CAMERA_FALLBACK_FX_FY_PX
+    fy = D436_CAMERA_FY_PX if schema_applied else D436_CAMERA_FALLBACK_FX_FY_PX
+    cx = D436_CAMERA_CX_PX if schema_applied else D436_CAMERA_FALLBACK_CX_PX
+    cy = D436_CAMERA_CY_PX if schema_applied else D436_CAMERA_FALLBACK_CY_PX
+    matrices[..., :, :] = 0.0
+    matrices[..., 0, 0] = fx
+    matrices[..., 0, 2] = cx
+    matrices[..., 1, 1] = fy
+    matrices[..., 1, 2] = cy
+    matrices[..., 2, 2] = 1.0
+    return {
+        "renderer_schema_applied": schema_applied,
+        "intrinsics": {"fx": fx, "fy": fy, "cx": cx, "cy": cy},
+    }
+
+
+GRIPPER_COLLISION_MODEL_ID = "pct_finray_convex_decomposition_v1"
+GRIPPER_COLLISION_APPROXIMATION = "convexDecomposition"
 GRIPPER_PAD_CONTACT_OFFSET_M = 0.002
 GRIPPER_PAD_REST_OFFSET_M = 0.0
-GRIPPER_PAD_PROXY_BY_LINK = {
-    # Link-local xyz; the joint origins are at y=+/-0.0249 m and the two
-    # prismatic axes move outward. Mirrored centres therefore preserve the
-    # real closed-jaw gap and the 0.125 m link6-to-TCP calibration.
-    "arm_link7": {
-        "center_xyz_m": (0.03843, -0.01195, -0.00279),
-        "size_xyz_m": (0.040, 0.004, 0.034),
-    },
-    "arm_link8": {
-        "center_xyz_m": (0.03843, 0.01195, -0.00279),
-        "size_xyz_m": (0.040, 0.004, 0.034),
-    },
-}
+GRIPPER_COLLISION_LINKS = ("arm_link7", "arm_link8")
 
 OBJECT_ASSETS = load_object_registry()
 RECEPTACLE_ASSETS = load_receptacles()
@@ -125,112 +245,162 @@ _COLORS = {
 }
 
 
-def install_gripper_collision_proxies(
+def apply_pct_gripper_collision_patch(
     stage: Any,
     robot_prim_path: str,
 ) -> dict[str, Any]:
-    """Replace convex FinRay finger hulls with measured thin pad colliders.
+    """Apply PCT's PhysX settings to the original FinRay collision meshes.
 
-    This must run after the robot USD has been composed and before the first
-    simulation reset, when PhysX builds the articulation. The collision
-    proxies remain children of the original finger rigid bodies, so contact
-    sensors attached to ``arm_link7`` and ``arm_link8`` continue to report
-    filtered object contacts.
+    The patch runs after the URDF is composed and before the first reset.  It
+    never replaces or disables robot geometry, so visual and physical assets
+    remain the exact PCT files.
     """
 
-    material_path = "/World/Looks/BenchmarkGripperPadPhysicsV1"
-    if not stage.GetPrimAtPath(material_path).IsValid():
-        material_cfg = sim_utils.RigidBodyMaterialCfg(
-            static_friction=GRIPPER_PAD_STATIC_FRICTION,
-            dynamic_friction=GRIPPER_PAD_DYNAMIC_FRICTION,
-            restitution=GRIPPER_PAD_RESTITUTION,
-        )
-        material_cfg.func(material_path, material_cfg)
+    robot_prim = stage.GetPrimAtPath(robot_prim_path)
+    if not robot_prim.IsValid():
+        raise RuntimeError(f"robot prim is missing: {robot_prim_path}")
 
-    installed: dict[str, dict[str, Any]] = {}
-    for link_name, spec in GRIPPER_PAD_PROXY_BY_LINK.items():
-        link_path = f"{robot_prim_path}/{link_name}"
-        link_prim = stage.GetPrimAtPath(link_path)
-        if not link_prim.IsValid():
-            raise RuntimeError(
-                f"gripper collision proxy parent is missing: {link_path}"
+    deinstanced: list[str] = []
+    for _ in range(8):
+        candidates: dict[str, Any] = {}
+        try:
+            prims = Usd.PrimRange(robot_prim, Usd.TraverseInstanceProxies())
+        except (AttributeError, TypeError):
+            prims = Usd.PrimRange(robot_prim)
+        for prim in prims:
+            current = prim
+            while (
+                current
+                and current.IsValid()
+                and not current.IsPseudoRoot()
+            ):
+                if current.IsInstance() or current.IsInstanceable():
+                    candidates[str(current.GetPath())] = current
+                    break
+                current = current.GetParent()
+        pending = [
+            candidates[path]
+            for path in sorted(
+                candidates,
+                key=lambda value: (value.count("/"), value),
             )
-        if not link_prim.HasAPI(UsdPhysics.RigidBodyAPI):
-            raise RuntimeError(
-                "gripper collision proxy parent is not a rigid body: "
-                f"{link_path}"
-            )
+            if path not in deinstanced
+        ]
+        if not pending:
+            break
+        progress = False
+        for prim in pending:
+            path = str(prim.GetPath())
+            prim.SetInstanceable(False)
+            deinstanced.append(path)
+            progress = True
+        if not progress:
+            break
 
-        original_path = f"{link_path}/collisions"
-        original_prim = stage.GetPrimAtPath(original_path)
-        if not original_prim.IsValid():
-            raise RuntimeError(
-                f"original gripper collision prim is missing: {original_path}"
-            )
-        original_prim.SetActive(False)
-
-        proxy_path = f"{link_path}/benchmark_pad_collision_v1"
-        if stage.GetPrimAtPath(proxy_path).IsValid():
-            raise RuntimeError(
-                f"gripper collision proxy already exists: {proxy_path}"
-            )
-        size_xyz = tuple(float(value) for value in spec["size_xyz_m"])
-        cube_size = min(size_xyz)
-        create_prim(
-            proxy_path,
-            prim_type="Cube",
-            translation=tuple(
-                float(value) for value in spec["center_xyz_m"]
+    robot_prim = stage.GetPrimAtPath(robot_prim_path)
+    patched: list[dict[str, Any]] = []
+    patched_links: set[str] = set()
+    for prim in Usd.PrimRange(robot_prim):
+        path = str(prim.GetPath())
+        path_segments = tuple(value for value in path.split("/") if value)
+        link_name = next(
+            (
+                name
+                for name in GRIPPER_COLLISION_LINKS
+                if name in path_segments
             ),
-            scale=tuple(value / cube_size for value in size_xyz),
-            attributes={"size": cube_size},
-            stage=stage,
+            None,
         )
-        schemas.define_collision_properties(
-            proxy_path,
-            sim_utils.CollisionPropertiesCfg(
-                collision_enabled=True,
-                contact_offset=GRIPPER_PAD_CONTACT_OFFSET_M,
-                rest_offset=GRIPPER_PAD_REST_OFFSET_M,
-            ),
-            stage=stage,
-        )
-        bind_physics_material(proxy_path, material_path, stage=stage)
-        proxy_prim = stage.GetPrimAtPath(proxy_path)
-        if proxy_prim.HasAPI(UsdPhysics.RigidBodyAPI) or proxy_prim.HasAPI(
-            UsdPhysics.MassAPI
-        ):
-            raise RuntimeError(
-                "gripper pad proxy must remain a compound shape on its "
-                f"finger link: {proxy_path}"
+        if link_name is None:
+            continue
+        applied_schemas = tuple(str(value) for value in prim.GetAppliedSchemas())
+        mesh_like = bool(
+            str(prim.GetTypeName()) == "Mesh"
+            or prim.HasAPI(UsdPhysics.MeshCollisionAPI)
+            or any(
+                "PhysicsMeshCollisionAPI" in value
+                for value in applied_schemas
             )
-        UsdGeom.Imageable(proxy_prim).MakeInvisible()
-        installed[link_name] = {
-            "original_collision_path": original_path,
-            "proxy_path": proxy_path,
-            "center_xyz_m": list(spec["center_xyz_m"]),
-            "size_xyz_m": list(size_xyz),
-        }
+            or prim.GetAttribute("physics:approximation").IsValid()
+        )
+        collision_like = bool(
+            prim.HasAPI(UsdPhysics.CollisionAPI)
+            or prim.HasAPI(PhysxSchema.PhysxCollisionAPI)
+            or any(
+                marker in value
+                for value in applied_schemas
+                for marker in ("PhysicsCollisionAPI", "PhysxCollisionAPI")
+            )
+            or prim.GetAttribute("physics:collisionEnabled").IsValid()
+        )
+        if not (mesh_like and collision_like):
+            continue
 
+        if not prim.HasAPI(UsdPhysics.CollisionAPI):
+            UsdPhysics.CollisionAPI.Apply(prim)
+        if not prim.HasAPI(UsdPhysics.MeshCollisionAPI):
+            UsdPhysics.MeshCollisionAPI.Apply(prim)
+        if not prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+            PhysxSchema.PhysxCollisionAPI.Apply(prim)
+
+        attributes = (
+            (
+                "physics:approximation",
+                Sdf.ValueTypeNames.Token,
+                GRIPPER_COLLISION_APPROXIMATION,
+            ),
+            (
+                "physxCollision:contactOffset",
+                Sdf.ValueTypeNames.Float,
+                GRIPPER_PAD_CONTACT_OFFSET_M,
+            ),
+            (
+                "physxCollision:restOffset",
+                Sdf.ValueTypeNames.Float,
+                GRIPPER_PAD_REST_OFFSET_M,
+            ),
+            (
+                "physics:restOffset",
+                Sdf.ValueTypeNames.Float,
+                GRIPPER_PAD_REST_OFFSET_M,
+            ),
+        )
+        for name, type_name, value in attributes:
+            attribute = prim.GetAttribute(name)
+            if not attribute.IsValid():
+                attribute = prim.CreateAttribute(
+                    name,
+                    type_name,
+                    custom=False,
+                )
+            attribute.Set(value)
+        patched_links.add(link_name)
+        patched.append(
+            {
+                "prim_path": path,
+                "link": link_name,
+                "approximation": GRIPPER_COLLISION_APPROXIMATION,
+                "contact_offset_m": GRIPPER_PAD_CONTACT_OFFSET_M,
+                "rest_offset_m": GRIPPER_PAD_REST_OFFSET_M,
+            }
+        )
+
+    missing_links = sorted(set(GRIPPER_COLLISION_LINKS) - patched_links)
+    if missing_links:
+        raise RuntimeError(
+            "PCT FinRay collision mesh patch did not cover links: "
+            f"{missing_links}"
+        )
     return {
         "model_id": GRIPPER_COLLISION_MODEL_ID,
-        "tcp_offset_x_m": 0.125,
-        "collision": {
-            "contact_offset_m": GRIPPER_PAD_CONTACT_OFFSET_M,
-            "rest_offset_m": GRIPPER_PAD_REST_OFFSET_M,
-        },
-        "physics_material": {
-            "static_friction": GRIPPER_PAD_STATIC_FRICTION,
-            "dynamic_friction": GRIPPER_PAD_DYNAMIC_FRICTION,
-            "restitution": GRIPPER_PAD_RESTITUTION,
-        },
-        "topology": {
-            "parent_link_is_rigid_body": True,
-            "proxy_is_compound_shape": True,
-            "proxy_has_rigid_body_api": False,
-            "proxy_has_mass_api": False,
-        },
-        "links": installed,
+        "tcp_offset_x_m": TCP_OFFSET_X_M,
+        "approximation": GRIPPER_COLLISION_APPROXIMATION,
+        "contact_offset_m": GRIPPER_PAD_CONTACT_OFFSET_M,
+        "rest_offset_m": GRIPPER_PAD_REST_OFFSET_M,
+        "deinstanced_prim_paths": deinstanced,
+        "patch_count": len(patched),
+        "patched_prims": patched,
+        "geometry_replaced": False,
     }
 
 
@@ -922,15 +1092,17 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
     )
 
     head_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/base/conveyor_head_camera_v1",
-        update_period=1.0 / 25.0,
-        height=224,
-        width=224,
+        prim_path=FRONT_CAMERA_PRIM_PATH,
+        update_period=0.0,
+        height=D436_CAMERA_RESOLUTION_WH[1],
+        width=D436_CAMERA_RESOLUTION_WH[0],
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0,
+            func=make_d436_camera_spawn_function(),
+            focal_length=D436_CAMERA_FALLBACK_FOCAL_LENGTH_MM,
             focus_distance=400.0,
-            horizontal_aperture=20.955,
+            horizontal_aperture=D436_CAMERA_FALLBACK_HORIZONTAL_APERTURE_MM,
+            vertical_aperture=D436_CAMERA_FALLBACK_VERTICAL_APERTURE_MM,
             clipping_range=(0.1, 1.0e5),
         ),
         offset=CameraCfg.OffsetCfg(
@@ -941,16 +1113,18 @@ class ConveyorSceneV1Cfg(InteractiveSceneCfg):
     )
 
     wrist_camera = CameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/arm_link6/conveyor_wrist_camera_v1",
-        update_period=1.0 / 25.0,
-        height=224,
-        width=224,
+        prim_path=WRIST_CAMERA_PRIM_PATH,
+        update_period=0.0,
+        height=D436_CAMERA_RESOLUTION_WH[1],
+        width=D436_CAMERA_RESOLUTION_WH[0],
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=18.0,
-            focus_distance=0.8,
-            horizontal_aperture=20.955,
-            clipping_range=(0.03, 3.0),
+            func=make_d436_camera_spawn_function(),
+            focal_length=D436_CAMERA_FALLBACK_FOCAL_LENGTH_MM,
+            focus_distance=400.0,
+            horizontal_aperture=D436_CAMERA_FALLBACK_HORIZONTAL_APERTURE_MM,
+            vertical_aperture=D436_CAMERA_FALLBACK_VERTICAL_APERTURE_MM,
+            clipping_range=(WRIST_CAMERA_NEAR_CLIPPING_M, 5.0),
         ),
         offset=CameraCfg.OffsetCfg(
             pos=WRIST_CAMERA_OFFSET_XYZ,

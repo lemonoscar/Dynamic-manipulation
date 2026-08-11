@@ -82,10 +82,11 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 指纹。权重来源和再分发边界见
 [assets/policies/go2_x5_pct_dog_only/PROVENANCE.md](assets/policies/go2_x5_pct_dog_only/PROVENANCE.md)。
 
-夹爪保留原 FinRay 可视 mesh，但使用在可用平行接触垫处测量得到的薄 compound
-collider，避免完整 convex hull 填满弯曲指间空间。TCP 冻结在
-`arm_link6 + (0.125, 0, 0) m`；代理 model ID、尺寸、摩擦、contact/rest
-offset 和“未新增刚体/质量”的拓扑检查均写入 episode manifest。
+机器人由与 `arm-vla-grasp-sim/pct_scene@c7fe62c7` 字节一致的 URDF 和 18 个
+mesh 直接生成。TCP 冻结在 PCT 的 FinRay tip frame：
+`arm_link6 + (0.15757, 0, 0) m`。运行时不替换夹爪几何，只在首次 reset 前给
+`arm_link7/8` 的原始碰撞 mesh 应用 `convexDecomposition`、2 mm contact
+offset 和零 rest offset；patch 清单写入 episode manifest。
 
 从项目根目录执行：
 

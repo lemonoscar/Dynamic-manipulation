@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the live USD collision hierarchy for the V1 gripper."""
+"""Print the live PCT-URDF collision hierarchy for the V1 gripper."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import traceback
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ROBOT_USD = PROJECT_ROOT / "assets" / "robots" / "go2_x5" / "go2_x5.usd"
+ROBOT_URDF = PROJECT_ROOT / "assets" / "robots" / "go2_x5" / "go2_x5.urdf"
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from isaaclab.app import AppLauncher
@@ -23,21 +23,38 @@ def main() -> int:
     args = parser.parse_args()
     app = AppLauncher(args)
     simulation_app = app.app
+    simulation = None
     try:
+        import isaaclab.sim as sim_utils
+        from isaaclab.assets import Articulation
+        from isaaclab.sim.utils.stage import get_current_stage
         from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
+        from conveyor_bench.isaac.asset_config import make_go2_x5_cfg
+        from conveyor_bench.isaac.scene_v1 import (
+            apply_pct_gripper_collision_patch,
+        )
+
         print(
-            json.dumps({"probe": "opening_robot_usd", "path": str(ROBOT_USD)}),
+            json.dumps({"probe": "spawning_robot_urdf", "path": str(ROBOT_URDF)}),
             flush=True,
         )
-        stage = Usd.Stage.Open(str(ROBOT_USD))
-        if stage is None:
-            raise RuntimeError(f"could not open robot USD: {ROBOT_USD}")
+        simulation = sim_utils.SimulationContext(
+            sim_utils.SimulationCfg(dt=0.0025, device=args.device)
+        )
+        robot_cfg = make_go2_x5_cfg(fix_base=True)
+        robot_cfg.prim_path = "/World/Robot"
+        robot = Articulation(robot_cfg)
+        stage = get_current_stage()
+        patch_report = apply_pct_gripper_collision_patch(stage, "/World/Robot")
+        simulation.reset()
+        robot.update(simulation.get_physics_dt())
         print(
             json.dumps(
                 {
-                    "probe": "robot_usd_opened",
-                    "default_prim": str(stage.GetDefaultPrim().GetPath()),
+                    "probe": "robot_urdf_spawned",
+                    "robot_prim": "/World/Robot",
+                    "collision_patch": patch_report,
                 }
             ),
             flush=True,
@@ -306,6 +323,9 @@ def main() -> int:
         traceback.print_exc()
         raise
     finally:
+        if simulation is not None:
+            simulation.clear_all_callbacks()
+            simulation.clear_instance()
         simulation_app.close()
 
 

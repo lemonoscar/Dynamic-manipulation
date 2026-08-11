@@ -115,7 +115,17 @@ from .scene_v1 import (
     BELT_LENGTH_M,
     BELT_TOP_Z_M,
     BELT_WIDTH_M,
+    D436_CAMERA_CX_PX,
+    D436_CAMERA_CY_PX,
+    D436_CAMERA_DISTORTION_COEFFICIENTS,
+    D436_CAMERA_FALLBACK_FOCAL_LENGTH_MM,
+    D436_CAMERA_FALLBACK_HORIZONTAL_APERTURE_MM,
+    D436_CAMERA_FALLBACK_VERTICAL_APERTURE_MM,
+    D436_CAMERA_FX_PX,
+    D436_CAMERA_FY_PX,
+    D436_CAMERA_RESOLUTION_WH,
     EXIT_PLANE_POINT_WORLD,
+    FRONT_CAMERA_PRIM_PATH,
     HEAD_CAMERA_ORIENTATION_CONVENTION,
     HEAD_CAMERA_OFFSET_WXYZ,
     HEAD_CAMERA_OFFSET_XYZ,
@@ -129,26 +139,32 @@ from .scene_v1 import (
     OVERVIEW_CAMERA_OFFSET_XYZ,
     TRANSPORT_DIRECTION_WORLD,
     WRIST_CAMERA_ORIENTATION_CONVENTION,
+    WRIST_CAMERA_CALIBRATION_FRAME,
+    WRIST_CAMERA_HAND_EYE_POS_XYZ_M,
+    WRIST_CAMERA_NEAR_CLIPPING_M,
     WRIST_CAMERA_OFFSET_WXYZ,
     WRIST_CAMERA_OFFSET_XYZ,
+    WRIST_CAMERA_PRIM_PATH,
+    WRIST_CAMERA_VISUAL_ALIGNMENT_OFFSET_CAMERA_XYZ_M,
     ConveyorSceneV1Cfg,
-    install_gripper_collision_proxies,
+    apply_d436_runtime_intrinsics,
+    apply_pct_gripper_collision_patch,
+    enable_d436_lens_distortion_schema,
 )
 
 
 # Collision-free world-overhead observation posture, calibrated at the
-# locomotion policy's settled root attitude.  With the policy-USD mount and
-# pad-centered TCP this places the TCP at [0.5754, -0.0127, 0.1248] in the
-# robot-root frame, i.e. at the registered belt intercept in world space.  Its
-# tool approach retains a 97.0% downward component, so object spawn no longer
-# triggers a simultaneous world-frame wrist correction and Cartesian sweep.
+# locomotion policy's settled root attitude. With the canonical PCT URDF mount
+# and FinRay tip TCP this posture is kept above the transverse belt. Its tool
+# approach is top-down so object spawn does not trigger a simultaneous wrist
+# correction and Cartesian sweep.
 _PREGRASP_ARM = (
-    -0.044556522,
-    2.098253408,
-    1.709825231,
-    -0.942128716,
-    -0.052071541,
-    0.092826496,
+    -0.0299423428,
+    2.0381025528,
+    1.7504671530,
+    -1.0213441760,
+    -0.0077374579,
+    -0.0289065510,
 )
 # Same root-frame TCP position and 75 degree downward pitch as
 # ``_PREGRASP_ARM``, with the calibrated 73 degree world yaw used for assets
@@ -156,12 +172,12 @@ _PREGRASP_ARM = (
 # teacher observes the moving part from a stable overhead pose instead of
 # attempting an unreachable 90 degree wrist correction at interception.
 _PREGRASP_ARM_X_CLOSING = (
-    -0.113020704,
-    2.269433687,
-    1.989801971,
-    -1.241977948,
-    -0.257035292,
-    -1.379550036,
+    -0.1314851399,
+    2.2778313589,
+    2.1382028584,
+    -1.3863194271,
+    -0.2581841250,
+    -1.3996437891,
 )
 
 
@@ -195,13 +211,12 @@ _LOCOMOTION_ARM_PREPOSITION_MAX_JOINT_SPEED_RADPS = 0.08
 _LOCOMOTION_ARM_PREPOSITION_STABLE_DWELL_S = 0.50
 # Deterministic joint-space carry posture.  Match the locomotion checkpoint's
 # nominal arm command so the loaded gait stays inside its training
-# distribution.  The TCP remains above and ahead of the robot head.  Values
-# and the policy-USD-root TCP pose are frozen together.
+# distribution. The TCP remains above and ahead of the robot head.
 _MOBILE_COMPACT_ARM = (0.0, 0.3, 0.5, 0.0, 0.0, 0.0)
 _MOBILE_COMPACT_TCP_BASE = (
-    0.33408005978022093,
-    -0.0005034200000000335,
-    0.3754378962727706,
+    0.36598352357730624,
+    -0.0005021194937836334,
+    0.3825906961871689,
 )
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_TURN_RATE_RADPS = 0.35
@@ -243,8 +258,18 @@ _M0_TRANSITION_CHUNK_PHASES = frozenset(
     {"track", "descend", "close", "lift"}
 )
 _CAMERA_SPECS = (
-    CameraSpec("head_rgb", 224, 224, "policy_observation"),
-    CameraSpec("wrist_rgb", 224, 224, "policy_observation"),
+    CameraSpec(
+        "head_rgb",
+        D436_CAMERA_RESOLUTION_WH[0],
+        D436_CAMERA_RESOLUTION_WH[1],
+        "policy_observation",
+    ),
+    CameraSpec(
+        "wrist_rgb",
+        D436_CAMERA_RESOLUTION_WH[0],
+        D436_CAMERA_RESOLUTION_WH[1],
+        "policy_observation",
+    ),
     CameraSpec("overview_rgb", 480, 320, "observer_only"),
 )
 
@@ -663,6 +688,11 @@ class ConveyorRuntimeV1:
         try:
             eye, target = self._viewer_camera_view()
             self.sim.set_camera_view(eye=eye, target=target)
+            self.d436_lens_distortion_schema_report = (
+                enable_d436_lens_distortion_schema()
+                if options.enable_cameras
+                else {"requested": False, "enabled": False}
+            )
             scene_cfg = self._make_scene_cfg()
             if options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
                 scene_cfg.robot = make_go2_x5_policy_cfg()
@@ -684,7 +714,7 @@ class ConveyorRuntimeV1:
             self.scene = InteractiveScene(scene_cfg)
             stage = omni.usd.get_context().get_stage()
             self.gripper_collision_contract = (
-                install_gripper_collision_proxies(
+                apply_pct_gripper_collision_patch(
                     stage,
                     "/World/envs/env_0/Robot",
                 )
@@ -698,6 +728,16 @@ class ConveyorRuntimeV1:
             self.scene.reset()
             self._resolve_entities()
             self._warm_up()
+            self.d436_runtime_intrinsics_report = {}
+            if options.enable_cameras:
+                self.d436_runtime_intrinsics_report = {
+                    "head_rgb": apply_d436_runtime_intrinsics(
+                        self.head_camera
+                    ),
+                    "wrist_rgb": apply_d436_runtime_intrinsics(
+                        self.wrist_camera
+                    ),
+                }
         except BaseException:
             try:
                 self.close()
@@ -945,12 +985,7 @@ class ConveyorRuntimeV1:
         if link_names != ["arm_link6"]:
             raise RuntimeError("could not resolve arm_link6")
 
-        kinematics_factory = (
-            CalibratedArmKinematics.in_policy_usd_root_frame
-            if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
-            else CalibratedArmKinematics.in_robot_root_frame
-        )
-        self.arm_kinematics = kinematics_factory(
+        self.arm_kinematics = CalibratedArmKinematics.in_robot_root_frame(
             # The placement evaluator uses a 20 mm Cartesian gate.  Keep IK
             # tighter than that gate while allowing small calibration error
             # near the lateral sorting trays.
@@ -5107,60 +5142,98 @@ def _package_version(name: str) -> str:
 
 
 def _camera_contract_v1() -> dict[str, Any]:
-    horizontal_aperture = 20.955
-
     def spec(
         camera: CameraSpec,
-        focal_length: float,
         parent: str,
+        prim_path: str,
         xyz: tuple[float, float, float],
         wxyz: tuple[float, float, float, float],
         orientation_convention: str,
+        calibration_source: str,
+        clipping_range_m: tuple[float, float],
     ) -> dict[str, Any]:
-        focal_x = (
-            focal_length / horizontal_aperture * camera.width
-        )
         return {
             "resolution": [camera.width, camera.height],
             "fps": 25,
             "role": camera.role,
-            "model": "pinhole",
+            "model": "opencv_pinhole",
             "intrinsics": [
-                [focal_x, 0.0, camera.width / 2.0],
-                [0.0, focal_x, camera.height / 2.0],
+                [D436_CAMERA_FX_PX, 0.0, D436_CAMERA_CX_PX],
+                [0.0, D436_CAMERA_FY_PX, D436_CAMERA_CY_PX],
                 [0.0, 0.0, 1.0],
             ],
+            "distortion_coefficients": list(
+                D436_CAMERA_DISTORTION_COEFFICIENTS
+            ),
+            "calibration_source": calibration_source,
+            "fallback_optics": {
+                "focal_length_mm": D436_CAMERA_FALLBACK_FOCAL_LENGTH_MM,
+                "horizontal_aperture_mm": (
+                    D436_CAMERA_FALLBACK_HORIZONTAL_APERTURE_MM
+                ),
+                "vertical_aperture_mm": (
+                    D436_CAMERA_FALLBACK_VERTICAL_APERTURE_MM
+                ),
+            },
+            "clipping_range_m": list(clipping_range_m),
             "mount": {
                 "parent": parent,
+                "prim_path": prim_path,
                 "xyz_m": list(xyz),
                 "wxyz": list(wxyz),
                 "orientation_convention": orientation_convention,
             },
         }
 
+    head = spec(
+        _CAMERA_SPECS[0],
+        "base",
+        FRONT_CAMERA_PRIM_PATH,
+        HEAD_CAMERA_OFFSET_XYZ,
+        HEAD_CAMERA_OFFSET_WXYZ,
+        HEAD_CAMERA_ORIENTATION_CONVENTION,
+        "dwa_play_nav_cs",
+        (0.1, 1.0e5),
+    )
+    wrist = spec(
+        _CAMERA_SPECS[1],
+        "arm_link6",
+        WRIST_CAMERA_PRIM_PATH,
+        WRIST_CAMERA_OFFSET_XYZ,
+        WRIST_CAMERA_OFFSET_WXYZ,
+        WRIST_CAMERA_ORIENTATION_CONVENTION,
+        "hand_eye_calibration_with_visual_alignment_v3",
+        (WRIST_CAMERA_NEAR_CLIPPING_M, 5.0),
+    )
+    wrist.update(
+        {
+            "calibration_frame": WRIST_CAMERA_CALIBRATION_FRAME,
+            "raw_hand_eye_position_xyz_m": list(
+                WRIST_CAMERA_HAND_EYE_POS_XYZ_M
+            ),
+            "visual_alignment_offset_camera_xyz_m": list(
+                WRIST_CAMERA_VISUAL_ALIGNMENT_OFFSET_CAMERA_XYZ_M
+            ),
+        }
+    )
     return {
-        "head_rgb": spec(
-            _CAMERA_SPECS[0],
-            24.0,
-            "base",
-            HEAD_CAMERA_OFFSET_XYZ,
-            HEAD_CAMERA_OFFSET_WXYZ,
-            HEAD_CAMERA_ORIENTATION_CONVENTION,
-        ),
-        "wrist_rgb": spec(
-            _CAMERA_SPECS[1],
-            18.0,
-            "arm_link6",
-            WRIST_CAMERA_OFFSET_XYZ,
-            WRIST_CAMERA_OFFSET_WXYZ,
-            WRIST_CAMERA_ORIENTATION_CONVENTION,
-        ),
-        "overview_rgb": spec(
-            _CAMERA_SPECS[2],
-            18.0,
-            "environment_origin",
-            OVERVIEW_CAMERA_OFFSET_XYZ,
-            OVERVIEW_CAMERA_OFFSET_WXYZ,
-            OVERVIEW_CAMERA_ORIENTATION_CONVENTION,
-        ),
+        "head_rgb": head,
+        "wrist_rgb": wrist,
+        "overview_rgb": {
+            "resolution": [
+                _CAMERA_SPECS[2].width,
+                _CAMERA_SPECS[2].height,
+            ],
+            "fps": 25,
+            "role": _CAMERA_SPECS[2].role,
+            "model": "observer_pinhole",
+            "mount": {
+                "parent": "environment_origin",
+                "xyz_m": list(OVERVIEW_CAMERA_OFFSET_XYZ),
+                "wxyz": list(OVERVIEW_CAMERA_OFFSET_WXYZ),
+                "orientation_convention": (
+                    OVERVIEW_CAMERA_ORIENTATION_CONVENTION
+                ),
+            },
+        },
     }

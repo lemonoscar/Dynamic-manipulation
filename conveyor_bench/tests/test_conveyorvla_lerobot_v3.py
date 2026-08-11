@@ -124,6 +124,38 @@ def test_frame_mapping_preserves_two_cameras_and_20x10_actions(tmp_path: Path) -
     )
 
 
+def test_pct_d436_raw_frames_are_center_cropped_for_al0(tmp_path: Path) -> None:
+    config = load_lerobot_v3_config()
+    _write_episode(tmp_path, config, range(6, 7))
+    raw = np.zeros((480, 640, 3), dtype=np.uint8)
+    raw[:, :80] = (255, 0, 0)
+    raw[:, 80:560] = (17, 23, 42)
+    raw[:, 560:] = (0, 0, 255)
+
+    frame = lerobot_frame_from_record(
+        _record(config, 6),
+        tmp_path,
+        config,
+        image_loader=lambda _path: raw,
+    )
+
+    for key in VIDEO_FEATURE_KEYS:
+        assert frame[key].shape == (224, 224, 3)
+        assert frame[key].dtype == np.uint8
+        assert np.all(frame[key] == (17, 23, 42))
+    assert np.asarray(
+        config["image_preprocessing"]["effective_intrinsics_224"]
+    ) == pytest.approx(
+        np.asarray(
+            [
+                [178.94150444333334, 0.0, 114.022906032],
+                [0.0, 178.97937959066667, 111.48795223066668],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+    )
+
+
 def test_decoded_lerobot_row_maps_to_temporal_policy_example() -> None:
     normalizer = M0MobileNormalizer.from_config(
         load_temporal_config(),

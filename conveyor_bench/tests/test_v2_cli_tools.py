@@ -147,13 +147,13 @@ def _make_v2_episode(path: Path) -> Path:
         tick = capture["frame_index"]
         dump_png(
             episode / "cameras" / "head_rgb" / f"{tick:06d}.png",
-            224,
-            224,
+            640,
+            480,
         )
         dump_png(
             episode / "cameras" / "wrist_rgb" / f"{tick:06d}.png",
-            224,
-            224,
+            640,
+            480,
         )
         dump_png(
             episode / "cameras" / "overview_rgb" / f"{tick:06d}.png",

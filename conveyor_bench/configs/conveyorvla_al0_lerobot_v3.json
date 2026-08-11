@@ -120,6 +120,20 @@
     "observer_camera_is_model_input": false,
     "object_state_is_model_input": false
   },
+  "image_preprocessing": {
+    "camera_ids": ["head_rgb", "wrist_rgb"],
+    "source_calibration": "arm-vla-grasp-sim/pct_scene@c7fe62c7f9f8dcda89fef9c7e363594d7e486375",
+    "raw_shape_hwc": [480, 640, 3],
+    "center_crop_xyxy": [80, 0, 560, 480],
+    "output_shape_hwc": [224, 224, 3],
+    "resize": "bilinear",
+    "legacy_preprocessed_frames_allowed": true,
+    "effective_intrinsics_224": [
+      [178.94150444333334, 0.0, 114.022906032],
+      [0.0, 178.97937959066667, 111.48795223066668],
+      [0.0, 0.0, 1.0]
+    ]
+  },
   "encoding": {
     "vcodec": "h264",
     "image_writer_threads": 8,

@@ -302,9 +302,10 @@ V0 的狗头相机位于头部前缘并严格沿机身 `+X` 水平前视；腕�
 水平前视，但近侧皮带边缘会遮挡顶面目标的大部分区域，因此不承担抓取区
 全局相机职责。固定的
 `overview_rgb` 从更远的场景斜上方覆盖完整机器人、横向传送带、目标和抓取过程，仅用于
-人工观察与数据质检，不属于策略观测。head/wrist 两路策略视频为
-224×224，overview 观察视频为 480×320；三路均为 25 Hz，并共享
-`camera_frames.jsonl` 的帧索引。
+人工观察与数据质检，不属于策略观测。当前 PCT 对齐后的 head/wrist 原始视频为
+640×480，overview 观察视频为 480×320；三路均为 25 Hz，并共享
+`camera_frames.jsonl` 的帧索引。转为 AL0 LeRobot 数据时，head/wrist 才会按
+固定中心裁剪与缩放合同变为 224×224。
 
 新 episode 的 task manifest 使用 `transport_direction_xyz` 与
 `exit_plane_point_xyz` 描述运输轴和出口平面。`target_crossed_exit`、出口

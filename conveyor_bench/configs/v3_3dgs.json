@@ -131,12 +131,13 @@
   "cameras": {
     "head_rgb": {
       "resolution": [
-        224,
-        224
+        640,
+        480
       ],
       "fps": 25,
       "role": "policy_observation",
       "parent": "base",
+      "prim_path": "{ENV_REGEX_NS}/Robot/base/head_cam",
       "mount_xyz_m": [
         0.28,
         0.0,
@@ -149,8 +150,17 @@
         -0.5
       ],
       "orientation_convention": "ros",
-      "focal_length_mm": 24.0,
-      "horizontal_aperture_mm": 20.955,
+      "model": "opencv_pinhole",
+      "intrinsics": [
+        [383.44608095, 0.0, 324.33479864],
+        [0.0, 383.52724198, 238.90275478],
+        [0.0, 0.0, 1.0]
+      ],
+      "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "calibration_source": "dwa_play_nav_cs",
+      "focal_length_mm": 18.0,
+      "horizontal_aperture_mm": 30.040158257372415,
+      "vertical_aperture_mm": 22.530118693029312,
       "clipping_range_m": [
         0.1,
         100000.0
@@ -158,29 +168,42 @@
     },
     "wrist_rgb": {
       "resolution": [
-        224,
-        224
+        640,
+        480
       ],
       "fps": 25,
       "role": "policy_observation",
       "parent": "arm_link6",
+      "prim_path": "{ENV_REGEX_NS}/Robot/arm_link6/arm_vla_camera",
       "mount_xyz_m": [
-        0.0,
-        0.0,
-        0.1
+        0.0666580792,
+        0.0028071889,
+        0.0935779972
       ],
       "mount_wxyz": [
-        0.353553,
-        -0.612372,
-        0.612372,
-        -0.353553
+        0.3377891849,
+        -0.6214992221,
+        0.6185057335,
+        -0.3421810063
       ],
       "orientation_convention": "ros",
+      "model": "opencv_pinhole",
+      "intrinsics": [
+        [383.44608095, 0.0, 324.33479864],
+        [0.0, 383.52724198, 238.90275478],
+        [0.0, 0.0, 1.0]
+      ],
+      "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "calibration_frame": "arm_link6_T_camera_color_optical",
+      "raw_hand_eye_position_xyz_m": [0.0559054476, 0.0026732239, 0.076714932],
+      "visual_alignment_offset_camera_xyz_m": [0.0, -0.02, 0.0],
+      "calibration_source": "hand_eye_calibration_with_visual_alignment_v3",
       "focal_length_mm": 18.0,
-      "horizontal_aperture_mm": 20.955,
+      "horizontal_aperture_mm": 30.040158257372415,
+      "vertical_aperture_mm": 22.530118693029312,
       "clipping_range_m": [
         0.03,
-        3.0
+        5.0
       ]
     },
     "overview_rgb": {

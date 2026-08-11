@@ -8,39 +8,30 @@ Jacobian body-index convention for the privileged demonstration oracle.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, pi, sin
+from math import cos, sin
 from typing import Sequence
 
 import numpy as np
 
 
-# Calibrated center of the usable parallel finger pads.  Keep this identical
-# to ``asset_config.TCP_OFFSET_X_M`` and the benchmark TCP in the local URDF.
-_TCP_OFFSET_X_M = 0.125
-_BASE_TRANSFORM_XYZ = (0.085, 0.0, 0.474)
+# PCT's FinRay tip frame. Keep this identical to ``asset_config.TCP_OFFSET_X_M``
+# and ``grasp_tcp_fixed_joint`` in the canonical local URDF.
+_TCP_OFFSET_X_M = 0.15757
+_BASE_TRANSFORM_XYZ = (0.12, 0.0, 0.43)
 # Arm mount relative to the Go2 root (``base``) link.  V0 uses the calibrated
 # world transform above because its root is fixed at z=0.38 m.  V1 uses this
 # local transform and converts world targets through the live robot root pose.
-_ROOT_FRAME_ARM_MOUNT_XYZ = (0.085, 0.0, 0.094)
-# The locomotion checkpoint's vendored USD was authored with a different
-# fixed arm mount than the URDF used by fixed-base V0/V1.  This value is in
-# Isaac Lab's live articulation-root frame and is frozen from a multi-pose
-# simulator calibration (per-axis standard deviation below 0.4 mm).
-_POLICY_USD_ROOT_FRAME_ARM_MOUNT_XYZ = (
-    0.12246747,
-    -0.00150342,
-    0.04981453,
-)
+_ROOT_FRAME_ARM_MOUNT_XYZ = (0.12, 0.0, 0.05)
 _JOINT_ORIGINS = (
-    ((0.0, 0.0, 0.0603), (0.0, 0.0, 0.0), (0, 0, 1)),
-    ((0.02, 0.0, 0.0402), (0.0, 0.0, 0.0), (0, 1, 0)),
-    ((-0.264, 0.0, 0.0), (-pi, 0.0, 0.0), (0, 1, 0)),
+    ((0.0, 0.0, 0.0605), (0.0, 0.0, 0.0), (0, 0, 1)),
+    ((0.02, 0.0, 0.04), (0.0, 0.0, 0.0), (0, 1, 0)),
+    ((-0.264, 0.0, 0.0), (3.1416, 0.0, 0.0), (0, 1, 0)),
     ((0.245, 0.0, -0.056), (0.0, 0.0, 0.0), (0, 1, 0)),
-    ((0.06575, -0.001, -0.0825), (0.0, 0.0, 0.0), (0, 0, 1)),
-    ((0.02845, 0.0, 0.0825), (-pi, 0.0, 0.0), (1, 0, 0)),
+    ((0.06775, 0.0005, -0.0865), (0.0, 0.0, 0.0), (0, 0, 1)),
+    ((0.02895, 0.0, 0.0865), (-3.1416, 0.0, 0.0), (1, 0, 0)),
 )
-_LOWER_LIMITS = np.asarray((-2.80, 0.02, 0.02, -1.40, -1.40, -1.40))
-_UPPER_LIMITS = np.asarray((2.80, 3.30, 2.85, 1.40, 1.40, 1.40))
+_LOWER_LIMITS = np.asarray((-2.618, 0.0, 0.0, -1.5708, -1.5708, -1.5708))
+_UPPER_LIMITS = np.asarray((3.14, 3.14, 3.14, 1.5708, 1.5708, 1.5708))
 
 
 class IKConvergenceError(RuntimeError):
@@ -216,16 +207,13 @@ class CalibratedArmKinematics:
     def in_policy_usd_root_frame(
         cls, **kwargs
     ) -> "CalibratedArmKinematics":
-        """Construct the solver calibrated to the vendored policy USD."""
+        """Compatibility alias for the canonical PCT URDF root frame."""
 
         if "base_transform_xyz" in kwargs:
             raise TypeError(
                 "in_policy_usd_root_frame fixes base_transform_xyz internally"
             )
-        return cls(
-            base_transform_xyz=_POLICY_USD_ROOT_FRAME_ARM_MOUNT_XYZ,
-            **kwargs,
-        )
+        return cls(base_transform_xyz=_ROOT_FRAME_ARM_MOUNT_XYZ, **kwargs)
 
 
 def _rotation_x(angle: float) -> np.ndarray:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare live fixed-URDF and policy-USD TCP poses with calibrated FK."""
+"""Compare two live canonical PCT-URDF TCP poses with calibrated FK."""
 
 from __future__ import annotations
 
@@ -84,10 +84,10 @@ def main() -> int:
                 CalibratedArmKinematics.in_robot_root_frame(),
             ),
             (
-                "policy_usd",
+                "mobile_pct_urdf",
                 policy_robot,
                 POLICY_JOINTS,
-                CalibratedArmKinematics.in_policy_usd_root_frame(),
+                CalibratedArmKinematics.in_robot_root_frame(),
             ),
         )
         resolved = []

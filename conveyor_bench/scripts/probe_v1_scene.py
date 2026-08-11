@@ -89,7 +89,7 @@ def main() -> int:
             OBJECT_LANE_X_M,
             TRANSPORT_DIRECTION_WORLD,
             ConveyorSceneV1Cfg,
-            install_gripper_collision_proxies,
+            apply_pct_gripper_collision_patch,
         )
 
         if not args.enable_cameras:
@@ -124,7 +124,7 @@ def main() -> int:
                 lazy_sensor_update=True,
             )
         )
-        install_gripper_collision_proxies(
+        apply_pct_gripper_collision_patch(
             omni.usd.get_context().get_stage(),
             "/World/envs/env_0/Robot",
         )
