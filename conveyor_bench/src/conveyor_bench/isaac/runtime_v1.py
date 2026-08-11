@@ -1074,7 +1074,10 @@ class ConveyorRuntimeV1:
                         "tcp_drz_base_rad",
                         "gripper",
                     ],
-                    "gripper": "1=open,-1=close",
+                    "gripper": (
+                        "-1=closed,+1=open,intermediate="
+                        "continuous_commanded_open_fraction"
+                    ),
                     "quaternion": "wxyz",
                     "units": "m-rad-s",
                 },

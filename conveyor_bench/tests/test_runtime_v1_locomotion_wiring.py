@@ -232,6 +232,7 @@ def test_close_phase_keeps_transport_tracking_after_contact() -> None:
     assert "and phase == 'descend'" in episode
     assert "phase in {'descend', 'close'}" not in episode
     assert "2.0 * gripper_command_open_fraction - 1.0" in episode
+    assert "continuous_commanded_open_fraction" in episode
 
 
 def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
