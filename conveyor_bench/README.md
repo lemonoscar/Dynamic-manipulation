@@ -11,6 +11,12 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
 `0.5 s`，下探最高 `0.075 m/s`，episode metadata 标记为
 `overhead_slow_pick_place_v1`，避免和早期水平进给轨迹混用。
 
+新增的 V3 视觉 profile 沿用 V1 物理与训练契约，以本地 3DGS 静态工位、Isaac
+动态前景和深度合成替换程序化背景。该 profile 当前只完成方案冻结，尚未放入真实
+Gaussian 与标定资产，不能用于正式采集。
+
+- V3 3DGS 方案：[BENCHMARK_V3_3DGS_SPEC.md](BENCHMARK_V3_3DGS_SPEC.md)
+- V3 3DGS 可机读配置：[configs/v3_3dgs.json](configs/v3_3dgs.json)
 - V2 规范：[BENCHMARK_V2_SPEC.md](BENCHMARK_V2_SPEC.md)
 - V2 可机读快照：[configs/v2.json](configs/v2.json)
 - V2 采集与验收：[COLLECTION_V2_GUIDE.md](COLLECTION_V2_GUIDE.md)

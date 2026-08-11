@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "profile_id": "conveyor-bench-v3-3dgs",
+  "status": "design",
+  "collection_ready": false,
+  "version_boundary": {
+    "canonical_protocol": "conveyor-bench-v1",
+    "base_scene_config": "configs/v1.json",
+    "initial_scene_id": "transverse_dynamic_sort_station_v3_3dgs",
+    "scope": "near_conveyor_single_target",
+    "frozen_training_contract": true
+  },
+  "runtime": {
+    "backend": "hybrid_two_pass_3dgs",
+    "network_required": false,
+    "runtime_downloads_allowed": false,
+    "external_project_files_required": false,
+    "project_relative_assets_only": true,
+    "deterministic_offline_compositing": true
+  },
+  "rates_hz": {
+    "physics": 400,
+    "control": 50,
+    "camera": 25,
+    "model": 25
+  },
+  "physics_layer": {
+    "source_scene": "transverse_dynamic_sort_station_v1",
+    "engine": "Isaac Sim/PhysX",
+    "reuse_without_geometry_changes": [
+      "go2_x5_robot",
+      "surface_velocity_conveyor",
+      "object_registry",
+      "receptacles",
+      "contact_sensors",
+      "teacher",
+      "success_evaluator"
+    ],
+    "collision_source": "existing_procedural_v1_colliders",
+    "gaussian_splats_have_collision": false
+  },
+  "gaussian_layer": {
+    "asset_root": "assets/workcells/conveyor_station_v3_3dgs",
+    "asset_manifest": "assets/workcells/conveyor_station_v3_3dgs/ASSET_MANIFEST.json",
+    "visual_ply": "assets/workcells/conveyor_station_v3_3dgs/scene_static_gaussians.ply",
+    "calibration": "assets/workcells/conveyor_station_v3_3dgs/calibration_sim_from_gs.json",
+    "capture_masks": "assets/workcells/conveyor_station_v3_3dgs/capture_masks",
+    "photometric_calibration": "assets/workcells/conveyor_station_v3_3dgs/photometric_calibration.json",
+    "renderer": "gsplat",
+    "render_mode": "RGB+D",
+    "coordinate_policy": "transform_gaussians_into_sim_world_on_load",
+    "ply_contract": {
+      "format": "binary_little_endian_1.0",
+      "scalar_type": "float32",
+      "required_vertex_properties": [
+        "x",
+        "y",
+        "z",
+        "f_dc_0",
+        "f_dc_1",
+        "f_dc_2",
+        "opacity",
+        "scale_0",
+        "scale_1",
+        "scale_2",
+        "rot_0",
+        "rot_1",
+        "rot_2",
+        "rot_3"
+      ]
+    },
+    "load_defaults": {
+      "max_gaussians_preview": 2000000,
+      "max_gaussians_collection": 0,
+      "chunk_gaussians": 500000,
+      "sample_stride": 1,
+      "opacity_threshold": 0.0,
+      "radius_clip": 0.0,
+      "rasterize_mode": "antialiased"
+    }
+  },
+  "visual_partition": {
+    "static_in_3dgs": [
+      "room_shell",
+      "floor",
+      "fixed_lighting_appearance",
+      "fixed_conveyor_frame",
+      "fixed_safety_fence",
+      "fixed_background_furniture"
+    ],
+    "dynamic_in_isaac": [
+      "go2_x5_robot",
+      "arm_and_gripper",
+      "moving_belt_surface",
+      "task_objects",
+      "receptacles",
+      "task_markers"
+    ],
+    "excluded_from_static_capture": [
+      "go2_x5_robot",
+      "arm_and_gripper",
+      "moving_belt_surface",
+      "task_objects",
+      "receptacles",
+      "task_markers",
+      "people"
+    ]
+  },
+  "camera_trajectory": {
+    "schema": "conveyor_bench.camera_trajectory.v1",
+    "output": "camera_poses.jsonl",
+    "pose_source": "USD_world_transform_after_fabric_update",
+    "pose_convention": "T_sim_world_from_camera_usd",
+    "camera_axes": {
+      "forward": "-Z",
+      "up": "+Y",
+      "right": "+X"
+    },
+    "record_each_camera_tick": true,
+    "required_fields": [
+      "frame_index",
+      "sim_step",
+      "timestamp_s",
+      "camera_id",
+      "intrinsics_3x3",
+      "T_sim_world_from_camera_4x4",
+      "near_m",
+      "far_m"
+    ]
+  },
+  "cameras": {
+    "head_rgb": {
+      "resolution": [
+        224,
+        224
+      ],
+      "fps": 25,
+      "role": "policy_observation",
+      "parent": "base",
+      "mount_xyz_m": [
+        0.28,
+        0.0,
+        0.07
+      ],
+      "mount_wxyz": [
+        0.5,
+        -0.5,
+        0.5,
+        -0.5
+      ],
+      "orientation_convention": "ros",
+      "focal_length_mm": 24.0,
+      "horizontal_aperture_mm": 20.955,
+      "clipping_range_m": [
+        0.1,
+        100000.0
+      ]
+    },
+    "wrist_rgb": {
+      "resolution": [
+        224,
+        224
+      ],
+      "fps": 25,
+      "role": "policy_observation",
+      "parent": "arm_link6",
+      "mount_xyz_m": [
+        0.0,
+        0.0,
+        0.1
+      ],
+      "mount_wxyz": [
+        0.353553,
+        -0.612372,
+        0.612372,
+        -0.353553
+      ],
+      "orientation_convention": "ros",
+      "focal_length_mm": 18.0,
+      "horizontal_aperture_mm": 20.955,
+      "clipping_range_m": [
+        0.03,
+        3.0
+      ]
+    },
+    "overview_rgb": {
+      "resolution": [
+        480,
+        320
+      ],
+      "fps": 25,
+      "role": "observer_only",
+      "parent": "environment_origin",
+      "mount_xyz_m": [
+        -2.1,
+        -1.6,
+        2.4
+      ],
+      "mount_wxyz": [
+        0.92554193,
+        -0.07441319,
+        0.26721596,
+        0.25774106
+      ],
+      "orientation_convention": "world",
+      "focal_length_mm": 18.0,
+      "horizontal_aperture_mm": 20.955,
+      "clipping_range_m": [
+        0.05,
+        8.0
+      ]
+    }
+  },
+  "render_products": {
+    "isaac_foreground": [
+      "rgb",
+      "depth_m",
+      "instance_id",
+      "alpha_derived_from_instance_id"
+    ],
+    "gaussian_background": [
+      "rgb",
+      "depth_m",
+      "alpha"
+    ],
+    "composite": {
+      "rule": "nearest_valid_depth_with_alpha",
+      "depth_epsilon_m": 0.003,
+      "output_format": "lossless_png",
+      "atomic_episode_publication": true,
+      "intermediate_retention": "failures_and_debug_samples_only"
+    }
+  },
+  "recording": {
+    "canonical_episode_protocol": "conveyor-bench-v1",
+    "canonical_camera_index": "camera_frames.jsonl",
+    "additional_camera_pose_index": "camera_poses.jsonl",
+    "policy_camera_ids": [
+      "head_rgb",
+      "wrist_rgb"
+    ],
+    "observer_camera_ids": [
+      "overview_rgb"
+    ],
+    "raw_to_training_export": "existing_conveyorvla_al0_lerobot_v3",
+    "training_video_format": "mp4",
+    "action_and_state_schema_changes": false
+  },
+  "acceptance_gates": {
+    "asset": {
+      "all_required_files_local": true,
+      "symlinks_allowed": false,
+      "sha256_manifest_required": true,
+      "runtime_network_access": false
+    },
+    "calibration": {
+      "minimum_control_points": 12,
+      "median_reprojection_error_px_max": 1.5,
+      "p95_reprojection_error_px_max": 3.0,
+      "scale_error_percent_max": 1.0
+    },
+    "render": {
+      "held_out_static_psnr_db_min": 25.0,
+      "held_out_static_ssim_min": 0.85,
+      "dynamic_static_edge_error_px_p95_max": 3.0,
+      "missing_or_duplicate_frames_allowed": 0,
+      "black_or_frozen_policy_frames_allowed": 0
+    },
+    "data": {
+      "v1_strict_validator_required": true,
+      "temporal_camera_gate_required": true,
+      "lerobot_round_trip_required": true,
+      "overview_as_policy_input_allowed": false
+    }
+  },
+  "implementation_stages": [
+    "A_asset_capture_and_calibration",
+    "B_local_ply_loader_and_gsplat_renderer",
+    "C_three_camera_pose_export",
+    "D_isaac_foreground_and_depth_aware_compositor",
+    "E_single_episode_stationary_smoke",
+    "F_low_speed_dynamic_smoke",
+    "G_twenty_episode_pilot_collection"
+  ]
+}
