@@ -52,6 +52,7 @@ def test_v3_uses_native_nurec_and_separate_collision() -> None:
     )
     assert config["physics_layer"]["gaussian_splats_have_collision"] is False
     assert config["physics_layer"]["procedural_ground_enabled"] is False
+    assert config["physics_layer"]["local_invisible_floor_patch_enabled"] is True
     assert config["gaussian_layer"]["asset_container"].endswith(".usdz")
     assert config["gaussian_layer"]["nurec_archive_member"].endswith(".nurec")
     assert config["visual_partition"]["procedural_v1_room_enabled"] is False
@@ -91,9 +92,9 @@ def test_v3_task_frame_maps_pct_robot_and_conveyor_consistently() -> None:
     workcell_ground = task["open_room_workcell_ground_xyz_m"]
 
     assert translation == [0.0, 0.0, 0.0]
-    assert workcell_ground == [-12.0, 14.0, -0.0993]
+    assert workcell_ground == [0.0, 14.5, -0.14]
     assert task["sim_robot_anchor_xy_m"] == workcell_ground[:2]
-    assert task["placement_method"] == "collision_mesh_raycast_open_room"
+    assert task["placement_method"].startswith("collision_cross_section")
     assert task["nurec_parent_transform_policy"].startswith("identity")
 
     source_conveyor = task["conveyor_center_source_xy_m"]

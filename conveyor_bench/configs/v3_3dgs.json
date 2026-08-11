@@ -58,6 +58,8 @@
     "static_collision_asset": "liangzhu/usd/liangzhu_collision.usda",
     "static_collision_prim": "/World/PhysicsScene/CollisionScene/LiangzhuCollision",
     "procedural_ground_enabled": false,
+    "local_invisible_floor_patch_enabled": true,
+    "local_floor_patch_size_xyz_m": [3.0, 3.4, 0.02],
     "gaussian_splats_have_collision": false
   },
   "gaussian_layer": {
@@ -92,23 +94,23 @@
     ],
     "pct_reference_robot_root_to_ground_m": 0.43101139033367283,
     "open_room_workcell_ground_xyz_m": [
-      -12.0,
-      14.0,
-      -0.0993
+      0.0,
+      14.5,
+      -0.14
     ],
     "sim_robot_anchor_xy_m": [
-      -12.0,
-      14.0
+      0.0,
+      14.5
     ],
     "conveyor_center_xy_m": [
-      -11.3,
-      14.0
+      0.7,
+      14.5
     ],
     "conveyor_center_source_xy_m": [
-      -11.3,
-      14.0
+      0.7,
+      14.5
     ],
-    "placement_method": "collision_mesh_raycast_open_room",
+    "placement_method": "collision_cross_section_room_center_with_local_floor_patch",
     "nurec_parent_transform_policy": "identity_for_registered_camera_calibration",
     "conveyor_long_axis": "world_y",
     "transport_direction_world": [
@@ -242,20 +244,20 @@
       "role": "observer_only",
       "parent": "environment_origin",
       "mount_xyz_m": [
-        -2.1,
-        -1.6,
-        2.4
+        -4.0,
+        -3.0,
+        2.1
       ],
       "mount_wxyz": [
-        0.92554193,
-        -0.07441319,
-        0.26721596,
-        0.25774106
+        0.9491926869,
+        -0.0407995283,
+        0.1384975349,
+        0.2796195172
       ],
       "orientation_convention": "world",
       "clipping_range_m": [
         0.05,
-        8.0
+        50.0
       ]
     }
   },

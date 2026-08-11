@@ -10,6 +10,7 @@ from isaaclab.assets import AssetBaseCfg
 from isaaclab.utils import configclass
 from pxr import Gf, UsdGeom, UsdPhysics
 
+from .scene import _collision
 from .scene_v1 import (
     ConveyorSceneV1Cfg,
     ProceduralWorkcellCfg,
@@ -22,19 +23,19 @@ LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
 # Observer-only view at about 1.5 times the V1 target distance.  It remains
 # below the lowest candidate-room ceiling while keeping the complete workcell
 # centered in view.
-V3_OVERVIEW_CAMERA_OFFSET_XYZ = (4.00, -3.50, 2.10)
+V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-4.00, -3.00, 2.10)
 V3_OVERVIEW_CAMERA_OFFSET_WXYZ = (
-    0.3874960041,
-    -0.1502574083,
-    0.0641746222,
-    0.9072767912,
+    0.9491926869,
+    -0.0407995283,
+    0.1384975349,
+    0.2796195172,
 )
 V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
-# Collision-mesh raycasts identify this as the center of the large empty room.
-# The z value is the authored floor height at (x, y).  We move the dynamic
-# Isaac environment here and deliberately leave the calibrated NuRec scene at
-# identity.
-V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M = (-12.0, 14.0, -0.0993)
+# Horizontal collision slices identify this as the center of the large empty
+# rectangular room.  Its scanned floor has holes, so a small invisible local
+# collision patch supports the task without altering the NuRec RGB scene.
+V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M = (0.0, 14.5, -0.14)
+V3_LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
 
 
 @configclass
@@ -44,6 +45,21 @@ class ConveyorSceneV3Cfg(ConveyorSceneV1Cfg):
     # The Liangzhu collision layer owns the floor. Keeping V1's ground plane
     # would create two contact surfaces at nearly the same height.
     ground = None
+
+    local_floor_patch = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/LocalFloorPatch",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.0, -0.01)),
+        spawn=sim_utils.CuboidCfg(
+            visible=False,
+            size=(3.0, 3.4, 0.02),
+            collision_props=_collision(),
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=1.0,
+                dynamic_friction=0.85,
+                restitution=0.0,
+            ),
+        ),
+    )
 
     workcell = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/ConveyorStation",
@@ -135,6 +151,7 @@ def place_workcell_in_liangzhu_open_room(
     return {
         "environment_prim": env_prim_path,
         "workcell_ground_world_xyz_m": list(ground_xyz_m),
+        "local_floor_patch_prim": V3_LOCAL_FLOOR_PATCH_PRIM_PATH,
         "nurec_scene_translation_xyz_m": [0.0, 0.0, 0.0],
     }
 
@@ -191,6 +208,7 @@ __all__ = [
     "V3_OVERVIEW_CAMERA_OFFSET_XYZ",
     "V3_OVERVIEW_CAMERA_OFFSET_WXYZ",
     "V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M",
+    "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
     "make_conveyor_scene_v3_cfg",
     "place_workcell_in_liangzhu_open_room",
     "validate_liangzhu_stage",
