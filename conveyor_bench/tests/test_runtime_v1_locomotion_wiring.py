@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
@@ -137,11 +138,31 @@ def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
     assert "else (0.02,) * len(ARM_JOINT_NAMES)" in source
 
 
-def test_mobile_place_preserves_the_registered_overhead_orientation() -> None:
-    source = ast.unparse(_method(_runtime_tree(), "_mobile_place_target"))
+def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
+    method_node = copy.deepcopy(
+        _method(_runtime_tree(), "_mobile_place_target")
+    )
+    method_node.decorator_list = []
+    module = ast.fix_missing_locations(
+        ast.Module(body=[method_node], type_ignores=[])
+    )
+    namespace = {
+        "Any": object,
+        "Pose": Pose,
+        "np": np,
+        "_MOBILE_PLACE_CARTESIAN_STEP_M": 0.003,
+    }
+    exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
+    orientation = (1.0, 0.0, 0.0, 0.0)
+    state = {"tcp_world": Pose((0.0, 0.0, 0.20), orientation)}
+    goal = Pose((0.20, 0.20, 0.30), orientation)
 
-    assert "return oracle_target" in source
-    assert "state['tcp_base'].wxyz" not in source
+    waypoint = namespace["_mobile_place_target"](
+        SimpleNamespace(), goal, state
+    )
+
+    assert waypoint.xyz == pytest.approx((0.0, 0.0, 0.203))
+    assert waypoint.wxyz == orientation
 
 
 def test_scene_applies_registry_rigid_body_damping() -> None:

@@ -3990,10 +3990,31 @@ class ConveyorRuntimeV1:
         *,
         waypoint_step_m: float = _MOBILE_PLACE_CARTESIAN_STEP_M,
     ) -> Pose:
-        """Preserve the registered overhead attitude above the sorting tray."""
+        """Track a collision-safe Cartesian waypoint over the sorting tray."""
 
-        del state, waypoint_step_m
-        return oracle_target
+        current = np.asarray(
+            state["tcp_world"].xyz, dtype=np.float64
+        )
+        target = np.asarray(oracle_target.xyz, dtype=np.float64)
+        delta = target - current
+        # Lift to the requested carry height before translating toward a tray.
+        # A direct joint-space solve of the distant high goal can dip through
+        # the near wall even though both endpoints are collision-free.
+        vertical_gap = float(target[2] - current[2])
+        if vertical_gap > waypoint_step_m:
+            delta = np.asarray(
+                (0.0, 0.0, min(vertical_gap, waypoint_step_m)),
+                dtype=np.float64,
+            )
+        else:
+            distance = float(np.linalg.norm(delta))
+            if distance > waypoint_step_m:
+                delta *= waypoint_step_m / distance
+        waypoint = current + delta
+        return Pose(
+            tuple(float(value) for value in waypoint),
+            oracle_target.wxyz,
+        )
 
     def _transition_mobile_carry(
         self, stage: str, sim_time_s: float
