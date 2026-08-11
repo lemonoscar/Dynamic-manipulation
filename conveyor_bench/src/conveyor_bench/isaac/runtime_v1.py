@@ -722,7 +722,7 @@ class ConveyorRuntimeV1:
             )
             self.surface_velocity_api = apply_surface_velocity(
                 stage,
-                "/World/envs/env_0/TransportSurface",
+                self._conveyor_prim_path(),
                 options.belt_speed_mps,
             )
             self.sim.reset()
@@ -825,6 +825,9 @@ class ConveyorRuntimeV1:
 
         del stage
         self.scene_stage_contract: dict[str, Any] = {}
+
+    def _conveyor_prim_path(self) -> str:
+        return "/World/envs/env_0/TransportSurface"
 
     def _scene_metadata(self) -> dict[str, Any]:
         """Return additive scene provenance for the episode manifest."""

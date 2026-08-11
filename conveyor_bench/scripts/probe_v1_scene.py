@@ -23,13 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--v3-asset-root", type=Path)
     parser.add_argument(
-        "--v3-workcell-ground-xyz",
-        type=float,
-        nargs=3,
-        metavar=("X", "Y", "Z"),
-        help="Diagnostic task-ground point in the authored Liangzhu frame.",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -143,10 +136,10 @@ def main() -> int:
         )
         if args.scene_profile == "v3_nurec":
             from conveyor_bench.isaac.scene_v3 import (
-                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M,
+                V3_CONVEYOR_PRIM_PATH,
+                describe_v3_conveyor_world_pose,
                 make_conveyor_scene_v3_cfg,
                 place_workcell_in_liangzhu_open_room,
-                reset_v3_conveyor_world_pose,
                 validate_liangzhu_stage,
             )
 
@@ -165,11 +158,6 @@ def main() -> int:
             place_workcell_in_liangzhu_open_room(
                 scene,
                 omni.usd.get_context().get_stage(),
-                ground_xyz_m=(
-                    tuple(args.v3_workcell_ground_xyz)
-                    if args.v3_workcell_ground_xyz is not None
-                    else V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M
-                ),
             )
             if args.scene_profile == "v3_nurec"
             else None
@@ -185,13 +173,17 @@ def main() -> int:
         )
         surface_api = apply_surface_velocity(
             omni.usd.get_context().get_stage(),
-            "/World/envs/env_0/TransportSurface",
+            (
+                V3_CONVEYOR_PRIM_PATH
+                if args.scene_profile == "v3_nurec"
+                else "/World/envs/env_0/TransportSurface"
+            ),
             args.belt_speed,
         )
         simulation.reset()
         scene.reset()
         conveyor_placement = (
-            reset_v3_conveyor_world_pose(scene)
+            describe_v3_conveyor_world_pose(scene)
             if args.scene_profile == "v3_nurec"
             else None
         )
