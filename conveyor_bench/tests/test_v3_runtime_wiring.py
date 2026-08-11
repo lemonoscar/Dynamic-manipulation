@@ -38,6 +38,16 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
     assert "include_local_sort_trays=True" in source
     assert "liangzhu_scene = None" in source
 
+    constants = {
+        node.targets[0].id: ast.literal_eval(node.value)
+        for node in _tree(SCENE_PATH).body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    }
+    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-5.1, -3.5, 4.7)
+    assert constants["V3_OVERVIEW_CAMERA_FAR_CLIPPING_M"] == 50.0
+
     v1_source = _source(SCENE_V1_PATH)
     assert "include_room_context: bool = True" in v1_source
     assert "if cfg.include_room_context:" in v1_source
@@ -61,6 +71,7 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
 
     assert "v3_nurec" in probe
     assert "--v3-asset-root" in probe
+    assert "--v3-scene-translation-xyz" in probe
     assert "validate_asset_bundle" in probe
     assert "--asset-root" in runner
     assert "RuntimeOptionsV3" in runner

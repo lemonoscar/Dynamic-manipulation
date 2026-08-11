@@ -105,6 +105,12 @@ def test_validate_asset_bundle_and_write_native_runtime_layer(tmp_path: Path) ->
     for component in LIANGZHU_SCENE_TRANSLATION_XYZ_M:
         assert f"{component:.16g}" in payload
 
+    overridden = bundle.write_runtime_layer(
+        tmp_path / "runtime/override.usda",
+        scene_translation_xyz_m=(12.0, -14.0, 0.1),
+    ).read_text(encoding="utf-8")
+    assert "double3 xformOp:translate = (12, -14, 0.1)" in overridden
+
 
 def test_asset_root_can_come_from_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

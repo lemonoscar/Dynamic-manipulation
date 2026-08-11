@@ -19,6 +19,11 @@ from .scene_v1 import (
 
 SCENE_ID = "transverse_dynamic_sort_liangzhu_nurec_v3"
 LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
+# Observer-only view at roughly twice the V1 distance.  Its unchanged
+# orientation keeps the workcell centered while exposing enough NuRec room
+# context to audit where the robot and conveyor were placed.
+V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-5.10, -3.50, 4.70)
+V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
 
 
 @configclass
@@ -64,6 +69,11 @@ def make_conveyor_scene_v3_cfg(
     cfg.liangzhu_scene = AssetBaseCfg(
         prim_path=LIANGZHU_STAGE_PRIM_PATH,
         spawn=sim_utils.UsdFileCfg(usd_path=str(runtime_layer)),
+    )
+    cfg.overview_camera.offset.pos = V3_OVERVIEW_CAMERA_OFFSET_XYZ
+    cfg.overview_camera.spawn.clipping_range = (
+        0.05,
+        V3_OVERVIEW_CAMERA_FAR_CLIPPING_M,
     )
     return cfg
 
@@ -116,6 +126,8 @@ __all__ = [
     "ConveyorSceneV3Cfg",
     "LIANGZHU_STAGE_PRIM_PATH",
     "SCENE_ID",
+    "V3_OVERVIEW_CAMERA_FAR_CLIPPING_M",
+    "V3_OVERVIEW_CAMERA_OFFSET_XYZ",
     "make_conveyor_scene_v3_cfg",
     "validate_liangzhu_stage",
 ]

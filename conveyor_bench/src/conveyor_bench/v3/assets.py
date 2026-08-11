@@ -253,7 +253,14 @@ class V3AssetBundle:
             raise KeyError(f"unknown V3 object asset: {object_id}") from exc
         return self.root / relative
 
-    def write_runtime_layer(self, output_path: Path) -> Path:
+    def write_runtime_layer(
+        self,
+        output_path: Path,
+        *,
+        scene_translation_xyz_m: tuple[float, float, float] = (
+            LIANGZHU_SCENE_TRANSLATION_XYZ_M
+        ),
+    ) -> Path:
         """Write a deterministic native NuRec/collision composition layer."""
 
         output_path = Path(output_path).expanduser().resolve()
@@ -261,7 +268,9 @@ class V3AssetBundle:
         scene_path = self.scene_usda.as_posix()
         if "@" in scene_path or "\n" in scene_path:
             raise ValueError("scene asset path cannot be represented in USDA")
-        tx, ty, tz = LIANGZHU_SCENE_TRANSLATION_XYZ_M
+        if len(scene_translation_xyz_m) != 3:
+            raise ValueError("scene translation must contain exactly 3 values")
+        tx, ty, tz = (float(value) for value in scene_translation_xyz_m)
         payload = f'''#usda 1.0
 (
     defaultPrim = "LiangzhuScene"

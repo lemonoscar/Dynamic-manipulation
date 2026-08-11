@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--v3-asset-root", type=Path)
     parser.add_argument(
+        "--v3-scene-translation-xyz",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        help="Diagnostic override for the Liangzhu-to-simulation translation.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -81,8 +88,14 @@ def main() -> int:
             verify_all_hashes=True,
         )
         args.output_dir.mkdir(parents=True, exist_ok=True)
+        runtime_layer_kwargs = {}
+        if args.v3_scene_translation_xyz is not None:
+            runtime_layer_kwargs["scene_translation_xyz_m"] = tuple(
+                args.v3_scene_translation_xyz
+            )
         v3_runtime_layer = v3_bundle.write_runtime_layer(
-            args.output_dir / "liangzhu_conveyorvla_v3.usda"
+            args.output_dir / "liangzhu_conveyorvla_v3.usda",
+            **runtime_layer_kwargs,
         )
     app = AppLauncher(args)
     simulation_app = app.app
