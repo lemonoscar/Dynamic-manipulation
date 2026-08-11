@@ -242,6 +242,7 @@ _GRIPPER_HOLD_DURATION_S = 0.30
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
+_MOBILE_PLACE_ALIGNMENT_TOLERANCE_RAD = 0.04
 _MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
@@ -1792,6 +1793,15 @@ class ConveyorRuntimeV1:
                                     "descend",
                                     "close",
                                     "lift",
+                                    # Loaded carry uses a staged Cartesian
+                                    # waypoint, so solving that complete
+                                    # waypoint is safe.  Solving only the
+                                    # next 3 mm label lets gravity outrun the
+                                    # joint target and folds the arm toward
+                                    # the belt while the policy still asks
+                                    # for positive dz.
+                                    "carry",
+                                    "preplace",
                                 }
                             ),
                         )
@@ -4001,7 +4011,23 @@ class ConveyorRuntimeV1:
         # A direct joint-space solve of the distant high goal can dip through
         # the near wall even though both endpoints are collision-free.
         vertical_gap = float(target[2] - current[2])
-        if vertical_gap > 0.005:
+        orientation_error_rad = float(
+            np.linalg.norm(
+                _rotation_vector_between(
+                    state["tcp_world"].wxyz, oracle_target.wxyz
+                )
+            )
+        )
+        # Finish both the vertical lift and the loaded wrist alignment at a
+        # frozen XY before starting the long planar traverse.  The oracle's
+        # LIFT gate is positional, so the wrist can still be converging when
+        # CARRY begins; translating at that instant selects a folded IK branch
+        # and lowers the held part back into the conveyor rail.
+        if (
+            abs(vertical_gap) > 0.005
+            or orientation_error_rad
+            > _MOBILE_PLACE_ALIGNMENT_TOLERANCE_RAD
+        ):
             if self._place_lift_anchor_xy_world is None:
                 self._place_lift_anchor_xy_world = (
                     float(current[0]),
