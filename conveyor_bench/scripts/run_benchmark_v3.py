@@ -86,31 +86,39 @@ def main() -> int:
         )
 
         print("[V3] creating physical scene and collector", flush=True)
-        summary = run_collection_v3(
-            RuntimeOptionsV3(
-                output_root=args.output_dir.resolve(),
-                asset_root=args.asset_root,
-                robot_mode=RobotMode(args.robot_mode),
-                episodes=args.episodes,
-                seed=args.seed,
-                belt_speed_mps=args.belt_speed,
-                target_intercept_lead_time_s=(
-                    args.target_intercept_lead_time
-                ),
-                max_duration_s=args.max_duration,
-                active_object_count=args.active_objects,
-                target_asset_id=args.target_asset,
-                destination_zone_id=args.destination,
-                device=args.device,
-                enable_cameras=True,
-                save_camera_frames=args.save_camera_frames,
-                curriculum_split=CurriculumSplit(args.split),
-                task_family=TaskFamily(args.task_family),
-                instruction_language=InstructionLanguage(
-                    args.instruction_language
-                ),
+        try:
+            summary = run_collection_v3(
+                RuntimeOptionsV3(
+                    output_root=args.output_dir.resolve(),
+                    asset_root=args.asset_root,
+                    robot_mode=RobotMode(args.robot_mode),
+                    episodes=args.episodes,
+                    seed=args.seed,
+                    belt_speed_mps=args.belt_speed,
+                    target_intercept_lead_time_s=(
+                        args.target_intercept_lead_time
+                    ),
+                    max_duration_s=args.max_duration,
+                    active_object_count=args.active_objects,
+                    target_asset_id=args.target_asset,
+                    destination_zone_id=args.destination,
+                    device=args.device,
+                    enable_cameras=True,
+                    save_camera_frames=args.save_camera_frames,
+                    curriculum_split=CurriculumSplit(args.split),
+                    task_family=TaskFamily(args.task_family),
+                    instruction_language=InstructionLanguage(
+                        args.instruction_language
+                    ),
+                )
             )
-        )
+        except BaseException as error:
+            print(
+                f"[V3] collector raised {type(error).__name__}: {error!r}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
         print(json.dumps(summary, indent=2, sort_keys=True))
         return collection_exit_code(
             summary, require_all_success=args.require_all_success

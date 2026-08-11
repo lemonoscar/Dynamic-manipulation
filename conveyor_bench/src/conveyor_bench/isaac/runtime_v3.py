@@ -54,6 +54,7 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
 
     def __init__(self, options: RuntimeOptionsV3):
         assert options.asset_root is not None
+        print("[V3] verifying full sidecar asset hashes", flush=True)
         self.asset_bundle: V3AssetBundle = validate_asset_bundle(
             options.asset_root,
             verify_all_hashes=True,
@@ -64,6 +65,7 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
         self.runtime_layer = self.asset_bundle.write_runtime_layer(
             runtime_directory / "liangzhu_conveyorvla_v3.usda"
         )
+        print(f"[V3] runtime layer ready: {self.runtime_layer}", flush=True)
         super().__init__(options)
 
     def _make_scene_cfg(self):

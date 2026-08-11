@@ -732,6 +732,7 @@ class ConveyorRuntimeV1:
                 ),
             )
         )
+        print("[Collector] SimulationContext ready", flush=True)
         try:
             eye, target = self._viewer_camera_view()
             self.sim.set_camera_view(eye=eye, target=target)
@@ -741,6 +742,7 @@ class ConveyorRuntimeV1:
                 else {"requested": False, "enabled": False}
             )
             scene_cfg = self._make_scene_cfg()
+            print("[Collector] scene configuration ready", flush=True)
             if options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
                 scene_cfg.robot = make_go2_x5_policy_cfg()
             else:
@@ -759,8 +761,10 @@ class ConveyorRuntimeV1:
                 scene_cfg.wrist_camera = None
                 scene_cfg.overview_camera = None
             self.scene = InteractiveScene(scene_cfg)
+            print("[Collector] InteractiveScene composed", flush=True)
             stage = omni.usd.get_context().get_stage()
             self._post_scene_creation(stage)
+            print("[Collector] profile stage gates passed", flush=True)
             self.gripper_collision_contract = (
                 apply_pct_gripper_collision_patch(
                     stage,
@@ -773,6 +777,7 @@ class ConveyorRuntimeV1:
                 options.belt_speed_mps,
             )
             self.sim.reset()
+            print("[Collector] simulation reset passed", flush=True)
             self.scene.reset()
             self._resolve_entities()
             self._warm_up()
