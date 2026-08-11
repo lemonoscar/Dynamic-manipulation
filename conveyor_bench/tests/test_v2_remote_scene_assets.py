@@ -283,3 +283,22 @@ def test_mobile_runtime_uses_pct_urdf_and_original_finray_colliders() -> None:
     assert "geometry_replaced" in collision_source
     assert "SetActive" not in collision_source
     assert "prim_type='Cube'" not in collision_source
+
+
+def test_urdf_converter_cache_stays_inside_project() -> None:
+    asset_tree = _tree(ASSET_CONFIG_PATH)
+    cache_assignment = next(
+        node
+        for node in asset_tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "GO2_X5_USD_CACHE_ROOT"
+    )
+    assert ast.unparse(cache_assignment.value) == (
+        "PROJECT_ROOT / '_isaac_cache' / 'urdf'"
+    )
+
+    source = ast.unparse(_function(asset_tree, "make_go2_x5_cfg"))
+    assert "usd_dir=str(GO2_X5_USD_CACHE_ROOT" in source
+    assert "'fixed_base' if fix_base else 'mobile'" in source
+    assert "'/tmp'" not in source

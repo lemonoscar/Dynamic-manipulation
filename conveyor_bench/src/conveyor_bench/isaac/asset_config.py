@@ -11,6 +11,7 @@ from isaaclab.assets import ArticulationCfg
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GO2_X5_URDF = PROJECT_ROOT / "assets" / "robots" / "go2_x5" / "go2_x5.urdf"
+GO2_X5_USD_CACHE_ROOT = PROJECT_ROOT / "_isaac_cache" / "urdf"
 
 LEG_JOINT_NAMES = (
     "FR_hip_joint",
@@ -136,6 +137,10 @@ def make_go2_x5_cfg(*, fix_base: bool = True) -> ArticulationCfg:
         prim_path="{ENV_REGEX_NS}/Robot",
         spawn=sim_utils.UrdfFileCfg(
             asset_path=str(GO2_X5_URDF),
+            usd_dir=str(
+                GO2_X5_USD_CACHE_ROOT
+                / ("fixed_base" if fix_base else "mobile")
+            ),
             fix_base=fix_base,
             merge_fixed_joints=True,
             replace_cylinders_with_capsules=False,
