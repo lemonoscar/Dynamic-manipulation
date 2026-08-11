@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 import numpy as np
@@ -131,7 +131,6 @@ from .scene_v1 import (
     HEAD_CAMERA_OFFSET_XYZ,
     LAYOUT_ID,
     OBJECT_ASSETS,
-    OBJECT_ENTITY_NAMES,
     OBJECT_LANE_X_M,
     OBJECT_SPAWN_Y_M,
     OVERVIEW_CAMERA_ORIENTATION_CONVENTION,
@@ -350,13 +349,55 @@ class RuntimeOptionsV1:
     m0_pregrasp_workspace_guard: bool = False
     m0_pregrasp_staging_assist: bool = False
     m0_carry_retract_teacher_executor: bool = False
+    # Profile-owned object pools keep the canonical V1 default intact while
+    # allowing V3 to use SSH-delivered real assets without global mutation.
+    object_assets: tuple[ObjectAsset, ...] | None = None
+    object_split_ids: Mapping[
+        CurriculumSplit, tuple[str, ...]
+    ] | None = None
+    stationary_target_asset_id: str = _STATIONARY_TARGET_ASSET_ID
 
     def __post_init__(self) -> None:
+        object_assets = (
+            OBJECT_ASSETS
+            if self.object_assets is None
+            else tuple(self.object_assets)
+        )
+        if not object_assets:
+            raise ValueError("object_assets cannot be empty")
+        object.__setattr__(self, "object_assets", object_assets)
+        split_ids = (
+            split_object_ids(object_assets)
+            if self.object_split_ids is None
+            else {
+                split: tuple(self.object_split_ids.get(split, ()))
+                for split in CurriculumSplit
+            }
+        )
+        partition = tuple(
+            object_id
+            for split in CurriculumSplit
+            for object_id in split_ids[split]
+        )
+        registered_ids = tuple(asset.object_id for asset in object_assets)
+        if (
+            len(registered_ids) != len(set(registered_ids))
+            or len(partition) != len(set(partition))
+            or set(partition) != set(registered_ids)
+        ):
+            raise ValueError(
+                "object_split_ids must partition object_assets exactly"
+            )
+        object.__setattr__(self, "object_split_ids", split_ids)
+        if self.stationary_target_asset_id not in set(registered_ids):
+            raise ValueError(
+                "stationary_target_asset_id must be a registered object"
+            )
         if self.episodes <= 0:
             raise ValueError("episodes must be positive")
         if self.seed < 0:
             raise ValueError("seed cannot be negative")
-        if not 1 <= self.active_object_count <= len(OBJECT_ASSETS):
+        if not 1 <= self.active_object_count <= len(object_assets):
             raise ValueError("active_object_count is outside the object pool")
         if (
             isinstance(self.belt_speed_mps, bool)
@@ -436,7 +477,7 @@ class RuntimeOptionsV1:
             raise ValueError(
                 "runtime supports fixed_base or whole_body_policy"
             )
-        object_ids = {asset.object_id for asset in OBJECT_ASSETS}
+        object_ids = {asset.object_id for asset in object_assets}
         if self.target_asset_id not in object_ids:
             raise ValueError(
                 f"unknown target asset: {self.target_asset_id!r}"
@@ -484,7 +525,7 @@ class RuntimeOptionsV1:
                 raise ValueError(
                     "the stationary-belt diagnostic requires single_target"
                 )
-            if self.target_asset_id != _STATIONARY_TARGET_ASSET_ID:
+            if self.target_asset_id != self.stationary_target_asset_id:
                 raise ValueError(
                     "the stationary-belt diagnostic requires part_red_block"
                 )
@@ -517,7 +558,7 @@ class RuntimeOptionsV1:
             raise ValueError(
                 "language_conditioned requires at least two active objects"
             )
-        split_pool = split_object_ids()[self.curriculum_split]
+        split_pool = split_ids[self.curriculum_split]
         if self.target_asset_id not in split_pool:
             raise ValueError(
                 f"target {self.target_asset_id!r} is not in "
@@ -651,9 +692,15 @@ class ConveyorRuntimeV1:
         )
         self._physics_step_count = 0
         self._closed = False
+        assert self.options.object_assets is not None
+        self.object_assets = self.options.object_assets
+        self.object_entity_names = tuple(
+            f"object_{index:02d}"
+            for index in range(len(self.object_assets))
+        )
         self._objects_by_asset_id = {
-            asset.object_id: OBJECT_ENTITY_NAMES[index]
-            for index, asset in enumerate(OBJECT_ASSETS)
+            asset.object_id: self.object_entity_names[index]
+            for index, asset in enumerate(self.object_assets)
         }
         self._m0_client = None
         self._m0_health: dict[str, Any] | None = None
@@ -839,6 +886,20 @@ class ConveyorRuntimeV1:
     def _asset_lock_path(self) -> Path:
         return ASSET_LOCK_PATH
 
+    def _episode_asset_hashes(
+        self, resolved: _ResolvedTask
+    ) -> dict[str, str]:
+        registry = (
+            Path(__file__).resolve().parents[3]
+            / "assets"
+            / "objects"
+            / "registry.json"
+        )
+        registry_sha256 = sha256_file(registry)
+        return {
+            asset.object_id: registry_sha256 for asset in resolved.assets
+        }
+
     def _layout_id(self) -> str:
         return LAYOUT_ID
 
@@ -940,7 +1001,7 @@ class ConveyorRuntimeV1:
         self.objects = {
             asset.object_id: self.scene[entity_name]
             for asset, entity_name in zip(
-                OBJECT_ASSETS, OBJECT_ENTITY_NAMES, strict=True
+                self.object_assets, self.object_entity_names, strict=True
             )
         }
         self.left_contact_sensor = self.scene["left_finger_contact"]
@@ -1073,15 +1134,7 @@ class ConveyorRuntimeV1:
             task=resolved.manifest,
             created_at_utc=datetime.now(timezone.utc).isoformat(),
             env_id=0,
-            asset_hashes={
-                asset.object_id: sha256_file(
-                    Path(__file__).resolve().parents[3]
-                    / "assets"
-                    / "objects"
-                    / "registry.json"
-                )
-                for asset in resolved.assets
-            },
+            asset_hashes=self._episode_asset_hashes(resolved),
             seeds={"episode": episode_seed, "layout": episode_seed},
             metadata={
                 "isaac_sim": _package_version("isaacsim"),
@@ -2763,9 +2816,14 @@ class ConveyorRuntimeV1:
 
     def _make_task(self, seed: int) -> _ResolvedTask:
         rng = random.Random(seed)
-        asset_by_id = {asset.object_id: asset for asset in OBJECT_ASSETS}
+        asset_by_id = {
+            asset.object_id: asset for asset in self.object_assets
+        }
         target = asset_by_id[self.options.target_asset_id]
-        split_pool = split_object_ids()[self.options.curriculum_split]
+        assert self.options.object_split_ids is not None
+        split_pool = self.options.object_split_ids[
+            self.options.curriculum_split
+        ]
         candidates = [
             asset_by_id[asset_id]
             for asset_id in split_pool
@@ -2917,7 +2975,7 @@ class ConveyorRuntimeV1:
                 "distractor_asset_ids": tuple(
                     asset.object_id for asset in distractors
                 ),
-                "layout_id": LAYOUT_ID,
+                "layout_id": self._layout_id(),
                 "benchmark_role": (
                     "stationary_belt_diagnostic"
                     if stationary
@@ -2983,7 +3041,7 @@ class ConveyorRuntimeV1:
             ].finger_closing_axis
         )
         self._reset_robot_state(resolved)
-        for index, asset in enumerate(OBJECT_ASSETS):
+        for index, asset in enumerate(self.object_assets):
             rigid_object = self.objects[asset.object_id]
             root_state = rigid_object.data.default_root_state.clone()
             root_state[:, :3] += self.scene.env_origins
@@ -4681,13 +4739,13 @@ class ConveyorRuntimeV1:
             return ()
         magnitudes = torch.linalg.vector_norm(matrix[0, 0], dim=-1)
         threshold = float(sensor.cfg.force_threshold)
-        # Filter columns follow OBJECT_PRIM_BASENAMES/OBJECT_ASSETS order.
+        # Filter columns follow the profile object-pool order.
         active_ids = {asset.object_id for asset in active_assets}
         return tuple(
-            OBJECT_ASSETS[index].object_id
+            self.object_assets[index].object_id
             for index, magnitude in enumerate(magnitudes)
-            if index < len(OBJECT_ASSETS)
-            and OBJECT_ASSETS[index].object_id in active_ids
+            if index < len(self.object_assets)
+            and self.object_assets[index].object_id in active_ids
             and float(magnitude.item()) >= threshold
         )
 

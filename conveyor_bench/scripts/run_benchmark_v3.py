@@ -27,9 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--belt-speed", type=float, default=0.0)
+    parser.add_argument("--target-intercept-lead-time", type=float)
     parser.add_argument("--max-duration", type=float, default=45.0)
     parser.add_argument("--active-objects", type=int, default=1)
-    parser.add_argument("--target-asset", default="part_red_block")
+    parser.add_argument("--target-asset", default="cola")
     parser.add_argument(
         "--split", choices=("train", "val", "unseen"), default="train"
     )
@@ -62,10 +63,15 @@ def main() -> int:
 
     # Cheap structural preflight before paying Isaac Sim startup cost. The
     # runtime repeats this with full SHA-256 verification before scene load.
-    validate_asset_bundle(args.asset_root, verify_all_hashes=False)
+    bundle = validate_asset_bundle(args.asset_root, verify_all_hashes=False)
+    print(
+        f"[V3] asset preflight passed: {bundle.report.file_count} files",
+        flush=True,
+    )
 
     app = AppLauncher(args)
     simulation_app = app.app
+    print("[V3] Isaac application ready", flush=True)
     try:
         from conveyor_bench.cli import collection_exit_code
         from conveyor_bench.isaac.runtime_v3 import (
@@ -79,6 +85,7 @@ def main() -> int:
             TaskFamily,
         )
 
+        print("[V3] creating physical scene and collector", flush=True)
         summary = run_collection_v3(
             RuntimeOptionsV3(
                 output_root=args.output_dir.resolve(),
@@ -87,6 +94,9 @@ def main() -> int:
                 episodes=args.episodes,
                 seed=args.seed,
                 belt_speed_mps=args.belt_speed,
+                target_intercept_lead_time_s=(
+                    args.target_intercept_lead_time
+                ),
                 max_duration_s=args.max_duration,
                 active_object_count=args.active_objects,
                 target_asset_id=args.target_asset,

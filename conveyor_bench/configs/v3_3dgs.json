@@ -128,17 +128,22 @@
   },
   "object_assets": {
     "first_pilot_ids": [
-      "cola",
-      "apple",
-      "orange"
+      "cola"
     ],
-    "unseen_gate_ids": [
-      "bottle"
+    "future_candidate_ids": [
+      "apple",
+      "orange",
+      "bottle",
+      "box2"
     ],
     "deferred_ids": [
+      "apple",
+      "orange",
+      "bottle",
+      "box2",
       "blanket"
     ],
-    "destination_id": "box2",
+    "destination_id": "sort_bin_blue",
     "usd_paths": {
       "cola": "objects/cola/MesaTask-10K/MesaTask_Assets/can/0364ab96f338493c972248102b462aa4/usd/0364ab96f338493c972248102b462aa4.usd",
       "apple": "objects/apple/MesaTask-10K/MesaTask_Assets/apple/0176be079c2449e7aaebfb652910a854/usd/0176be079c2449e7aaebfb652910a854.usd",
@@ -146,7 +151,9 @@
       "bottle": "objects/bottle/MesaTask-10K/MesaTask_Assets/body-care_products/ec67d7141333464ca1061320452f06a2/usd/ec67d7141333464ca1061320452f06a2.usd",
       "box2": "objects/box2/box2.usd"
     },
-    "pilot_policy": "one_target_one_destination_no_classification",
+    "pilot_policy": "cola_to_sort_bin_blue_no_classification",
+    "fixture_policy": "real_usd_visual_with_annotation_sized_analytic_collision",
+    "gripper_max_opening_m": 0.088,
     "real_mesh_physics_required_before_formal_collection": true
   },
   "visual_partition": {

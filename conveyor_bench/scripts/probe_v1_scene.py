@@ -184,11 +184,30 @@ def main() -> int:
                 make_conveyor_scene_v3_cfg,
                 place_workcell_in_liangzhu_task_area,
                 validate_liangzhu_stage,
+                validate_v3_object_fixtures,
             )
+            from conveyor_bench.v3.objects import V3_OBJECT_ASSETS
 
             assert v3_runtime_layer is not None
-            scene_cfg = make_conveyor_scene_v3_cfg(v3_runtime_layer)
+            assert v3_bundle is not None
+            profile_object_assets = V3_OBJECT_ASSETS
+            profile_entity_names = tuple(
+                f"object_{index:02d}"
+                for index in range(len(profile_object_assets))
+            )
+            profile_object_paths = {
+                asset.object_id: v3_bundle.object_usd(asset.object_id)
+                for asset in profile_object_assets
+            }
+            scene_cfg = make_conveyor_scene_v3_cfg(
+                v3_runtime_layer,
+                object_assets=profile_object_assets,
+                object_usd_paths=profile_object_paths,
+            )
         else:
+            profile_object_assets = OBJECT_ASSETS
+            profile_entity_names = OBJECT_ENTITY_NAMES
+            profile_object_paths = {}
             scene_cfg = ConveyorSceneV1Cfg(
                 num_envs=1,
                 env_spacing=3.0,
@@ -215,6 +234,15 @@ def main() -> int:
         )
         scene_stage_contract = (
             validate_liangzhu_stage(omni.usd.get_context().get_stage())
+            if args.scene_profile == "v3_nurec"
+            else {}
+        )
+        object_fixture_contract = (
+            validate_v3_object_fixtures(
+                omni.usd.get_context().get_stage(),
+                profile_object_assets,
+                profile_object_paths,
+            )
             if args.scene_profile == "v3_nurec"
             else {}
         )
@@ -247,13 +275,25 @@ def main() -> int:
         joint_positions[:, gripper_ids] = 0.044
         robot.write_joint_state_to_sim(joint_positions, joint_velocities)
 
-        # Put four geometrically different parts on distinct portions of the
-        # belt; park the rest locally but outside the rendered workcell.
-        active_indices = (0, 2, 5, 6)
-        active_y = (0.43, 0.16, -0.12, -0.38)
+        # V1 previews four procedural parts; V3 previews its one collection-
+        # ready real can and parks any remaining profile assets off-workcell.
+        active_indices = (
+            (0,)
+            if args.scene_profile == "v3_nurec"
+            else (0, 2, 5, 6)
+        )
+        active_y = (
+            (0.16,)
+            if args.scene_profile == "v3_nurec"
+            else (0.43, 0.16, -0.12, -0.38)
+        )
         initial_positions: dict[str, tuple[float, float, float]] = {}
         for index, (entity_name, asset) in enumerate(
-            zip(OBJECT_ENTITY_NAMES, OBJECT_ASSETS, strict=True)
+            zip(
+                profile_entity_names,
+                profile_object_assets,
+                strict=True,
+            )
         ):
             rigid_object = scene[entity_name]
             root_state = rigid_object.data.default_root_state.clone()
@@ -331,9 +371,9 @@ def main() -> int:
             "overview_rgb": _as_bgr(scene["overview_camera"].data.output["rgb"]),
         }
         object_states = {
-            OBJECT_ASSETS[index].object_id: [
+            profile_object_assets[index].object_id: [
                 float(value)
-                for value in scene[OBJECT_ENTITY_NAMES[index]]
+                for value in scene[profile_entity_names[index]]
                 .data.root_pos_w[0]
                 .detach()
                 .cpu()
@@ -395,6 +435,7 @@ def main() -> int:
             ),
             "scene_profile": args.scene_profile,
             "scene_stage_contract": scene_stage_contract,
+            "object_fixture_contract": object_fixture_contract,
             "workcell_placement": workcell_placement,
             "v3_asset_bundle": (
                 v3_bundle.report.to_dict() if v3_bundle is not None else None
@@ -404,7 +445,8 @@ def main() -> int:
                 surface_api.GetSurfaceVelocityAttr().Get()
             ),
             "active_assets": [
-                OBJECT_ASSETS[index].object_id for index in active_indices
+                profile_object_assets[index].object_id
+                for index in active_indices
             ],
             "object_states": object_states,
             "transport_displacement_m": transport_displacement_m,

@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import MISSING
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping, Sequence
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import AssetBaseCfg
+from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.sensors import ContactSensorCfg
+from isaaclab.sim import schemas
+from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg
+from isaaclab.sim.utils import (
+    bind_physics_material,
+    clone,
+    create_prim,
+    get_current_stage,
+)
 from isaaclab.utils import configclass
-from pxr import Gf, UsdGeom, UsdPhysics
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+from conveyor_bench.v1.assets import ObjectAsset
 
 from .scene import _collision
 from .scene_v1 import (
@@ -42,6 +54,131 @@ V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M = (
     -0.1381941050,
 )
 V3_LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
+V3_OBJECT_PRIM_BASENAMES = tuple(
+    f"Object{index:02d}" for index in range(8)
+)
+
+
+@configclass
+class V3RigidObjectCfg(RigidObjectSpawnerCfg):
+    """A real USD visual with one deterministic analytic rigid fixture."""
+
+    func: Callable = MISSING
+    object_id: str = MISSING
+    visual_usd_path: str = MISSING
+    geometry: dict[str, Any] = MISSING
+    physics_material: sim_utils.RigidBodyMaterialCfg = MISSING
+
+
+@clone
+def spawn_v3_rigid_object(
+    prim_path: str,
+    cfg: V3RigidObjectCfg,
+    translation: tuple[float, float, float] | None = None,
+    orientation: tuple[float, float, float, float] | None = None,
+    **_: object,
+):
+    """Compose a sidecar visual and a stable collision proxy as one body."""
+
+    stage = get_current_stage()
+    if stage.GetPrimAtPath(prim_path).IsValid():
+        raise ValueError(f"A prim already exists at path: {prim_path}")
+    create_prim(
+        prim_path,
+        prim_type="Xform",
+        translation=translation,
+        orientation=orientation,
+        stage=stage,
+    )
+    create_prim(
+        f"{prim_path}/Visual",
+        usd_path=cfg.visual_usd_path,
+        stage=stage,
+    )
+
+    collision_path = f"{prim_path}/Collision"
+    geometry = cfg.geometry
+    if geometry["kind"] == "cylinder":
+        create_prim(
+            collision_path,
+            prim_type="Cylinder",
+            attributes={
+                "radius": float(geometry["radius_m"]),
+                "height": float(geometry["height_m"]),
+                "axis": str(geometry["axis"]).upper(),
+            },
+            stage=stage,
+        )
+    elif geometry["kind"] == "box":
+        size = tuple(float(value) for value in geometry["size_xyz"])
+        cube_size = min(size)
+        create_prim(
+            collision_path,
+            prim_type="Cube",
+            scale=tuple(value / cube_size for value in size),
+            attributes={"size": cube_size},
+            stage=stage,
+        )
+    else:
+        raise ValueError(
+            f"V3 fixture does not support {geometry['kind']!r} geometry"
+        )
+    schemas.define_collision_properties(
+        collision_path, cfg.collision_props or _collision(), stage=stage
+    )
+    UsdGeom.Imageable(stage.GetPrimAtPath(collision_path)).MakeInvisible()
+    physics_material_path = f"{prim_path}/Looks/Physics"
+    cfg.physics_material.func(physics_material_path, cfg.physics_material)
+    bind_physics_material(
+        collision_path, physics_material_path, stage=stage
+    )
+    if cfg.mass_props is not None:
+        schemas.define_mass_properties(prim_path, cfg.mass_props, stage=stage)
+    if cfg.rigid_props is not None:
+        schemas.define_rigid_body_properties(
+            prim_path, cfg.rigid_props, stage=stage
+        )
+    return stage.GetPrimAtPath(prim_path)
+
+
+def _v3_object_cfg(
+    index: int,
+    asset: ObjectAsset,
+    visual_usd_path: Path,
+) -> RigidObjectCfg:
+    return RigidObjectCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/{V3_OBJECT_PRIM_BASENAMES[index]}",
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(3.0, -0.70 + index * 0.20, 0.20),
+            rot=asset.stable_poses_wxyz[0],
+        ),
+        spawn=V3RigidObjectCfg(
+            func=spawn_v3_rigid_object,
+            object_id=asset.object_id,
+            visual_usd_path=str(visual_usd_path),
+            geometry=dict(asset.geometry),
+            mass_props=sim_utils.MassPropertiesCfg(mass=asset.mass_kg),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                angular_damping=asset.angular_damping,
+                max_linear_velocity=5.0,
+                max_angular_velocity=20.0,
+                max_depenetration_velocity=2.0,
+            ),
+            collision_props=_collision(),
+            activate_contact_sensors=True,
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=asset.static_friction,
+                dynamic_friction=asset.dynamic_friction,
+                restitution=asset.restitution,
+            ),
+            semantic_tags=[
+                ("class", asset.category),
+                ("asset_id", asset.object_id),
+                ("real_twin_id", asset.real_twin_id),
+            ],
+        ),
+    )
 
 
 @configclass
@@ -84,6 +221,8 @@ class ConveyorSceneV3Cfg(ConveyorSceneV1Cfg):
 def make_conveyor_scene_v3_cfg(
     runtime_layer: Path,
     *,
+    object_assets: Sequence[ObjectAsset],
+    object_usd_paths: Mapping[str, Path],
     num_envs: int = 1,
     env_spacing: float = 3.0,
 ) -> ConveyorSceneV3Cfg:
@@ -103,6 +242,38 @@ def make_conveyor_scene_v3_cfg(
         prim_path=LIANGZHU_STAGE_PRIM_PATH,
         spawn=sim_utils.UsdFileCfg(usd_path=str(runtime_layer)),
     )
+    if not object_assets or len(object_assets) > len(V3_OBJECT_PRIM_BASENAMES):
+        raise ValueError("V3 object pool must contain between one and eight assets")
+    for index in range(len(V3_OBJECT_PRIM_BASENAMES)):
+        setattr(cfg, f"object_{index:02d}", None)
+    for index, asset in enumerate(object_assets):
+        try:
+            usd_path = Path(object_usd_paths[asset.object_id]).resolve(
+                strict=True
+            )
+        except KeyError as exc:
+            raise KeyError(
+                f"V3 object USD is missing for {asset.object_id!r}"
+            ) from exc
+        setattr(cfg, f"object_{index:02d}", _v3_object_cfg(index, asset, usd_path))
+    filter_paths = [
+        f"{{ENV_REGEX_NS}}/{V3_OBJECT_PRIM_BASENAMES[index]}"
+        for index in range(len(object_assets))
+    ]
+    cfg.left_finger_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/arm_link7",
+        update_period=0.0,
+        history_length=2,
+        force_threshold=0.2,
+        filter_prim_paths_expr=filter_paths,
+    )
+    cfg.right_finger_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/arm_link8",
+        update_period=0.0,
+        history_length=2,
+        force_threshold=0.2,
+        filter_prim_paths_expr=filter_paths,
+    )
     cfg.overview_camera.offset.pos = V3_OVERVIEW_CAMERA_OFFSET_XYZ
     cfg.overview_camera.offset.rot = V3_OVERVIEW_CAMERA_OFFSET_WXYZ
     cfg.overview_camera.spawn.clipping_range = (
@@ -110,6 +281,66 @@ def make_conveyor_scene_v3_cfg(
         V3_OVERVIEW_CAMERA_FAR_CLIPPING_M,
     )
     return cfg
+
+
+def validate_v3_object_fixtures(
+    stage: Any,
+    object_assets: Sequence[ObjectAsset],
+    object_usd_paths: Mapping[str, Path],
+) -> dict[str, Any]:
+    """Fail before reset if a real visual or its rigid fixture is absent."""
+
+    cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(),
+        [UsdGeom.Tokens.default_, UsdGeom.Tokens.render],
+    )
+    reports: list[dict[str, Any]] = []
+    for index, asset in enumerate(object_assets):
+        root_path = (
+            f"/World/envs/env_0/{V3_OBJECT_PRIM_BASENAMES[index]}"
+        )
+        root = stage.GetPrimAtPath(root_path)
+        visual = stage.GetPrimAtPath(f"{root_path}/Visual")
+        collision = stage.GetPrimAtPath(f"{root_path}/Collision")
+        if not root.IsValid() or not visual.IsValid() or not collision.IsValid():
+            raise RuntimeError(
+                f"V3 real-object fixture is incomplete: {root_path}"
+            )
+        if not root.HasAPI(UsdPhysics.RigidBodyAPI):
+            raise RuntimeError(f"V3 object has no rigid body: {root_path}")
+        if not root.HasAPI(UsdPhysics.MassAPI):
+            raise RuntimeError(f"V3 object has no mass API: {root_path}")
+        if not collision.HasAPI(UsdPhysics.CollisionAPI):
+            raise RuntimeError(f"V3 object has no collision: {root_path}")
+        bounds = cache.ComputeWorldBound(visual).ComputeAlignedRange()
+        size = tuple(
+            float(value)
+            for value in (bounds.GetMax() - bounds.GetMin())
+        )
+        if any(value <= 1.0e-4 or value >= 2.0 for value in size):
+            raise RuntimeError(
+                f"V3 object visual has implausible bounds: {asset.object_id}={size}"
+            )
+        reports.append(
+            {
+                "object_id": asset.object_id,
+                "real_twin_id": asset.real_twin_id,
+                "root_prim": root_path,
+                "visual_prim": str(visual.GetPath()),
+                "collision_prim": str(collision.GetPath()),
+                "visual_usd": str(object_usd_paths[asset.object_id]),
+                "visual_world_aabb_size_m": list(size),
+                "collision_geometry": dict(asset.geometry),
+                "mass_kg": asset.mass_kg,
+                "analytic_collision_fixture": True,
+            }
+        )
+    return {
+        "fixture_count": len(reports),
+        "all_rigid_bodies_valid": True,
+        "all_visuals_composed": True,
+        "objects": reports,
+    }
 
 
 def place_workcell_in_liangzhu_task_area(
@@ -215,7 +446,10 @@ __all__ = [
     "V3_OVERVIEW_CAMERA_OFFSET_WXYZ",
     "V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M",
     "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
+    "V3_OBJECT_PRIM_BASENAMES",
     "make_conveyor_scene_v3_cfg",
     "place_workcell_in_liangzhu_task_area",
+    "spawn_v3_rigid_object",
     "validate_liangzhu_stage",
+    "validate_v3_object_fixtures",
 ]

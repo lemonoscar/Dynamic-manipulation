@@ -120,13 +120,25 @@ def test_v3_task_frame_maps_pct_robot_and_conveyor_consistently() -> None:
     assert task["candidate_lateral_offsets_m"] == [-0.25, 0.0, 0.25]
 
 
-def test_v3_first_object_pilot_excludes_deformable_blanket() -> None:
+def test_v3_first_object_pilot_is_gripper_feasible_cola_only() -> None:
     objects = _load("configs/v3_3dgs.json")["object_assets"]
 
-    assert objects["first_pilot_ids"] == ["cola", "apple", "orange"]
-    assert objects["unseen_gate_ids"] == ["bottle"]
-    assert objects["deferred_ids"] == ["blanket"]
-    assert objects["destination_id"] == "box2"
+    assert objects["first_pilot_ids"] == ["cola"]
+    assert objects["future_candidate_ids"] == [
+        "apple",
+        "orange",
+        "bottle",
+        "box2",
+    ]
+    assert objects["deferred_ids"] == [
+        "apple",
+        "orange",
+        "bottle",
+        "box2",
+        "blanket",
+    ]
+    assert objects["destination_id"] == "sort_bin_blue"
+    assert objects["gripper_max_opening_m"] == 0.088
     assert set(objects["usd_paths"]) == {
         "cola",
         "apple",
