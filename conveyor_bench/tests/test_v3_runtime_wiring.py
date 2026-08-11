@@ -36,6 +36,7 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
     assert "ground = None" in source
     assert "include_room_context=False" in source
     assert "include_local_sort_trays=True" in source
+    assert "collision_group=-1" in source
     assert "liangzhu_scene = None" in source
 
     constants = {

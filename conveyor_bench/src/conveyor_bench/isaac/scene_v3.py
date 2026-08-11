@@ -74,6 +74,7 @@ class ConveyorSceneV3Cfg(ConveyorSceneV1Cfg):
     # ambiguity while preserving the canonical surface-velocity mechanism.
     conveyor = RigidObjectCfg(
         prim_path=V3_CONVEYOR_PRIM_PATH,
+        collision_group=-1,
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(
                 V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M[0] + BELT_CENTER_X_M,
