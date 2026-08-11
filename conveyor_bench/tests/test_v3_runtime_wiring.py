@@ -45,7 +45,13 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
         and len(node.targets) == 1
         and isinstance(node.targets[0], ast.Name)
     }
-    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-5.1, -3.5, 4.7)
+    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-4.0, -3.0, 2.1)
+    assert constants["V3_OVERVIEW_CAMERA_OFFSET_WXYZ"] == (
+        0.9491926869,
+        -0.0407995283,
+        0.1384975349,
+        0.2796195172,
+    )
     assert constants["V3_OVERVIEW_CAMERA_FAR_CLIPPING_M"] == 50.0
     assert constants["V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M"] == (
         -12.0,
@@ -77,6 +83,7 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
 
     assert "v3_nurec" in probe
     assert "--v3-asset-root" in probe
+    assert "--v3-workcell-ground-xyz" in probe
     assert "validate_asset_bundle" in probe
     assert "place_workcell_in_liangzhu_open_room" in probe
     assert "--asset-root" in runner

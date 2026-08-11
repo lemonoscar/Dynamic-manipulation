@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--v3-asset-root", type=Path)
     parser.add_argument(
+        "--v3-workcell-ground-xyz",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        help="Diagnostic task-ground point in the authored Liangzhu frame.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -136,6 +143,7 @@ def main() -> int:
         )
         if args.scene_profile == "v3_nurec":
             from conveyor_bench.isaac.scene_v3 import (
+                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M,
                 make_conveyor_scene_v3_cfg,
                 place_workcell_in_liangzhu_open_room,
                 validate_liangzhu_stage,
@@ -154,7 +162,13 @@ def main() -> int:
         scene = InteractiveScene(scene_cfg)
         workcell_placement = (
             place_workcell_in_liangzhu_open_room(
-                scene, omni.usd.get_context().get_stage()
+                scene,
+                omni.usd.get_context().get_stage(),
+                ground_xyz_m=(
+                    tuple(args.v3_workcell_ground_xyz)
+                    if args.v3_workcell_ground_xyz is not None
+                    else V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M
+                ),
             )
             if args.scene_profile == "v3_nurec"
             else None

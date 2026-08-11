@@ -19,10 +19,16 @@ from .scene_v1 import (
 
 SCENE_ID = "transverse_dynamic_sort_liangzhu_nurec_v3"
 LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
-# Observer-only view at roughly twice the V1 distance.  Its unchanged
-# orientation keeps the workcell centered while exposing enough NuRec room
-# context to audit where the robot and conveyor were placed.
-V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-5.10, -3.50, 4.70)
+# Observer-only view at about 1.5 times the V1 target distance.  It remains
+# below the lowest candidate-room ceiling while keeping the complete workcell
+# centered in view.
+V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-4.00, -3.00, 2.10)
+V3_OVERVIEW_CAMERA_OFFSET_WXYZ = (
+    0.9491926869,
+    -0.0407995283,
+    0.1384975349,
+    0.2796195172,
+)
 V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
 # Collision-mesh raycasts identify this as the center of the large empty room.
 # The z value is the authored floor height at (x, y).  We move the dynamic
@@ -76,6 +82,7 @@ def make_conveyor_scene_v3_cfg(
         spawn=sim_utils.UsdFileCfg(usd_path=str(runtime_layer)),
     )
     cfg.overview_camera.offset.pos = V3_OVERVIEW_CAMERA_OFFSET_XYZ
+    cfg.overview_camera.offset.rot = V3_OVERVIEW_CAMERA_OFFSET_WXYZ
     cfg.overview_camera.spawn.clipping_range = (
         0.05,
         V3_OVERVIEW_CAMERA_FAR_CLIPPING_M,
@@ -182,6 +189,7 @@ __all__ = [
     "SCENE_ID",
     "V3_OVERVIEW_CAMERA_FAR_CLIPPING_M",
     "V3_OVERVIEW_CAMERA_OFFSET_XYZ",
+    "V3_OVERVIEW_CAMERA_OFFSET_WXYZ",
     "V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M",
     "make_conveyor_scene_v3_cfg",
     "place_workcell_in_liangzhu_open_room",
