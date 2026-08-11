@@ -6,19 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.assets import AssetBaseCfg
 from isaaclab.utils import configclass
 from pxr import Gf, UsdGeom, UsdPhysics
 
 from .scene import _collision
 from .scene_v1 import (
-    BELT_CENTER_X_M,
-    BELT_CENTER_Y_M,
-    BELT_CENTER_Z_M,
-    BELT_DARK_GREEN_RGB,
-    BELT_LENGTH_M,
-    BELT_THICKNESS_M,
-    BELT_WIDTH_M,
     ConveyorSceneV1Cfg,
     ProceduralWorkcellCfg,
     spawn_conveyor_workcell,
@@ -43,7 +36,6 @@ V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
 # collision patch supports the task without altering the NuRec RGB scene.
 V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M = (0.0, 14.5, -0.14)
 V3_LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
-V3_CONVEYOR_PRIM_PATH = "/World/TransportSurfaceV3"
 
 
 @configclass
@@ -65,39 +57,6 @@ class ConveyorSceneV3Cfg(ConveyorSceneV1Cfg):
                 static_friction=1.0,
                 dynamic_friction=0.85,
                 restitution=0.0,
-            ),
-        ),
-    )
-
-    # Keep the kinematic surface outside the translated environment parent.
-    # Its world pose is explicit, avoiding PhysX's nested-rigid-body frame
-    # ambiguity while preserving the canonical surface-velocity mechanism.
-    conveyor = RigidObjectCfg(
-        prim_path=V3_CONVEYOR_PRIM_PATH,
-        collision_group=-1,
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(
-                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M[0] + BELT_CENTER_X_M,
-                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M[1] + BELT_CENTER_Y_M,
-                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M[2] + BELT_CENTER_Z_M,
-            )
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(BELT_WIDTH_M, BELT_LENGTH_M, BELT_THICKNESS_M),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                kinematic_enabled=True,
-                disable_gravity=True,
-                max_depenetration_velocity=2.0,
-            ),
-            collision_props=_collision(),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=1.1,
-                dynamic_friction=0.9,
-                restitution=0.0,
-            ),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=BELT_DARK_GREEN_RGB,
-                roughness=0.78,
             ),
         ),
     )
@@ -197,18 +156,6 @@ def place_workcell_in_liangzhu_open_room(
     }
 
 
-def describe_v3_conveyor_world_pose(scene: Any) -> dict[str, Any]:
-    """Report the global belt pose kept outside the translated env parent."""
-
-    position = scene["conveyor"].data.default_root_state[0, :3]
-    return {
-        "position_world_xyz_m": [
-            float(value) for value in position.detach().cpu().tolist()
-        ],
-        "source": "global_kinematic_surface",
-    }
-
-
 def validate_liangzhu_stage(stage: Any) -> dict[str, Any]:
     """Fail before simulation reset if NuRec or collision did not compose."""
 
@@ -262,9 +209,7 @@ __all__ = [
     "V3_OVERVIEW_CAMERA_OFFSET_WXYZ",
     "V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M",
     "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
-    "V3_CONVEYOR_PRIM_PATH",
     "make_conveyor_scene_v3_cfg",
     "place_workcell_in_liangzhu_open_room",
-    "describe_v3_conveyor_world_pose",
     "validate_liangzhu_stage",
 ]

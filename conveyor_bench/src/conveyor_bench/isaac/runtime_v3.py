@@ -16,8 +16,6 @@ from conveyor_bench.v3.assets import (
 from .runtime_v1 import ConveyorRuntimeV1, RuntimeOptionsV1
 from .scene_v3 import (
     SCENE_ID,
-    V3_CONVEYOR_PRIM_PATH,
-    describe_v3_conveyor_world_pose,
     make_conveyor_scene_v3_cfg,
     place_workcell_in_liangzhu_open_room,
     validate_liangzhu_stage,
@@ -66,13 +64,6 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
     def _layout_id(self) -> str:
         return SCENE_ID
 
-    def _conveyor_prim_path(self) -> str:
-        return V3_CONVEYOR_PRIM_PATH
-
-    def _warm_up(self) -> None:
-        self.conveyor_placement = describe_v3_conveyor_world_pose(self.scene)
-        super()._warm_up()
-
     def _scene_metadata(self) -> dict[str, Any]:
         return {
             "backend": "isaac_rtx_native_nurec",
@@ -83,7 +74,6 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
                 LIANGZHU_SCENE_TRANSLATION_XYZ_M
             ),
             "workcell_placement": self.workcell_placement,
-            "conveyor_placement": self.conveyor_placement,
             "stage_contract": self.scene_stage_contract,
         }
 

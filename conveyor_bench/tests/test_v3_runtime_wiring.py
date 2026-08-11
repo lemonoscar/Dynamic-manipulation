@@ -36,7 +36,6 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
     assert "ground = None" in source
     assert "include_room_context=False" in source
     assert "include_local_sort_trays=True" in source
-    assert "collision_group=-1" in source
     assert "liangzhu_scene = None" in source
 
     constants = {
@@ -73,7 +72,6 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
     assert "verify_all_hashes=True" in source
     assert "make_conveyor_scene_v3_cfg" in source
     assert "place_workcell_in_liangzhu_open_room" in source
-    assert "describe_v3_conveyor_world_pose" in source
     assert "validate_liangzhu_stage" in source
     assert "isaac_rtx_native_nurec" in source
     assert "ssh_sidecar_bundle" in source
@@ -85,9 +83,9 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
 
     assert "v3_nurec" in probe
     assert "--v3-asset-root" in probe
+    assert "--v3-workcell-ground-xyz" in probe
     assert "validate_asset_bundle" in probe
     assert "place_workcell_in_liangzhu_open_room" in probe
-    assert "describe_v3_conveyor_world_pose" in probe
     assert "--asset-root" in runner
     assert "RuntimeOptionsV3" in runner
     assert "run_collection_v3" in runner
