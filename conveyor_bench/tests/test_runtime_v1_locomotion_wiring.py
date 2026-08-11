@@ -152,16 +152,12 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
         "np": np,
         "_MOBILE_PLACE_CARTESIAN_STEP_M": 0.003,
         "_MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M": 0.030,
-        "_MOBILE_PLACE_WAYPOINT_TOLERANCE_M": 0.006,
     }
     exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
     orientation = (1.0, 0.0, 0.0, 0.0)
     state = {"tcp_world": Pose((0.0, 0.0, 0.20), orientation)}
     goal = Pose((0.20, 0.20, 0.30), orientation)
-    runtime = SimpleNamespace(
-        _place_lift_anchor_xy_world=None,
-        _place_planar_waypoint_world=None,
-    )
+    runtime = SimpleNamespace(_place_lift_anchor_xy_world=None)
 
     waypoint = namespace["_mobile_place_target"](
         runtime, goal, state
@@ -183,23 +179,15 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
         (0.0212132034, 0.0212132034, 0.30)
     )
 
-    # The actuator holds the same short high-plane goal while the measured
-    # TCP catches up.  Policy labels remain independently bounded to 3 mm in
-    # _apply_tcp_target_base.
+    # The actuator keeps a rolling 30 mm high-plane lookahead while policy
+    # labels remain independently bounded to 3 mm in _apply_tcp_target_base.
     lagging = {"tcp_world": Pose((0.005, 0.005, 0.30), orientation)}
-    repeated = namespace["_mobile_place_target"](
+    advanced = namespace["_mobile_place_target"](
         runtime, goal, lagging
     )
-    assert repeated.xyz == pytest.approx(waypoint.xyz)
-
-    reached = {
-        "tcp_world": Pose((0.021, 0.021, 0.30), orientation)
-    }
-    advanced = namespace["_mobile_place_target"](
-        runtime, goal, reached
+    assert advanced.xyz == pytest.approx(
+        (0.0262132034, 0.0262132034, 0.30)
     )
-    assert advanced.xyz[0] > waypoint.xyz[0]
-    assert advanced.xyz[1] > waypoint.xyz[1]
 
 
 def test_scene_applies_registry_rigid_body_damping() -> None:
