@@ -23,6 +23,7 @@ from .runtime_v1 import ConveyorRuntimeV1, RuntimeOptionsV1
 from .scene_v3 import (
     SCENE_ID,
     V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M,
+    disable_liangzhu_background_collision,
     make_conveyor_scene_v3_cfg,
     place_workcell_in_liangzhu_task_area,
     validate_liangzhu_stage,
@@ -84,6 +85,12 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
             self.scene, stage
         )
         self.scene_stage_contract = validate_liangzhu_stage(stage)
+        self.background_collision_contract = (
+            disable_liangzhu_background_collision(
+                stage,
+                self.scene_stage_contract["collision_mesh_prims"],
+            )
+        )
         self.object_fixture_contract = validate_v3_object_fixtures(
             stage,
             self.object_assets,
@@ -118,6 +125,9 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
             ),
             "workcell_placement": self.workcell_placement,
             "stage_contract": self.scene_stage_contract,
+            "background_collision_contract": (
+                self.background_collision_contract
+            ),
             "object_fixture_contract": self.object_fixture_contract,
         }
 

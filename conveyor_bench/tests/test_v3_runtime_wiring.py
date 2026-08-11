@@ -78,10 +78,17 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
     assert "make_conveyor_scene_v3_cfg" in source
     assert "place_workcell_in_liangzhu_task_area" in source
     assert "validate_liangzhu_stage" in source
+    assert "disable_liangzhu_background_collision" in source
+    assert "background_collision_contract" in source
     assert "isaac_rtx_native_nurec" in source
     assert "ssh_sidecar_bundle" in source
     assert "def _task_world_origin_xyz" in source
     assert "V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M" in source
+
+    scene_source = _source(SCENE_PATH)
+    assert "attribute.Set(False)" in scene_source
+    assert '"validated_then_disabled_for_collection"' in scene_source
+    assert "V3_LOCAL_FLOOR_PATCH_PRIM_PATH" in scene_source
 
 
 def test_v3_task_frame_is_translated_before_teacher_control() -> None:

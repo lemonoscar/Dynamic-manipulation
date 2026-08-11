@@ -494,6 +494,38 @@ def validate_liangzhu_stage(stage: Any) -> dict[str, Any]:
     }
 
 
+def disable_liangzhu_background_collision(
+    stage: Any,
+    collision_mesh_prims: Sequence[str],
+) -> dict[str, Any]:
+    """Use the analytic task floor after proving the scanned layer exists."""
+
+    floor = stage.GetPrimAtPath(V3_LOCAL_FLOOR_PATCH_PRIM_PATH)
+    if not floor.IsValid():
+        raise RuntimeError(
+            f"V3 local floor patch is missing: {V3_LOCAL_FLOOR_PATCH_PRIM_PATH}"
+        )
+    disabled: list[str] = []
+    for prim_path in collision_mesh_prims:
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid() or not prim.HasAPI(UsdPhysics.CollisionAPI):
+            raise RuntimeError(
+                f"validated Liangzhu collision prim disappeared: {prim_path}"
+            )
+        collision = UsdPhysics.CollisionAPI(prim)
+        attribute = collision.GetCollisionEnabledAttr()
+        if not attribute.IsValid():
+            attribute = collision.CreateCollisionEnabledAttr()
+        attribute.Set(False)
+        disabled.append(str(prim_path))
+    return {
+        "policy": "validated_then_disabled_for_collection",
+        "reason": "avoid_duplicate_scanned_floor_contacts",
+        "replacement_collision_prim": V3_LOCAL_FLOOR_PATCH_PRIM_PATH,
+        "disabled_collision_mesh_prims": disabled,
+    }
+
+
 __all__ = [
     "ConveyorSceneV3Cfg",
     "LIANGZHU_STAGE_PRIM_PATH",
@@ -505,6 +537,7 @@ __all__ = [
     "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
     "V3_OBJECT_PRIM_BASENAMES",
     "make_conveyor_scene_v3_cfg",
+    "disable_liangzhu_background_collision",
     "place_workcell_in_liangzhu_task_area",
     "spawn_v3_rigid_object",
     "validate_liangzhu_stage",
