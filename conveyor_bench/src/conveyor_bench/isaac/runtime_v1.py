@@ -242,6 +242,8 @@ _GRIPPER_HOLD_DURATION_S = 0.30
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
+_MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M = 0.030
+_MOBILE_PLACE_WAYPOINT_TOLERANCE_M = 0.006
 _MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
@@ -3125,6 +3127,9 @@ class ConveyorRuntimeV1:
             tuple[float, float, float, float, float, float] | None
         ) = None
         self._place_lift_anchor_xy_world: tuple[float, float] | None = None
+        self._place_planar_waypoint_world: (
+            tuple[float, float, float] | None
+        ) = None
         self._gripper_requested_open = True
         self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
         self._gripper_transition_elapsed_s = (
@@ -4015,6 +4020,7 @@ class ConveyorRuntimeV1:
         # USD and the PCT analytic chain have a small fixed attitude residual,
         # so such a gate can never clear even after the joint target settles.
         if abs(vertical_gap) > 0.005:
+            self._place_planar_waypoint_world = None
             if self._place_lift_anchor_xy_world is None:
                 self._place_lift_anchor_xy_world = (
                     float(current[0]),
@@ -4029,16 +4035,45 @@ class ConveyorRuntimeV1:
             )
         else:
             self._place_lift_anchor_xy_world = None
-            delta = target - current
-            planar_distance = float(np.linalg.norm(delta[:2]))
-            if planar_distance > waypoint_step_m:
-                delta[:2] *= waypoint_step_m / planar_distance
-                delta[2] = vertical_gap
-            else:
-                distance = float(np.linalg.norm(delta))
-                if distance > waypoint_step_m:
-                    delta *= waypoint_step_m / distance
-            waypoint = current + delta
+            actuator_step_m = max(
+                waypoint_step_m, _MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M
+            )
+            stored_waypoint = self._place_planar_waypoint_world
+            waypoint_reached = (
+                stored_waypoint is not None
+                and float(
+                    np.linalg.norm(
+                        current
+                        - np.asarray(stored_waypoint, dtype=np.float64)
+                    )
+                )
+                <= _MOBILE_PLACE_WAYPOINT_TOLERANCE_M
+            )
+            waypoint_height_changed = (
+                stored_waypoint is not None
+                and abs(float(stored_waypoint[2]) - float(target[2]))
+                > 1.0e-6
+            )
+            if (
+                stored_waypoint is None
+                or waypoint_reached
+                or waypoint_height_changed
+            ):
+                delta = target - current
+                planar_distance = float(np.linalg.norm(delta[:2]))
+                waypoint = target.copy()
+                if planar_distance > actuator_step_m:
+                    waypoint[:2] = (
+                        current[:2]
+                        + delta[:2] * actuator_step_m / planar_distance
+                    )
+                    waypoint[2] = target[2]
+                self._place_planar_waypoint_world = tuple(
+                    float(value) for value in waypoint
+                )
+            waypoint = np.asarray(
+                self._place_planar_waypoint_world, dtype=np.float64
+            )
         return Pose(
             tuple(float(value) for value in waypoint),
             oracle_target.wxyz,
