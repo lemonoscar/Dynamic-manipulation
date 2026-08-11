@@ -151,10 +151,6 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
         "Pose": Pose,
         "np": np,
         "_MOBILE_PLACE_CARTESIAN_STEP_M": 0.003,
-        "_MOBILE_PLACE_ALIGNMENT_TOLERANCE_RAD": 0.04,
-        "_rotation_vector_between": lambda current, target: (
-            (0.2, 0.0, 0.0) if current != target else (0.0, 0.0, 0.0)
-        ),
     }
     exec(compile(module, str(RUNTIME_PATH), "exec"), namespace)
     orientation = (1.0, 0.0, 0.0, 0.0)
@@ -181,17 +177,6 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
     assert waypoint.xyz == pytest.approx(
         (0.0021213203, 0.0021213203, 0.30)
     )
-
-    misaligned = {
-        "tcp_world": Pose(
-            (0.002, 0.002, 0.30),
-            (0.9950041653, 0.0, 0.0998334166, 0.0),
-        )
-    }
-    waypoint = namespace["_mobile_place_target"](
-        runtime, goal, misaligned
-    )
-    assert waypoint.xyz == pytest.approx((0.002, 0.002, 0.30))
 
 
 def test_scene_applies_registry_rigid_body_damping() -> None:

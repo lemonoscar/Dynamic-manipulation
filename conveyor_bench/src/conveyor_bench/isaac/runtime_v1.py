@@ -242,7 +242,6 @@ _GRIPPER_HOLD_DURATION_S = 0.30
 _MOBILE_PLACE_CARTESIAN_STEP_M = _TEACHER_CARTESIAN_STEP_M
 _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
-_MOBILE_PLACE_ALIGNMENT_TOLERANCE_RAD = 0.04
 _MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
 _MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
@@ -4011,23 +4010,11 @@ class ConveyorRuntimeV1:
         # A direct joint-space solve of the distant high goal can dip through
         # the near wall even though both endpoints are collision-free.
         vertical_gap = float(target[2] - current[2])
-        orientation_error_rad = float(
-            np.linalg.norm(
-                _rotation_vector_between(
-                    state["tcp_world"].wxyz, oracle_target.wxyz
-                )
-            )
-        )
-        # Finish both the vertical lift and the loaded wrist alignment at a
-        # frozen XY before starting the long planar traverse.  The oracle's
-        # LIFT gate is positional, so the wrist can still be converging when
-        # CARRY begins; translating at that instant selects a folded IK branch
-        # and lowers the held part back into the conveyor rail.
-        if (
-            abs(vertical_gap) > 0.005
-            or orientation_error_rad
-            > _MOBILE_PLACE_ALIGNMENT_TOLERANCE_RAD
-        ):
+        # Hold the measured XY until the loaded TCP reaches the carry plane.
+        # Do not gate on measured-vs-analytic wrist orientation: the imported
+        # USD and the PCT analytic chain have a small fixed attitude residual,
+        # so such a gate can never clear even after the joint target settles.
+        if abs(vertical_gap) > 0.005:
             if self._place_lift_anchor_xy_world is None:
                 self._place_lift_anchor_xy_world = (
                     float(current[0]),
