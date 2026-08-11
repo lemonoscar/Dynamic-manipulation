@@ -95,24 +95,24 @@
       0.29281728532721385
     ],
     "pct_reference_robot_root_to_ground_m": 0.43101139033367283,
-    "open_room_workcell_ground_xyz_m": [
-      0.0,
-      14.5,
-      -0.14
+    "pct_coke_grasp_workcell_ground_xyz_m": [
+      -1.4849319648011197,
+      5.126136502764003,
+      -0.13819410500645898
     ],
     "sim_robot_anchor_xy_m": [
-      0.0,
-      14.5
+      -1.4849319648011197,
+      5.126136502764003
     ],
     "conveyor_center_xy_m": [
-      0.7,
-      14.5
+      -0.7849319648011197,
+      5.126136502764003
     ],
     "conveyor_center_source_xy_m": [
-      0.7,
-      14.5
+      -0.7849319648011197,
+      5.126136502764003
     ],
-    "placement_method": "collision_cross_section_room_center_with_local_floor_patch",
+    "placement_method": "pct_coke_grasp_task_area_with_local_floor_patch",
     "nurec_parent_transform_policy": "identity_for_registered_camera_calibration",
     "conveyor_long_axis": "world_y",
     "transport_direction_world": [
@@ -246,15 +246,15 @@
       "role": "observer_only",
       "parent": "environment_origin",
       "mount_xyz_m": [
-        -4.0,
-        -3.0,
-        2.1
+        0.3849319648,
+        -3.6261365028,
+        2.138194105
       ],
       "mount_wxyz": [
-        0.9491926869,
-        -0.0407995283,
-        0.1384975349,
-        0.2796195172
+        0.6972261796,
+        -0.1484619933,
+        0.1511499216,
+        0.6848272718
       ],
       "orientation_convention": "world",
       "clipping_range_m": [

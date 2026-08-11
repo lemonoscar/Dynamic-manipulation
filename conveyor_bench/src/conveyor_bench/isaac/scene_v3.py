@@ -20,21 +20,27 @@ from .scene_v1 import (
 
 SCENE_ID = "transverse_dynamic_sort_liangzhu_nurec_v3"
 LIANGZHU_STAGE_PRIM_PATH = "/World/LiangzhuScene"
-# Observer-only view at about 1.5 times the V1 target distance.  It remains
-# below the lowest candidate-room ceiling while keeping the complete workcell
-# centered in view.
-V3_OVERVIEW_CAMERA_OFFSET_XYZ = (-4.00, -3.00, 2.10)
+# Observer-only side view selected inside the well-reconstructed PCT coke
+# grasp area.  It keeps the complete robot and transverse conveyor visible.
+V3_OVERVIEW_CAMERA_OFFSET_XYZ = (
+    0.3849319648,
+    -3.6261365028,
+    2.1381941050,
+)
 V3_OVERVIEW_CAMERA_OFFSET_WXYZ = (
-    0.9491926869,
-    -0.0407995283,
-    0.1384975349,
-    0.2796195172,
+    0.6972261796,
+    -0.1484619933,
+    0.1511499216,
+    0.6848272718,
 )
 V3_OVERVIEW_CAMERA_FAR_CLIPPING_M = 50.0
-# Horizontal collision slices identify this as the center of the large empty
-# rectangular room.  Its scanned floor has holes, so a small invisible local
-# collision patch supports the task without altering the NuRec RGB scene.
-V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M = (0.0, 14.5, -0.14)
+# This is the authored robot ground anchor of PCT's Liangzhu coke-grasp task,
+# where the NuRec reconstruction and scanned collision are both strongest.
+V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M = (
+    -1.4849319648,
+    5.1261365028,
+    -0.1381941050,
+)
 V3_LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
 
 
@@ -106,14 +112,14 @@ def make_conveyor_scene_v3_cfg(
     return cfg
 
 
-def place_workcell_in_liangzhu_open_room(
+def place_workcell_in_liangzhu_task_area(
     scene: Any,
     stage: Any,
     ground_xyz_m: tuple[float, float, float] = (
-        V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M
+        V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M
     ),
 ) -> dict[str, Any]:
-    """Move the one task environment into the calibrated NuRec open room."""
+    """Move the task environment into PCT's calibrated coke-grasp area."""
 
     if len(scene.env_prim_paths) != 1:
         raise ValueError(
@@ -207,9 +213,9 @@ __all__ = [
     "V3_OVERVIEW_CAMERA_FAR_CLIPPING_M",
     "V3_OVERVIEW_CAMERA_OFFSET_XYZ",
     "V3_OVERVIEW_CAMERA_OFFSET_WXYZ",
-    "V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M",
+    "V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M",
     "V3_LOCAL_FLOOR_PATCH_PRIM_PATH",
     "make_conveyor_scene_v3_cfg",
-    "place_workcell_in_liangzhu_open_room",
+    "place_workcell_in_liangzhu_task_area",
     "validate_liangzhu_stage",
 ]

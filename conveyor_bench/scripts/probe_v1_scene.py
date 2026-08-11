@@ -180,9 +180,9 @@ def main() -> int:
         )
         if args.scene_profile == "v3_nurec":
             from conveyor_bench.isaac.scene_v3 import (
-                V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M,
+                V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M,
                 make_conveyor_scene_v3_cfg,
-                place_workcell_in_liangzhu_open_room,
+                place_workcell_in_liangzhu_task_area,
                 validate_liangzhu_stage,
             )
 
@@ -201,13 +201,13 @@ def main() -> int:
             scene_cfg.overview_camera.height = args.overview_resolution[1]
         scene = InteractiveScene(scene_cfg)
         workcell_placement = (
-            place_workcell_in_liangzhu_open_room(
+            place_workcell_in_liangzhu_task_area(
                 scene,
                 omni.usd.get_context().get_stage(),
                 ground_xyz_m=(
                     tuple(args.v3_workcell_ground_xyz)
                     if args.v3_workcell_ground_xyz is not None
-                    else V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M
+                    else V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M
                 ),
             )
             if args.scene_profile == "v3_nurec"

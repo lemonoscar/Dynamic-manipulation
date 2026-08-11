@@ -45,18 +45,22 @@ def test_v3_scene_inherits_v1_but_replaces_only_static_context() -> None:
         and len(node.targets) == 1
         and isinstance(node.targets[0], ast.Name)
     }
-    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (-4.0, -3.0, 2.1)
+    assert constants["V3_OVERVIEW_CAMERA_OFFSET_XYZ"] == (
+        0.3849319648,
+        -3.6261365028,
+        2.138194105,
+    )
     assert constants["V3_OVERVIEW_CAMERA_OFFSET_WXYZ"] == (
-        0.9491926869,
-        -0.0407995283,
-        0.1384975349,
-        0.2796195172,
+        0.6972261796,
+        -0.1484619933,
+        0.1511499216,
+        0.6848272718,
     )
     assert constants["V3_OVERVIEW_CAMERA_FAR_CLIPPING_M"] == 50.0
-    assert constants["V3_OPEN_ROOM_WORKCELL_GROUND_XYZ_M"] == (
-        0.0,
-        14.5,
-        -0.14,
+    assert constants["V3_PCT_COKE_TASK_WORKCELL_GROUND_XYZ_M"] == (
+        -1.4849319648,
+        5.1261365028,
+        -0.138194105,
     )
 
     v1_source = _source(SCENE_V1_PATH)
@@ -71,7 +75,7 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
     assert [ast.unparse(base) for base in runtime.bases] == ["ConveyorRuntimeV1"]
     assert "verify_all_hashes=True" in source
     assert "make_conveyor_scene_v3_cfg" in source
-    assert "place_workcell_in_liangzhu_open_room" in source
+    assert "place_workcell_in_liangzhu_task_area" in source
     assert "validate_liangzhu_stage" in source
     assert "isaac_rtx_native_nurec" in source
     assert "ssh_sidecar_bundle" in source
@@ -89,7 +93,7 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
     assert "--overview-target-world-xyz" in probe
     assert "--antialiasing-mode" in probe
     assert "validate_asset_bundle" in probe
-    assert "place_workcell_in_liangzhu_open_room" in probe
+    assert "place_workcell_in_liangzhu_task_area" in probe
     assert "--asset-root" in runner
     assert "RuntimeOptionsV3" in runner
     assert "run_collection_v3" in runner

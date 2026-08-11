@@ -17,7 +17,7 @@ from .runtime_v1 import ConveyorRuntimeV1, RuntimeOptionsV1
 from .scene_v3 import (
     SCENE_ID,
     make_conveyor_scene_v3_cfg,
-    place_workcell_in_liangzhu_open_room,
+    place_workcell_in_liangzhu_task_area,
     validate_liangzhu_stage,
 )
 
@@ -56,7 +56,7 @@ class ConveyorRuntimeV3(ConveyorRuntimeV1):
         return make_conveyor_scene_v3_cfg(self.runtime_layer)
 
     def _post_scene_creation(self, stage: Any) -> None:
-        self.workcell_placement = place_workcell_in_liangzhu_open_room(
+        self.workcell_placement = place_workcell_in_liangzhu_task_area(
             self.scene, stage
         )
         self.scene_stage_contract = validate_liangzhu_stage(stage)
