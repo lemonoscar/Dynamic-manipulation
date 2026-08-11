@@ -84,6 +84,10 @@ def test_v3_probe_and_collection_have_explicit_asset_roots() -> None:
     assert "v3_nurec" in probe
     assert "--v3-asset-root" in probe
     assert "--v3-workcell-ground-xyz" in probe
+    assert "--overview-resolution" in probe
+    assert "--overview-eye-world-xyz" in probe
+    assert "--overview-target-world-xyz" in probe
+    assert "--antialiasing-mode" in probe
     assert "validate_asset_bundle" in probe
     assert "place_workcell_in_liangzhu_open_room" in probe
     assert "--asset-root" in runner

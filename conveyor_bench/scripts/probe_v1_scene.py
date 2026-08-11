@@ -30,6 +30,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Diagnostic task-ground point in the authored Liangzhu frame.",
     )
     parser.add_argument(
+        "--overview-resolution",
+        type=int,
+        nargs=2,
+        metavar=("WIDTH", "HEIGHT"),
+        help="Override only the observer camera resolution for this probe.",
+    )
+    parser.add_argument(
+        "--overview-eye-world-xyz",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+    )
+    parser.add_argument(
+        "--overview-target-world-xyz",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+    )
+    parser.add_argument(
+        "--antialiasing-mode",
+        choices=("Off", "FXAA", "DLSS", "TAA", "DLAA"),
+        help="Override RTX anti-aliasing for this visual probe.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "outputs" / "visualization" / "v1_scene_probe",
@@ -124,6 +148,16 @@ def main() -> int:
             raise ValueError("--belt-speed cannot be negative")
         if args.settle_seconds <= 0.0:
             raise ValueError("--settle-seconds must be positive")
+        if args.overview_resolution is not None and any(
+            value <= 0 for value in args.overview_resolution
+        ):
+            raise ValueError("--overview-resolution values must be positive")
+        if (args.overview_eye_world_xyz is None) != (
+            args.overview_target_world_xyz is None
+        ):
+            raise ValueError(
+                "overview eye and target must be provided together"
+            )
 
         physics_hz = 400
         camera_hz = 25
@@ -138,6 +172,9 @@ def main() -> int:
                     enable_enhanced_determinism=True,
                     bounce_threshold_velocity=0.2,
                     friction_correlation_distance=0.00625,
+                ),
+                render=sim_utils.RenderCfg(
+                    antialiasing_mode=args.antialiasing_mode,
                 ),
             )
         )
@@ -159,6 +196,9 @@ def main() -> int:
                 clone_in_fabric=False,
                 lazy_sensor_update=True,
             )
+        if args.overview_resolution is not None:
+            scene_cfg.overview_camera.width = args.overview_resolution[0]
+            scene_cfg.overview_camera.height = args.overview_resolution[1]
         scene = InteractiveScene(scene_cfg)
         workcell_placement = (
             place_workcell_in_liangzhu_open_room(
@@ -249,6 +289,19 @@ def main() -> int:
             rigid_object.write_root_velocity_to_sim(root_state[:, 7:])
 
         scene.reset()
+        if args.overview_eye_world_xyz is not None:
+            scene["overview_camera"].set_world_poses_from_view(
+                torch.tensor(
+                    [args.overview_eye_world_xyz],
+                    device=simulation.device,
+                    dtype=torch.float32,
+                ),
+                torch.tensor(
+                    [args.overview_target_world_xyz],
+                    device=simulation.device,
+                    dtype=torch.float32,
+                ),
+            )
         total_steps = max(1, round(args.settle_seconds * physics_hz))
         for step in range(total_steps):
             robot.set_joint_position_target(
@@ -357,6 +410,23 @@ def main() -> int:
             "transport_displacement_m": transport_displacement_m,
             "minimum_transport_displacement_m": minimum_transport_m,
             "passed": passed,
+            "render_probe": {
+                "antialiasing_mode": args.antialiasing_mode,
+                "overview_resolution_wh": [
+                    int(images["overview_rgb"].shape[1]),
+                    int(images["overview_rgb"].shape[0]),
+                ],
+                "requested_overview_eye_world_xyz": (
+                    list(args.overview_eye_world_xyz)
+                    if args.overview_eye_world_xyz is not None
+                    else None
+                ),
+                "requested_overview_target_world_xyz": (
+                    list(args.overview_target_world_xyz)
+                    if args.overview_target_world_xyz is not None
+                    else None
+                ),
+            },
             "camera_files": {
                 name: str((args.output_dir / f"{name}.png").resolve())
                 for name in images
