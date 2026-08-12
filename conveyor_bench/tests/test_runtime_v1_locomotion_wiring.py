@@ -190,6 +190,21 @@ def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
     )
 
 
+def test_fixed_base_loaded_path_preserves_measured_grasp_attitude() -> None:
+    source = ast.unparse(_method(_runtime_tree(), "_run_episode"))
+    fixed_base = source.index(
+        "elif self.options.robot_mode is RobotMode.FIXED_BASE"
+    )
+    apply_command = source.index(
+        "canonical_ee_delta, canonical_rotvec, last_command_target_base",
+        fixed_base,
+    )
+    branch = source[fixed_base:apply_command]
+
+    assert "target_tcp_pose_world = Pose(" in branch
+    assert "state_before['tcp_world'].wxyz" in branch
+
+
 def test_scene_applies_registry_rigid_body_damping() -> None:
     scene_path = (
         PROJECT_ROOT / "src" / "conveyor_bench" / "isaac" / "scene_v1.py"

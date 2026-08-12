@@ -964,6 +964,9 @@ class ConveyorRuntimeV1:
                 "cartesian_step_m": _TEACHER_CARTESIAN_STEP_M,
                 "vertical_step_m": _TEACHER_VERTICAL_STEP_M,
                 "lift_step_m": _TEACHER_LIFT_STEP_M,
+                "loaded_orientation_policy": (
+                    "preserve_measured_overhead_grasp"
+                ),
                 "max_rotation_step_rad": (
                     _TEACHER_MAX_ROTATION_STEP_RAD
                 ),
@@ -1656,11 +1659,8 @@ class ConveyorRuntimeV1:
                         }
                         and not oracle_command.terminal
                     ):
-                        # The identity wrist attitude used over the belt is
-                        # outside the X5's lateral tray workspace.  Choose the
-                        # same position-coupled, reachable attitude used by
-                        # the whole-body placement path; the base command
-                        # remains zero for this ablation.
+                        # Stage a collision-safe high-plane path to the tray;
+                        # the base command remains zero for this ablation.
                         target_tcp_pose_world = self._mobile_place_target(
                             target_tcp_pose_world,
                             state_before,
@@ -1669,6 +1669,17 @@ class ConveyorRuntimeV1:
                                 if phase in {"place_descend", "open"}
                                 else _MOBILE_PLACE_CARTESIAN_STEP_M
                             ),
+                        )
+                        # Keep the measured overhead grasp attitude while
+                        # carrying a payload. Enforcing the small analytic-
+                        # vs-USD wrist residual at the near-singular belt
+                        # reach makes joints 2--4 jump to their limits and
+                        # drives the held part back down to the belt. The
+                        # measured attitude is already the demonstrated
+                        # top-down pose; CARRY should change position only.
+                        target_tcp_pose_world = Pose(
+                            target_tcp_pose_world.xyz,
+                            state_before["tcp_world"].wxyz,
                         )
                     # Commands below the policy's audited forward dead-zone
                     # are explicitly treated as stationary.
