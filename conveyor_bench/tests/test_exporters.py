@@ -396,6 +396,8 @@ def add_joint_task_trace(episode: Path) -> None:
             row["action"]["values"][0] = 0.20
         if 11 <= tick <= 27:
             row["metadata"]["held_instance_id"] = "target"
+        if row["phase"] in {"carry", "preplace", "place_descend", "open"}:
+            row["metadata"]["mobile_stance_lock_active"] = True
     write_jsonl(episode / "steps.jsonl", rows)
 
 
@@ -523,6 +525,24 @@ def test_al0_temporal_projection_rejects_physical_placement_drift(
     write_jsonl(episode / "steps.jsonl", rows)
 
     with pytest.raises(ExportError, match="base moved during loaded placement"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
+
+
+def test_al0_temporal_projection_requires_low_level_stance_lock(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
+    rows = read_jsonl(episode / "steps.jsonl")
+    next(row for row in rows if row["phase"] == "place_descend")["metadata"][
+        "mobile_stance_lock_active"
+    ] = False
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(ExportError, match="stance lock must remain active"):
         list(iter_conveyorvla_al0_temporal_records(episode))
 
 

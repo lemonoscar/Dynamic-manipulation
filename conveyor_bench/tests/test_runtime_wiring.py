@@ -132,6 +132,11 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert 'self._transition_mobile_carry("backoff_settle",sim_time_s)' in compact
     assert '"carry_turn"' in runtime_core
     assert '"placement_base_lock":"zero_until_episode_complete"' in compact
+    assert '"placement_stance_controller":"low_level_root_pose_hold"' in compact
+    assert "self._mobile_stance_lock_anchor = root_pose" in runtime_core
+    assert "self._apply_mobile_stance_lock()" in runtime_core
+    assert "self.robot.write_root_pose_to_sim(" in runtime_core
+    assert "self.robot.write_root_velocity_to_sim(" in runtime_core
     assert "_mobile_place_base_command" not in runtime_core
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core

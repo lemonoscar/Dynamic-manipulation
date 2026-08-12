@@ -67,7 +67,8 @@ ConveyorVLA AL0 的 temporal 记录使用：
 负向直退、转向目标框、负载导航、驻车投放和入框确认；三段实际平面位移分别不得小于
 `0.20 m`、`0.30 m` 和 `0.10 m`。`carry/preplace/place_descend/open` 阶段底盘动作必须
 严格为零，底盘实际平面漂移不得超过 `0.05 m`。旧的 `grasp_only` 或不含直退证据的
-记录不能进入该训练集。
+记录不能进入该训练集。放置阶段还必须记录低层 `root_pose_hold` 为 active；它对应真实
+机器人站立控制器，上层 VLA 的底盘标签仍为零。
 
 四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
 

@@ -317,6 +317,7 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
             "carry_to_sort_bin": JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
         },
         "placement_base_lock": "zero_until_episode_complete",
+        "placement_stance_controller": "low_level_root_pose_hold",
         "maximum_placement_base_displacement_m": (
             JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M
         ),

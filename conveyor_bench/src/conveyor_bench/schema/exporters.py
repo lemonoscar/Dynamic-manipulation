@@ -1158,6 +1158,17 @@ def _joint_task_evidence(
         step for step in control_steps if step.get("phase") in placement_phases
     )
     if any(
+        _mapping(step.get("metadata"), "step.metadata").get(
+            "mobile_stance_lock_active"
+        )
+        is not True
+        for step in placement_steps
+    ):
+        raise ExportError(
+            "joint AL0 low-level stance lock must remain active throughout "
+            "loaded placement"
+        )
+    if any(
         any(abs(value) > 1.0e-9 for value in _canonical_action(step)[:3])
         for step in placement_steps
     ):
@@ -1213,6 +1224,7 @@ def _joint_task_evidence(
                 JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M
             ),
             "base_action": "zero",
+            "stance_controller": "low_level_root_pose_hold",
         },
     }
 

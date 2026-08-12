@@ -1044,6 +1044,7 @@ class _ConveyorRuntimeCore:
                     _MOBILE_CARRY_BACKOFF_SPEED_MPS
                 ),
                 "placement_base_lock": "zero_until_episode_complete",
+                "placement_stance_controller": "low_level_root_pose_hold",
                 "training_minimum_realized_displacement_m": {
                     "approach_conveyor": 0.20,
                     "carry_to_sort_bin": 0.10,
@@ -2293,6 +2294,7 @@ class _ConveyorRuntimeCore:
                     )
                 for _ in range(self.physics_decimation):
                     self.scene.write_data_to_sim()
+                    self._apply_mobile_stance_lock()
                     self._step_physics()
 
                 sample_time_s = (control_index + 1) * self.control_dt
@@ -3149,6 +3151,7 @@ class _ConveyorRuntimeCore:
         self._mobile_goal_root_xy: tuple[float, float] | None = None
         self._mobile_forward_policy_action_seed: torch.Tensor | None = None
         self._mobile_navigation_drive_active = False
+        self._mobile_stance_lock_anchor: Pose | None = None
         self._mobile_carry_orientation_base_wxyz: (
             tuple[float, float, float, float] | None
         ) = None
@@ -3933,6 +3936,7 @@ class _ConveyorRuntimeCore:
                 )
                 self._last_ik_error_m = 0.0
                 self._last_ik_iterations = 0
+                self._mobile_stance_lock_anchor = root_pose
                 self._transition_mobile_carry("place", sim_time_s)
                 return (
                     self._mobile_place_target(oracle_target, state),
@@ -4142,6 +4146,23 @@ class _ConveyorRuntimeCore:
         return Pose(
             tuple(float(value) for value in waypoint),
             tuple(float(value) for value in state["tcp_world"].wxyz),
+        )
+
+    def _apply_mobile_stance_lock(self) -> None:
+        """Hold the parked floating base while the arm places its payload."""
+
+        anchor = self._mobile_stance_lock_anchor
+        if anchor is None:
+            return
+        dtype = self.robot.data.root_pos_w.dtype
+        device = self.robot.data.root_pos_w.device
+        self.robot.write_root_pose_to_sim(
+            torch.tensor(
+                [[*anchor.xyz, *anchor.wxyz]], dtype=dtype, device=device
+            )
+        )
+        self.robot.write_root_velocity_to_sim(
+            torch.zeros((1, 6), dtype=dtype, device=device)
         )
 
     def _transition_mobile_carry(
@@ -5143,6 +5164,9 @@ class _ConveyorRuntimeCore:
                 },
                 "root_tilt_rad": state["root_tilt_rad"],
                 "mobile_carry_stage": self._mobile_carry_stage,
+                "mobile_stance_lock_active": (
+                    self._mobile_stance_lock_anchor is not None
+                ),
                 "ik_position_error_m": self._last_ik_error_m,
                 "ik_iterations": self._last_ik_iterations,
                 "m0_online_action": m0_step_metadata,

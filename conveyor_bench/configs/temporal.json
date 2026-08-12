@@ -52,6 +52,7 @@
       "carry_to_sort_bin": 0.10
     },
     "placement_base_lock": "zero_until_episode_complete",
+    "placement_stance_controller": "low_level_root_pose_hold",
     "maximum_placement_base_displacement_m": 0.05
   },
   "vision": {
