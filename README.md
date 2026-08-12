@@ -16,13 +16,15 @@ ConveyorVLA 的离线导出工具。当前策略基线的正式名称是 **Conve
   动态 benchmark 分数。
 - V2：双目标连续分拣和强制持物移动的远端投放任务，提供 2 个场景、7 个允许
   组合、严格事件/位移校验及 AL0/DynamicVLA 上下文投影。
+- V3：在 Liangzhu 原生 NuRec/3DGS 背景中组合 Isaac 动态机器人、深绿色传送带、
+  真实可乐罐视觉资产和分拣盒，并严格沿用 V1 canonical episode 协议。
 - 统一的 400 Hz 物理、50 Hz 控制和 25 Hz 相机/模型时钟。
 - Go2-X5 的本地 USD、URDF、mesh 与移动策略资产。
 - episode 原子写入、严格校验、质量审计和相机时变门禁。
 - DynamicVLA 与 ConveyorVLA AL0 两种离线数据视图；后者继续读取 legacy
   `m0_mobile_v1` profile。
 - AL0 50 Hz 因果动作块导出，以及不依赖外部仓库的最小 AML 训练烟测。
-- AL0 temporal v1：head/wrist 双帧运动观测、20×10 的 25 Hz 独立未来目标、
+- AL0 temporal v2：head/wrist 双帧运动观测、20×10 的 25 Hz 独立未来目标、
   generation-aware 流式合并和低速单物体成功配额采集器。
 - AL0 在线服务、阶段门禁与 Go2-X5/Isaac 闭环入口，完整记录模型身份、
   service/AL0 控制边界和请求时延。
@@ -41,12 +43,13 @@ ConveyorVLA 的离线导出工具。当前策略基线的正式名称是 **Conve
 Dynamic/
 ├── conveyor_bench/
 │   ├── assets/                 # 机器人、工位、物体、分拣盒与策略资产
-│   ├── configs/                # V0/V1 冻结配置与 V2 suite 快照
+│   ├── configs/                # V0/V1/V2 配置与 V3 NuRec/训练格式快照
 │   ├── scripts/                # 预检、仿真、采集、校验、审计与导出入口
 │   ├── src/conveyor_bench/     # 协议、控制、记录和 Isaac 运行时实现
 │   ├── tests/                  # 无需启动 Isaac Sim 的单元测试
 │   ├── BENCHMARK_V1_SPEC.md    # V1 冻结规范
 │   ├── BENCHMARK_V2_SPEC.md    # V2 场景、任务与评价规范
+│   ├── BENCHMARK_V3_3DGS_SPEC.md # V3 原生 NuRec/Isaac 组合规范
 │   ├── COLLECTION_V2_GUIDE.md  # V2 采集、校验和导出手册
 │   └── README.md               # 完整使用与采集说明
 ```
@@ -57,6 +60,8 @@ Dynamic/
 [COLLECTION_GUIDE.md](conveyor_bench/COLLECTION_GUIDE.md)。V2 规范与采集入口见
 [BENCHMARK_V2_SPEC.md](conveyor_bench/BENCHMARK_V2_SPEC.md) 和
 [COLLECTION_V2_GUIDE.md](conveyor_bench/COLLECTION_V2_GUIDE.md)。
+V3 的资产边界、组合渲染和验收门禁见
+[BENCHMARK_V3_3DGS_SPEC.md](conveyor_bench/BENCHMARK_V3_3DGS_SPEC.md)。
 
 ## 环境准备
 
@@ -145,16 +150,18 @@ python scripts/validate_v1_dataset.py outputs/gate/v1_fixed
 
 ## 当前状态
 
-V1 框架已经覆盖任务配置、动态场景、固定机身与全身模式、三相机记录、严格数据
-校验和模型视图导出。新增静态诊断的 5/5 oracle episode 均通过 strict validator
-与 temporal camera gate；其中 3 条 train episode 已导出 1,428 条 AL0
-记录，val/test 会由导出器明确隔离。AL0-M1 checkpoint 在线测试证明静态闭夹、双侧持有和抬升
-primitive 存在，但无辅助回合仍在底盘靠近阶段失败，辅助隔离回合也会提前开爪，
-因此旧 checkpoint 仍不能产生 policy-only 成功轨迹；当前正式采集使用严格门禁的
-oracle teacher，为新的时序 AL0 训练准备成功示教，不能把两者混为一谈。
-生产源码固定为 `d7b6f0963bef0864b8101571981b7d02e40c3122`：8/8 pilot 与首批
-16/16 production 已全部成功并通过数据门禁，第二批正在 4xH20 的物理 GPU 2/3
-持续采集。这里的成功描述的是 teacher 数据生成链路，不代表时序策略已经训练或
-达到闭环成功率。
-完整证据见
-[ConveyorVLA AL0 在线闭环与验收](conveyor_bench/CONVEYORVLA_AL0_GUIDE.md)。
+截至 2026-08-12，V3 已不再是方案占位：68 个 Liangzhu/objects sidecar 文件
+已完成逐文件 SHA-256 校验，原生 NuRec 背景、PCT 对齐的 Go2-X5 与 head/wrist
+相机、Isaac 动态传送带和真实可乐罐视觉均已进入同一渲染与物理循环。
+
+提交 `8651d82` 对应的固定底盘教师树已采得一条完整动态抓取—投放正例：
+`14.02 s`、701 个 50 Hz 控制样本、head/wrist/overview 各 350 帧。目标在下降
+阶段被持续跟随，XY 平均误差约 `2.23 mm`，最终在蓝色料框内释放并稳定；strict
+validator、quality audit 和 temporal camera gate 均通过，episode 标记为
+`training_eligible=true`。
+
+完整移动操作尚未验收。任务现明确拆为 Navigation 和 Dynamic Pick-and-Place
+两个连续子任务。当前 PCT 对齐资产上的 `whole_body_policy` 基线在
+`mobile_approach` 超时，只产生约 `0.043 m` 净前移，尚未进入物体生成与抓取
+阶段。因此目前只可把上述 fixed-base 数据视为操作专家正例，不能宣称已经获得
+“导航 + 动态抓取 + 放置”的完整移动专家数据，也不能据此宣称 VLA 闭环成功。

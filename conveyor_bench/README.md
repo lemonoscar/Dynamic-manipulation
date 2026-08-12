@@ -12,9 +12,10 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
 `0.3 s`，接触后继续追踪运动零件。episode metadata 标记为
 `overhead_target_follow_pick_place_v3`，避免和早期固定截获、水平进给或二值夹爪轨迹混用。
 
-新增的 V3 视觉 profile 沿用 V1 物理与训练契约，以本地 3DGS 静态工位、Isaac
-动态前景和深度合成替换程序化背景。该 profile 当前只完成方案冻结，尚未放入真实
-Gaussian 与标定资产，不能用于正式采集。
+V3 视觉 profile 沿用 V1 物理与训练契约，以 Liangzhu 原生 NuRec/3DGS 静态
+背景和 Isaac 动态前景构成同一注册渲染。68 个 Liangzhu/objects sidecar 文件已
+逐项通过 SHA-256 校验；PCT 对齐的 Go2-X5、head/wrist 相机、深绿色传送带、真实
+可乐罐视觉和分拣盒均已接入。大体积 sidecar 不进入 Git，运行时也不联网下载。
 
 - V3 3DGS 方案：[BENCHMARK_V3_3DGS_SPEC.md](BENCHMARK_V3_3DGS_SPEC.md)
 - V3 3DGS 可机读配置：[configs/v3_3dgs.json](configs/v3_3dgs.json)
@@ -46,8 +47,9 @@ remote whole-body 三相机正例均通过 V2 strict validator、temporal camera
 和 DynamicVLA/AL0 双导出。near whole-body、语言条件、near continuous 相机及
 其余物体/速度/seed 矩阵仍必须按采集手册逐条验收。
 
-所有项目代码、资产与本地策略权重都在 `Dynamic/conveyor_bench/`；采集运行不
-联网，也不读取 `Dynamic/` 之外的项目文件。V1 资产由
+所有项目代码、小型资产与本地策略权重都在 `Dynamic/conveyor_bench/`；V3
+Liangzhu/objects 大体积资产通过经过哈希验证的 SSH sidecar 注入，采集运行时不
+联网。V1 资产由
 [assets/asset_lock.json](assets/asset_lock.json) 冻结，V2 新场景与远端投放盒
 由独立的 [assets/asset_lock_v2.json](assets/asset_lock_v2.json) 冻结。宿主机
 仍需预装 Python、Isaac Sim、Isaac Lab、PyTorch、NumPy 和 OpenCV。
@@ -70,6 +72,38 @@ Isaac Sim 场景
 ```
 
 V0 只支持单环境、单目标和固定机身，不以批量生成轨迹为目标。
+
+## V3 当前验收状态
+
+截至 2026-08-12，V3 已完成以下实机理一致的仿真集成：
+
+- Liangzhu 原生 NuRec 背景与 Isaac 动态前景单次注册渲染；
+- 经过 SHA-256 全量校验的 68 文件 sidecar 资产包；
+- PCT 对齐的 Go2-X5 URDF、狗头相机内外参和腕部手眼标定；
+- 横向深绿色传送带、真实可乐罐视觉/解析碰撞体和蓝色投放盒；
+- 400 Hz 物理、50 Hz canonical 控制和 25 Hz 三相机原始 PNG 记录。
+
+最终固定底盘教师树 `8651d82` 已取得一条完整正例：持续跟随运动可乐罐后从
+上方以约 `0.075 m/s` 缓降，双指稳定抓取、抬升、搬运、投放、撤离并等待目标
+在蓝色料框内稳定。该 episode 为 `14.02 s / 701 steps / 1050 PNG`，结构校验、
+质量审计和相机门禁全部通过，且四路交付视频均为可完整解码的 H.264。
+
+当前 benchmark 的完整专家目标明确包含两个连续子任务：
+
+```text
+Navigation
+  → 到达可见、可抓、安全的操作位姿
+  → 位置/航向/速度连续驻车门禁
+Dynamic Pick-and-Place
+  → 俯视观察与目标跟随
+  → 缓降抓取、抬升、搬运、投放和稳定确认
+```
+
+这条完整链路尚未通过。当前 `whole_body_policy` 在 PCT 对齐后的 V3 资产上会在
+`mobile_approach` 超时：4 秒内只有约 `0.043 m` 净前移，物体尚未生成，因此
+该失败数据不可训练。下一阶段必须先重新通过浮动底盘 locomotion gate，再把
+Navigation 成功、驻车成功与操作成功作为同一 episode 的三个硬门禁。固定底盘
+正例只能证明 Dynamic Pick-and-Place 子任务，不等同于完整移动操作成功。
 
 ## V2 快速入口
 
@@ -111,6 +145,7 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── configs/v0.json             # V0 协议与横向布局快照
 ├── configs/v1.json             # V1 冻结快照
 ├── configs/v2.json             # V2 场景、任务矩阵与门槛快照
+├── configs/v3_3dgs.json        # V3 NuRec/Isaac 组合、相机与门禁快照
 ├── configs/conveyorvla_al0_lerobot_v3.json # AL0 5 Hz 查询/25 Hz action 的训练格式
 ├── COLLECTION_GUIDE.md         # V1 门禁、采集、验收与导出操作手册
 ├── CONVEYORVLA_AL0_GUIDE.md    # AL0 服务、离线阶段门禁与 Isaac 在线闭环
@@ -118,8 +153,12 @@ V2 的两个 scene ID 为 `transverse_near_sort_v2` 和
 ├── CONVEYORVLA_AL1_DESIGN.md   # DynamicVLA 时序分析与动态抓取升级方案
 ├── COLLECTION_V2_GUIDE.md      # V2 从 smoke 到正式采集的操作手册
 ├── BENCHMARK_V2_SPEC.md        # V2 benchmark 规范
+├── BENCHMARK_V3_3DGS_SPEC.md   # V3 原生 NuRec 场景与资产边界
 ├── scripts/render_v2_layout.py # 不启动 Isaac 的本地 SVG 场景预览
 ├── scripts/run_benchmark_v2.py # V2 任务预检与仿真采集入口
+├── scripts/run_benchmark_v3.py # V3 单次原生 NuRec 仿真入口
+├── scripts/collect_conveyorvla_v3.py # V3 采集、门禁和索引入口
+├── scripts/validate_v3_asset_bundle.py # V3 sidecar 完整性校验
 ├── scripts/validate_v2_dataset.py # V1 canonical + V2 语义严格校验
 ├── scripts/export_v2.py        # V2 到 DynamicVLA/AL0 的离线投影
 ├── scripts/check_environment.py # 本地资产与依赖预检
@@ -515,7 +554,7 @@ SHA 身份校验、阶段 fail-closed 门禁、闭环命令和最新实测结果
 [CONVEYORVLA_AL0_GUIDE.md](CONVEYORVLA_AL0_GUIDE.md)。当前 checkpoint 已跑通在线传输与
 Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策略抓取成功。
 
-当前本地物理烟测已经观察到 fixed 单目标约 `10.48 s` 成功、whole-body
+历史 V1 本地物理烟测观察到 fixed 单目标约 `10.48 s` 成功、whole-body
 单目标约 `21.60 s` 成功，以及 whole-body 三物体双语目标选择约 `21.58 s`
 成功；对应 canonical 输出通过 strict validator 和 quality audit。Fabric
 修复后的 whole-body 单目标 release `outputs/gate/v1_release_camera` 包含
@@ -523,7 +562,7 @@ Isaac 动作链路，但 seed 0 仍为 `target_missed`，不得据此宣称策�
 540 条的 AL0/DynamicVLA 双导出且 canonical 哈希未改变；对应源码树 SHA-256
 为 `a5c2802447abd4e4c50365549b7b0cc83db313f01800cb26d734fc8fc695f39c`。
 fixed 和三物体语言烟测尚未保存相机，所以不能据此宣称这两个配置的视觉门禁
-已通过。当前时序 AL0 已另行冻结 8 条 pilot 和 384 条成功配额的低速单物体课程；
-8/8 pilot 与正式首批 16/16 均已通过完整门禁，第二批已在 4xH20 的物理 GPU 2/3
-自动接续。证据路径、恢复规则和逐项状态见采集手册与
+已通过。历史 temporal_v1 课程曾完成 8/8 pilot 和正式首批 16/16 门禁；它与
+当前 V3/PCT 资产及 temporal_v2 教师合同不兼容，不得混入或外推为 V3 的完整
+移动专家成功。证据路径、恢复规则和逐项状态见采集手册与
 [CONVEYORVLA_AL0_EXECUTION_PLAN.md](CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
