@@ -41,7 +41,7 @@ from conveyor_bench.schema.camera_io import (
     CameraSpec,
     MultiCameraFrameWriter,
 )
-from conveyor_bench.schema.config import BenchmarkConfig
+from conveyor_bench.schema.config import BenchmarkConfig, EvaluationConfig
 from conveyor_bench.schema.future_labels import with_realized_future_labels
 from conveyor_bench.schema.metrics import EpisodeEvaluation
 from conveyor_bench.schema.oracle import (
@@ -644,7 +644,9 @@ class _ConveyorRuntimeCore:
 
     def __init__(self, options: _RuntimeOptions):
         self.options = options
-        self.benchmark = BenchmarkConfig.v1()
+        self.benchmark = BenchmarkConfig(
+            evaluation=EvaluationConfig(require_settled_placement=False)
+        )
         actual_timing = (
             self.benchmark.physics_hz,
             self.benchmark.control_hz,
@@ -3453,16 +3455,12 @@ class _ConveyorRuntimeCore:
                 preplace_dwell_s=(
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
                 ),
-                # A can released above the tray rim can roll to the far wall
-                # for about 12 seconds before settling.  Preserve the strict
-                # linear/angular thresholds and full 0.5 s dwell; extend only
-                # the observation window instead of mislabelling motion.
-                verify_timeout_s=(
-                    20.0
-                    if self.options.robot_mode
-                    is RobotMode.WHOLE_BODY_POLICY
-                    else 6.0
+                require_settled_placement=(
+                    self.benchmark.evaluation.require_settled_placement
                 ),
+                # Success is release plus first entry into the assigned bin;
+                # motion after entry remains recorded but is not a task gate.
+                verify_timeout_s=6.0,
                 # Lateral placement is deliberately rate-limited while the
                 # arm carries a part.  Both robot modes need the same timeout
                 # envelope to reach and settle over the side trays.

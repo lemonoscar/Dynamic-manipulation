@@ -16,8 +16,11 @@ class EvaluationConfig:
     settled_linear_speed_mps: float = 0.02
     settled_angular_speed_radps: float = 0.10
     placement_dwell_s: float = 0.50
+    require_settled_placement: bool = True
 
     def __post_init__(self) -> None:
+        if not isinstance(self.require_settled_placement, bool):
+            raise ValueError("require_settled_placement must be a bool")
         for name in (
             "settled_linear_speed_mps",
             "settled_angular_speed_radps",

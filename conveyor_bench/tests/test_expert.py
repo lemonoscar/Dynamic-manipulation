@@ -740,6 +740,30 @@ def test_high_goal_drop_opens_without_entering_the_tray() -> None:
     assert _position(command) == pytest.approx(high_goal)
 
 
+def test_high_goal_drop_can_complete_while_the_object_is_still_moving() -> None:
+    oracle = DynamicSortOracle(
+        replace(
+            config(),
+            release_from_high_goal=True,
+            require_settled_placement=False,
+        )
+    )
+    oracle._transition(OraclePhase.VERIFY_PLACE, 0.0)
+
+    command = oracle.step(
+        observation(
+            0.01,
+            target_released=True,
+            target_in_goal=True,
+            target_settled=False,
+        )
+    )
+
+    assert command.phase is OraclePhase.COMPLETE
+    assert command.terminal
+    assert command.success
+
+
 def test_high_goal_drop_uses_the_registered_carry_tolerance() -> None:
     oracle = DynamicSortOracle(
         replace(

@@ -165,9 +165,15 @@ class OnlineEpisodeMetrics:
                 and progress.released
                 and not obj.in_gripper
                 and progress.goal_zone_id in progress.last_zone_ids
-                and progress.last_settled
+                and (
+                    progress.last_settled
+                    or not self.config.evaluation.require_settled_placement
+                )
             )
             if eligible_for_dwell and progress.completion_time_s is None:
+                if not self.config.evaluation.require_settled_placement:
+                    progress.completion_time_s = sample.sim_time_s
+                    continue
                 if progress.dwell_start_s is None:
                     progress.dwell_start_s = sample.sim_time_s
                 if (

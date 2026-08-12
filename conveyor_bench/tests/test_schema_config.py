@@ -44,5 +44,7 @@ def test_v1_rejects_unknown_profile_and_non_finite_thresholds() -> None:
         EvaluationConfig(placement_dwell_s=float("nan"))
     with pytest.raises(ValueError, match="finite"):
         EvaluationConfig(placement_dwell_s=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="require_settled_placement"):
+        EvaluationConfig(require_settled_placement=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="non-negative integers"):
         replace(config, future_horizons_steps=(0, 2.0, 5))  # type: ignore[arg-type]

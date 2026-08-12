@@ -118,6 +118,7 @@ class OracleConfig:
     pregrasp_observation_dwell_s: float = 0.0
     preplace_dwell_s: float = 0.06
     placement_dwell_s: float = 0.50
+    require_settled_placement: bool = True
     episode_timeout_s: float = 20.0
     phase_timeout_s: float = 5.0
     close_timeout_s: float = 1.20
@@ -136,6 +137,8 @@ class OracleConfig:
             raise ValueError("close_on_target_contact must be a bool")
         if not isinstance(self.release_from_high_goal, bool):
             raise ValueError("release_from_high_goal must be a bool")
+        if not isinstance(self.require_settled_placement, bool):
+            raise ValueError("require_settled_placement must be a bool")
         _validate_vector(self.goal_center_world, 3, "goal_center_world")
         _validate_vector(self.grasp_offset_world, 3, "grasp_offset_world")
         _validate_vector(self.tcp_orientation_wxyz, 4, "tcp_orientation_wxyz")
@@ -559,9 +562,22 @@ class DynamicSortOracle:
             placement_valid = (
                 observation.target_released
                 and observation.target_in_goal
-                and observation.target_settled
+                and (
+                    observation.target_settled
+                    or not self.config.require_settled_placement
+                )
             )
             if placement_valid:
+                if not self.config.require_settled_placement:
+                    self._transition(
+                        OraclePhase.COMPLETE, observation.sim_time_s
+                    )
+                    return self._command(
+                        high_goal,
+                        gripper_command=1.0,
+                        terminal=True,
+                        success=True,
+                    )
                 if self._placement_started_at is None:
                     self._placement_started_at = observation.sim_time_s
                 if (
@@ -584,8 +600,10 @@ class DynamicSortOracle:
                     reason = "release_not_verified"
                 elif not observation.target_in_goal:
                     reason = "wrong_goal"
-                else:
+                elif self.config.require_settled_placement:
                     reason = "placement_not_settled"
+                else:
+                    reason = "wrong_goal"
                 return self._fail(observation, reason)
             return self._command(high_goal, gripper_command=1.0)
 

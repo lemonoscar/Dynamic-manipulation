@@ -118,7 +118,8 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "_MOBILE_PLACE_HOLD_START_ERROR_M = 0.025" in runtime_core
     assert "_mobile_place_base_command(root_pose)" in runtime_core
     compact = "".join(runtime_core.split())
-    assert "verify_timeout_s=(20.0" in compact
+    assert "EvaluationConfig(require_settled_placement=False)" in compact
+    assert "verify_timeout_s=6.0" in compact
     assert "return planar_standoff_goal(" in runtime_core
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core

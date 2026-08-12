@@ -5,6 +5,7 @@ import pytest
 from conveyor_bench.schema import (
     BenchmarkConfig,
     CanonicalAction,
+    EvaluationConfig,
     FailureReason,
     FutureObjectState,
     GoalZone,
@@ -166,6 +167,26 @@ def test_wrong_zone_and_unsettled_placement_are_distinct_failures() -> None:
 
     assert wrong_result.failure_reason is FailureReason.WRONG_ZONE
     assert unsettled_result.failure_reason is FailureReason.PLACEMENT_NOT_SETTLED
+
+
+def test_in_bin_mode_accepts_a_released_moving_object_immediately() -> None:
+    held = object_state("target-1", (0.5, 0.5, 0.7), held=True)
+    moving_in_goal = object_state(
+        "target-1", (0.5, 0.5, 0.7), linear=(0.30, 0.0, 0.0)
+    )
+    config = BenchmarkConfig(
+        evaluation=EvaluationConfig(require_settled_placement=False)
+    )
+
+    result = evaluate_episode(
+        config,
+        task(),
+        [sample(0, 0.0, (held,)), sample(1, 0.1, (moving_in_goal,))],
+    )
+
+    assert result.success
+    assert result.metrics["completion_time_s"] == pytest.approx(0.1)
+    assert not result.metrics["object_outcomes"]["target-1"]["last_settled"]
 
 
 def test_grasping_unscored_object_is_wrong_object_failure() -> None:

@@ -88,6 +88,7 @@ class _EpisodeContext:
     settled_linear_speed_mps: float
     settled_angular_speed_radps: float
     placement_dwell_s: float
+    require_settled_placement: bool
     physics_hz: int
     camera_hz: int
     camera_resolutions: Mapping[str, tuple[int, int]]
@@ -599,6 +600,15 @@ def _parse_manifest(
     if thresholds[2] <= 0:
         result.fail(path, "placement_dwell_s must be positive")
         return None
+    require_settled_placement = evaluation.get(
+        "require_settled_placement", True
+    )
+    if not isinstance(require_settled_placement, bool):
+        result.fail(
+            path,
+            "evaluation require_settled_placement must be a bool",
+        )
+        return None
 
     camera_resolutions: dict[str, tuple[int, int]] = {}
     camera_roles: dict[str, str] = {}
@@ -665,6 +675,7 @@ def _parse_manifest(
         settled_linear_speed_mps=thresholds[0],
         settled_angular_speed_radps=thresholds[1],
         placement_dwell_s=thresholds[2],
+        require_settled_placement=require_settled_placement,
         physics_hz=physics_hz,
         camera_hz=camera_hz,
         camera_resolutions=camera_resolutions,
@@ -1778,9 +1789,18 @@ def _validate_success_evidence(
                 and released
                 and not held
                 and _pose_inside(state.get("pose_world"), bounds)
-                and _settled(state.get("twist_world"), context)
+                and (
+                    not context.require_settled_placement
+                    or _settled(state.get("twist_world"), context)
+                )
             )
             if eligible:
+                if not context.require_settled_placement:
+                    completion_times.setdefault(
+                        target_id,
+                        step_times[sim_step],
+                    )
+                    continue
                 if dwell_start is None:
                     dwell_start = step_times[sim_step]
                 if (
@@ -1796,9 +1816,14 @@ def _validate_success_evidence(
         if not ever_held:
             result.fail(path, f"success lacks correct-object grasp for {target_id!r}")
         if target_id not in completion_times:
+            requirement = (
+                "correct-zone settled dwell"
+                if context.require_settled_placement
+                else "released object inside the correct zone"
+            )
             result.fail(
                 path,
-                f"success lacks correct-zone settled dwell for {target_id!r}",
+                f"success lacks {requirement} for {target_id!r}",
             )
 
     placed_pairs = {
