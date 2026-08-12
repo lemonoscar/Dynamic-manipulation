@@ -7,7 +7,7 @@ imported only when a tensor or TorchScript policy is used.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import hashlib
 import json
 import math
@@ -114,6 +114,44 @@ def planar_standoff_goal(
     return yaw, (
         float(target_xy[0] - delta_x * scale),
         float(target_xy[1] - delta_y * scale),
+    )
+
+
+def planar_reverse_goal(
+    start_xy: tuple[float, float],
+    start_yaw_rad: float,
+    distance_m: float,
+) -> tuple[float, float]:
+    """Return a straight-back goal without changing the robot heading."""
+
+    values = (*start_xy, start_yaw_rad, distance_m)
+    if not all(
+        isinstance(value, Real) and math.isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError("reverse planning values must be finite numbers")
+    if distance_m <= 0.0:
+        raise ValueError("reverse distance must be positive")
+    return (
+        float(start_xy[0] - distance_m * math.cos(start_yaw_rad)),
+        float(start_xy[1] - distance_m * math.sin(start_yaw_rad)),
+    )
+
+
+def guard_longitudinal_command(
+    command: Sequence[float],
+) -> tuple[float, float, float]:
+    """Keep locomotion longitudinal, including deliberate reverse motion."""
+
+    vx, vy, wz = (float(value) for value in command)
+    if abs(vy) > 1.0e-9:
+        raise ValueError("locomotion guardrail forbids lateral command")
+    if 0.0 < abs(vx) < 0.16:
+        vx = 0.0
+    return (
+        min(0.30, max(-0.30, vx)),
+        0.0,
+        min(0.35, max(-0.35, wz)),
     )
 
 

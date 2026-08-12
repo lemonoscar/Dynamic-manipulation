@@ -111,9 +111,10 @@ sidecar 中虽然已有 apple、orange、bottle、box2 等文件，但“文件�
 - 没有 assisted diagnostic 控制；
 - 目标曾被正确夹持，开爪释放后中心首次进入指定目标框；进入时仍在滚动不影响成功，
   不要求静止或驻留；
-- `mobile_approach → track → close → lift → carry_navigate → open →
-  verify_place` 顺序完整；
-- 接近传送带实际平面位移至少 `0.20 m`，负载导航至少 `0.10 m`。
+- `mobile_approach → track → close → lift → carry_backoff → carry_turn →
+  carry_navigate → place_descend → open → verify_place` 顺序完整；
+- 接近传送带至少 `0.20 m`，抓取后负向直退至少 `0.30 m`，负载导航至少 `0.10 m`；
+- 到达蓝框并开始放置后，底盘保持为零，直至物体入框且夹爪松开。
 
 任务失败可保留用于诊断或未来失败建模，但不能计入专家成功配额。结构损坏、丢帧、
 哈希不一致、运行异常和资产不一致的数据必须隔离，不得作为负样本。

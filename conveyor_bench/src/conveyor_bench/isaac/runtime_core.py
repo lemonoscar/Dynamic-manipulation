@@ -104,11 +104,13 @@ from .locomotion import (
     POLICY_SHA256,
     STATE_JOINT_ORDER,
     build_observation,
+    guard_longitudinal_command,
     heading_hysteresis_active,
     infer,
     leg_target,
     load_policy,
     overhead_place_waypoint,
+    planar_reverse_goal,
     planar_standoff_goal,
 )
 from .physics import apply_surface_velocity
@@ -223,6 +225,7 @@ _MOBILE_COMPACT_TCP_BASE = (
 _MOBILE_CARRY_STANDOFF_M = 0.50
 _MOBILE_CARRY_MIN_TRAVEL_M = 0.12
 _MOBILE_CARRY_BACKOFF_M = 0.40
+_MOBILE_CARRY_BACKOFF_SPEED_MPS = -0.20
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_TURN_RATE_RADPS = 0.35
 # Loaded navigation turns to the tray first, then drives toward a target-facing
@@ -231,8 +234,6 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD = 0.16
 _MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD = 0.35
 _MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065
-_MOBILE_PLACE_HOLD_START_ERROR_M = 0.025
-_MOBILE_PLACE_HOLD_STOP_ERROR_M = 0.005
 _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
@@ -915,9 +916,9 @@ class _ConveyorRuntimeCore:
     def _guard_locomotion_command(
         self, command: Sequence[float]
     ) -> tuple[float, float, float]:
-        """Apply the frozen forward-only locomotion envelope."""
+        """Apply the frozen longitudinal locomotion envelope."""
 
-        return _guard_locomotion_command(command)
+        return guard_longitudinal_command(command)
 
     def _summary_task_type(self) -> TaskType:
         return (
@@ -1020,7 +1021,11 @@ class _ConveyorRuntimeCore:
                     "track",
                     "close",
                     "lift",
+                    "carry_backoff",
+                    "carry_backoff_settle",
+                    "carry_turn",
                     "carry_navigate",
+                    "place_descend",
                     "open",
                     "verify_place",
                 ],
@@ -1032,11 +1037,10 @@ class _ConveyorRuntimeCore:
                     _MOBILE_CARRY_MIN_TRAVEL_M
                 ),
                 "post_grasp_backoff_m": _MOBILE_CARRY_BACKOFF_M,
-                "place_base_hold": {
-                    "command_forward_mps": 0.20,
-                    "start_error_m": _MOBILE_PLACE_HOLD_START_ERROR_M,
-                    "stop_error_m": _MOBILE_PLACE_HOLD_STOP_ERROR_M,
-                },
+                "post_grasp_backoff_speed_mps": (
+                    _MOBILE_CARRY_BACKOFF_SPEED_MPS
+                ),
+                "placement_base_lock": "zero_until_episode_complete",
                 "training_minimum_realized_displacement_m": {
                     "approach_conveyor": 0.20,
                     "carry_to_sort_bin": 0.10,
@@ -1763,6 +1767,8 @@ class _ConveyorRuntimeCore:
                         and phase
                         in {
                             "carry_retract",
+                            "carry_backoff",
+                            "carry_backoff_settle",
                             "carry_turn",
                             "carry_navigate",
                             "carry_settle",
@@ -3138,10 +3144,8 @@ class _ConveyorRuntimeCore:
         self._mobile_carry_stable_since_s: float | None = None
         self._mobile_goal_yaw_rad: float | None = None
         self._mobile_goal_root_xy: tuple[float, float] | None = None
-        self._mobile_backoff_pending = False
         self._mobile_forward_policy_action_seed: torch.Tensor | None = None
         self._mobile_navigation_drive_active = False
-        self._mobile_place_drive_active = False
         self._mobile_carry_orientation_base_wxyz: (
             tuple[float, float, float, float] | None
         ) = None
@@ -3729,17 +3733,22 @@ class _ConveyorRuntimeCore:
                 sim_time_s,
                 0.30,
             ):
-                # Plan only after the loaded base has recovered and the arm
-                # is compact.  Planning before recovery preserved a stale
-                # start pose and placed the old 0.26 m goal inside the tray's
-                # collision envelope.
-                goal_yaw, goal_root_xy = self._plan_mobile_carry_goal(
-                    resolved, root_pose
+                # Back straight away from the conveyor before any turn.  The
+                # tray-bearing turn is planned only after this reverse segment
+                # has stopped, so the head camera naturally acquires the bin.
+                current_yaw = _yaw_from_wxyz(root_pose.wxyz)
+                self._mobile_goal_yaw_rad = current_yaw
+                self._mobile_goal_root_xy = planar_reverse_goal(
+                    (root_pose.xyz[0], root_pose.xyz[1]),
+                    current_yaw,
+                    _MOBILE_CARRY_BACKOFF_M,
                 )
-                self._mobile_goal_yaw_rad = goal_yaw
-                self._mobile_goal_root_xy = goal_root_xy
-                self._transition_mobile_carry("turn", sim_time_s)
-                stage = "turn"
+                self._transition_mobile_carry("backoff", sim_time_s)
+                return (
+                    compact_target,
+                    (_MOBILE_CARRY_BACKOFF_SPEED_MPS, 0.0, 0.0),
+                    "carry_backoff",
+                )
             return compact_target, (0.0, 0.0, 0.0), f"carry_{stage}"
 
         assert self._mobile_goal_yaw_rad is not None
@@ -3748,6 +3757,49 @@ class _ConveyorRuntimeCore:
         yaw_error = _wrap_angle(
             self._mobile_goal_yaw_rad - current_yaw
         )
+        goal_x, goal_y = self._mobile_goal_root_xy
+        position_error = math.hypot(
+            goal_x - root_pose.xyz[0], goal_y - root_pose.xyz[1]
+        )
+        planar_speed = math.hypot(*root_twist.linear_xyz[:2])
+        if stage == "backoff":
+            if position_error <= _MOBILE_NAVIGATION_POSITION_TOLERANCE_M:
+                self._transition_mobile_carry("backoff_settle", sim_time_s)
+                return (
+                    compact_target,
+                    (0.0, 0.0, 0.0),
+                    "carry_backoff_settle",
+                )
+            return (
+                compact_target,
+                (
+                    _MOBILE_CARRY_BACKOFF_SPEED_MPS,
+                    0.0,
+                    max(-0.15, min(0.15, 1.5 * yaw_error)),
+                ),
+                "carry_backoff",
+            )
+
+        if stage == "backoff_settle":
+            if self._mobile_carry_dwell(
+                planar_speed <= 0.07
+                and abs(root_twist.angular_xyz[2])
+                <= self._mobile_settle_angular_speed_tolerance_radps(resolved),
+                sim_time_s,
+                _MOBILE_CARRY_SETTLE_S,
+            ):
+                (
+                    self._mobile_goal_yaw_rad,
+                    self._mobile_goal_root_xy,
+                ) = self._plan_mobile_carry_goal(resolved, root_pose)
+                self._transition_mobile_carry("turn", sim_time_s)
+                return compact_target, (0.0, 0.0, 0.0), "carry_turn"
+            return (
+                compact_target,
+                (0.0, 0.0, 0.0),
+                "carry_backoff_settle",
+            )
+
         if stage == "turn":
             angular_speed = abs(root_twist.angular_xyz[2])
             if self._mobile_carry_dwell(
@@ -3789,11 +3841,6 @@ class _ConveyorRuntimeCore:
                 "carry_turn",
             )
 
-        goal_x, goal_y = self._mobile_goal_root_xy
-        position_error = math.hypot(
-            goal_x - root_pose.xyz[0], goal_y - root_pose.xyz[1]
-        )
-        planar_speed = math.hypot(*root_twist.linear_xyz[:2])
         if stage == "navigate":
             if position_error <= self._mobile_navigation_position_tolerance_m(
                 resolved
@@ -3889,17 +3936,6 @@ class _ConveyorRuntimeCore:
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
-                if self._mobile_backoff_pending:
-                    (
-                        self._mobile_goal_yaw_rad,
-                        self._mobile_goal_root_xy,
-                    ) = self._plan_mobile_carry_goal(resolved, root_pose)
-                    self._transition_mobile_carry("turn", sim_time_s)
-                    return (
-                        compact_target,
-                        (0.0, 0.0, 0.0),
-                        "carry_turn",
-                    )
                 measured_arm = self.robot.data.joint_pos[
                     0, self.arm_joint_ids
                 ]
@@ -3912,7 +3948,7 @@ class _ConveyorRuntimeCore:
                 self._transition_mobile_carry("place", sim_time_s)
                 return (
                     self._mobile_place_target(oracle_target, state),
-                    self._mobile_place_base_command(root_pose),
+                    (0.0, 0.0, 0.0),
                     "carry",
                 )
             return compact_target, (0.0, 0.0, 0.0), "carry_settle"
@@ -3920,7 +3956,7 @@ class _ConveyorRuntimeCore:
         assert stage == "place"
         return (
             self._mobile_place_target(oracle_target, state),
-            self._mobile_place_base_command(root_pose),
+            (0.0, 0.0, 0.0),
             "carry",
         )
 
@@ -3930,20 +3966,6 @@ class _ConveyorRuntimeCore:
         """Plan a measurable loaded navigation segment toward the tray."""
 
         goal_x, goal_y, _ = resolved.target_zone.center_xyz_m
-        away_x = root_pose.xyz[0] - goal_x
-        away_y = root_pose.xyz[1] - goal_y
-        distance = math.hypot(away_x, away_y)
-        if distance <= _MOBILE_CARRY_STANDOFF_M + _MOBILE_CARRY_MIN_TRAVEL_M:
-            if distance <= 1.0e-9:
-                raise ValueError("cannot back off from a coincident tray goal")
-            scale = _MOBILE_CARRY_BACKOFF_M / distance
-            backoff_goal = (
-                root_pose.xyz[0] + away_x * scale,
-                root_pose.xyz[1] + away_y * scale,
-            )
-            self._mobile_backoff_pending = True
-            return math.atan2(away_y, away_x), backoff_goal
-        self._mobile_backoff_pending = False
         return planar_standoff_goal(
             (root_pose.xyz[0], root_pose.xyz[1]),
             (goal_x, goal_y),
@@ -4053,33 +4075,6 @@ class _ConveyorRuntimeCore:
             return 0.0
         return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
 
-    def _mobile_place_base_command(
-        self, root_pose: Pose
-    ) -> tuple[float, float, float]:
-        """Hold the parked root against loaded-arm reaction forces."""
-
-        assert self._mobile_goal_root_xy is not None
-        yaw = _yaw_from_wxyz(root_pose.wxyz)
-        delta_x = self._mobile_goal_root_xy[0] - root_pose.xyz[0]
-        delta_y = self._mobile_goal_root_xy[1] - root_pose.xyz[1]
-        forward_error = math.cos(yaw) * delta_x + math.sin(yaw) * delta_y
-        threshold = (
-            _MOBILE_PLACE_HOLD_STOP_ERROR_M
-            if self._mobile_place_drive_active
-            else _MOBILE_PLACE_HOLD_START_ERROR_M
-        )
-        drive_active = forward_error > threshold
-        if (
-            drive_active
-            and not self._mobile_place_drive_active
-            and self._mobile_forward_policy_action_seed is not None
-        ):
-            self._last_policy_action.copy_(
-                self._mobile_forward_policy_action_seed
-            )
-        self._mobile_place_drive_active = drive_active
-        return (0.20, 0.0, 0.0) if drive_active else (0.0, 0.0, 0.0)
-
     def _mobile_turn_angular_speed_tolerance_radps(
         self, resolved: _ResolvedTask
     ) -> float:
@@ -4107,10 +4102,9 @@ class _ConveyorRuntimeCore:
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
             "retract": 6.0,
-            # A close tray requires an explicit backoff and then an almost
-            # 180-degree return turn; allow the audited 0.35 rad/s command to
-            # finish without weakening its heading or angular-speed gates.
-            "turn": 14.0,
+            "backoff": 5.0,
+            "backoff_settle": 3.0,
+            "turn": 10.0,
             "navigate": 12.0,
             "settle": 4.0,
             # The overhead teacher deliberately advances only a few
@@ -4163,8 +4157,6 @@ class _ConveyorRuntimeCore:
             self._last_policy_action.copy_(
                 self._mobile_forward_policy_action_seed
             )
-        if stage == "place":
-            self._mobile_place_drive_active = False
         self._mobile_carry_stage = stage
         self._mobile_carry_stage_started_s = sim_time_s
         self._mobile_carry_stable_since_s = None
@@ -5252,21 +5244,6 @@ def _goal_zone(asset: ReceptacleAsset) -> GoalZone:
                 strict=True,
             )
         ),
-    )
-
-
-def _guard_locomotion_command(
-    command: Sequence[float],
-) -> tuple[float, float, float]:
-    vx, vy, wz = (float(value) for value in command)
-    if abs(vy) > 1.0e-9:
-        raise ValueError("locomotion guardrail forbids lateral command")
-    if 0.0 < abs(vx) < 0.16:
-        vx = 0.0
-    return (
-        min(0.30, max(0.0, vx)),
-        0.0,
-        min(0.35, max(-0.35, wz)),
     )
 
 

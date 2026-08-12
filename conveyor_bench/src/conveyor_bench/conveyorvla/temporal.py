@@ -45,11 +45,15 @@ JOINT_TASK_REQUIRED_PHASE_ORDER = (
     "track",
     "close",
     "lift",
+    "carry_backoff",
+    "carry_turn",
     "carry_navigate",
+    "place_descend",
     "open",
     "verify_place",
 )
 JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M = 0.20
+JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M = 0.30
 JOINT_TASK_CARRY_MIN_DISPLACEMENT_M = 0.10
 JOINT_TRAINING_PHASES = frozenset(
     {
@@ -65,6 +69,8 @@ JOINT_TRAINING_PHASES = frozenset(
         "close",
         "lift",
         "carry_retract",
+        "carry_backoff",
+        "carry_backoff_settle",
         "carry_turn",
         "carry_navigate",
         "carry_settle",
@@ -306,8 +312,10 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
         "required_phase_order": list(JOINT_TASK_REQUIRED_PHASE_ORDER),
         "minimum_navigation_displacement_m": {
             "approach_conveyor": JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M,
+            "post_grasp_backoff": JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M,
             "carry_to_sort_bin": JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
         },
+        "placement_base_lock": "zero_until_episode_complete",
     }
     for key, value in expected.items():
         if data.get(key) != value:

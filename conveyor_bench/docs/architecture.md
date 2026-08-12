@@ -105,14 +105,16 @@ mobile_settle
 → settle / select
 → pregrasp / track / descend
 → close / lift
-→ carry_retract / carry_turn
+→ carry_retract / carry_backoff / carry_backoff_settle
+→ carry_turn（蓝框为左转）
 → carry_navigate / carry_settle
 → carry / preplace / place_descend
 → open / retreat / verify_place
 ```
 
-联合训练只接受 `whole_body_policy`。exporter 要求接近传送带的平面位移至少
-`0.20 m`、负载导航至少 `0.10 m`，并逐项验证上述关键阶段顺序。固定底盘只保留为
+联合训练只接受 `whole_body_policy`。exporter 要求接近传送带至少 `0.20 m`、抓取后
+负向直退至少 `0.30 m`、负载导航至少 `0.10 m`，并要求 `carry/preplace/place_descend/open`
+阶段底盘动作严格为零。固定底盘只保留为
 机械臂消融，不再能生成联合训练记录。`m0_*assist` 参数只用于历史诊断，任何启用
 assist 的 episode 都由 exporter 拒绝进入标准训练集。
 

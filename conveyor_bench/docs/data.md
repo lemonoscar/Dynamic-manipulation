@@ -64,8 +64,9 @@ ConveyorVLA AL0 的 temporal 记录使用：
 
 当前 profile 为 `conveyorvla_al0_temporal_v3`，任务范围固定为
 `navigate_grasp_deliver`。每个来源 episode 必须按顺序包含接近传送带、动态跟随抓取、
-负载导航、开爪投放和入框确认；第一段与第二段导航的实际平面位移分别不得小于
-`0.20 m` 和 `0.10 m`。旧的 `grasp_only` 记录不能进入该训练集。
+负向直退、转向目标框、负载导航、驻车投放和入框确认；三段实际平面位移分别不得小于
+`0.20 m`、`0.30 m` 和 `0.10 m`。`carry/preplace/place_descend/open` 阶段底盘动作必须
+严格为零。旧的 `grasp_only` 或不含直退证据的记录不能进入该训练集。
 
 四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
 
@@ -132,7 +133,7 @@ python scripts/convert_dataset.py \
 - `seed`；
 - `task_success`；
 - `training_eligible`；
-- 两段导航的实际位移与 phase 顺序；
+- 接近、负向直退和负载导航的实际位移与 phase 顺序；
 - 场景、相机和 teacher profile 哈希。
 
 专家成功、任务失败和结构损坏三类必须分开：

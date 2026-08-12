@@ -16,10 +16,12 @@ from conveyor_bench.isaac.locomotion import (
     POLICY_SHA256,
     STATE_JOINT_ORDER,
     build_observation,
+    guard_longitudinal_command,
     heading_hysteresis_active,
     leg_target,
     load_contract,
     overhead_place_waypoint,
+    planar_reverse_goal,
     planar_standoff_goal,
     verify_policy_hash,
 )
@@ -241,6 +243,23 @@ def test_planar_standoff_goal_rejects_a_fake_navigation_segment():
             standoff_m=0.26,
             minimum_travel_m=0.10,
         )
+
+
+def test_reverse_goal_and_guard_preserve_straight_backoff():
+    assert planar_reverse_goal((0.08, 0.0), 0.0, 0.40) == pytest.approx(
+        (-0.32, 0.0)
+    )
+    assert planar_reverse_goal((0.0, 0.0), math.pi / 2.0, 0.40) == pytest.approx(
+        (0.0, -0.40)
+    )
+    assert guard_longitudinal_command((-0.20, 0.0, 0.0)) == (
+        -0.20,
+        0.0,
+        0.0,
+    )
+    assert guard_longitudinal_command((-0.10, 0.0, 0.0))[0] == 0.0
+    with pytest.raises(ValueError, match="lateral"):
+        guard_longitudinal_command((-0.20, 0.01, 0.0))
 
 
 def test_heading_hysteresis_prevents_turn_drive_threshold_chatter():

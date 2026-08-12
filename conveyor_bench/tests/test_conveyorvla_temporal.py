@@ -56,6 +56,14 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
     assert config["data"]["action_horizon"] == 20
     assert config["data"]["action_rate_hz"] == 25
     assert config["data"]["policy_task_scope"] == POLICY_TASK_SCOPE
+    assert config["data"]["minimum_navigation_displacement_m"] == {
+        "approach_conveyor": 0.20,
+        "post_grasp_backoff": 0.30,
+        "carry_to_sort_bin": 0.10,
+    }
+    assert config["data"]["placement_base_lock"] == (
+        "zero_until_episode_complete"
+    )
     assert config["streaming"]["require_episode_generation_id"] is True
     assert ACTION_DIMENSION_MASK[1] is False
     assert m0_dit_config(config).action_horizon == 20

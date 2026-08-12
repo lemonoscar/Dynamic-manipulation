@@ -351,20 +351,20 @@ def read_jsonl(path):
 
 def add_joint_task_trace(episode: Path) -> None:
     phases = (
-        *("mobile_approach" for _ in range(5)),
+        *("mobile_approach" for _ in range(4)),
         "arm_preposition",
         "settle",
         "select",
         "pregrasp",
         "track",
-        "track",
-        "descend",
         "descend",
         "close",
         "lift",
         "carry_retract",
+        *("carry_backoff" for _ in range(4)),
+        "carry_backoff_settle",
         "carry_turn",
-        *("carry_navigate" for _ in range(5)),
+        *("carry_navigate" for _ in range(4)),
         "carry_settle",
         "carry",
         "preplace",
@@ -378,13 +378,23 @@ def add_joint_task_trace(episode: Path) -> None:
     for row in rows:
         tick = row["model_tick"]
         row["phase"] = phases[tick]
-        if tick <= 4:
-            row["robot_root_world"]["xyz"][0] = -0.22 + 0.075 * tick
-        elif 17 <= tick <= 21:
-            row["robot_root_world"]["xyz"][1] = 2.0 + 0.03 * (
-                tick - 17
+        row["action"]["values"][:3] = [0.0, 0.0, 0.0]
+        if tick <= 3:
+            row["robot_root_world"]["xyz"][0] = -0.22 + 0.10 * tick
+            row["action"]["values"][0] = 0.20
+        elif 13 <= tick <= 16:
+            row["robot_root_world"]["xyz"][0] = 0.08 - 0.10 * (
+                tick - 13
             )
-        if 14 <= tick <= 26:
+            row["action"]["values"][0] = -0.20
+        elif tick == 18:
+            row["action"]["values"][2] = 0.35
+        elif 19 <= tick <= 22:
+            row["robot_root_world"]["xyz"][1] = 2.0 + 0.04 * (
+                tick - 19
+            )
+            row["action"]["values"][0] = 0.20
+        if 11 <= tick <= 27:
             row["metadata"]["held_instance_id"] = "target"
     write_jsonl(episode / "steps.jsonl", rows)
 
@@ -441,6 +451,9 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     assert first["joint_task_evidence"]["approach_conveyor"][
         "planar_displacement_m"
     ] == pytest.approx(0.30)
+    assert first["joint_task_evidence"]["back_away_from_conveyor"][
+        "planar_displacement_m"
+    ] == pytest.approx(0.30)
     assert first["joint_task_evidence"]["carry_to_sort_bin"][
         "planar_displacement_m"
     ] == pytest.approx(0.12)
@@ -454,7 +467,7 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     ]
     assert all(len(clip["frames"]) == 2 for clip in first["camera_clips"])
     assert len(first["model_action10_chunk"]) == 20
-    assert first["model_action10_chunk"][0][:3] == pytest.approx((0.1, 0.2, 0.3))
+    assert first["model_action10_chunk"][0][:3] == pytest.approx((0.2, 0.0, 0.0))
     assert first["model_action10_chunk"][0][3] == pytest.approx(0.01)
     assert first["model_action10_chunk"][5][3] == pytest.approx(0.06)
     assert first["model_action10_chunk"][0][9] == pytest.approx(0.0)
@@ -474,6 +487,24 @@ def test_al0_temporal_projection_rejects_missing_loaded_navigation(
     write_json(episode / "manifest.json", manifest)
 
     with pytest.raises(ExportError, match="missing ordered phase"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
+
+
+def test_al0_temporal_projection_rejects_base_motion_during_placement(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
+    rows = read_jsonl(episode / "steps.jsonl")
+    next(row for row in rows if row["phase"] == "place_descend")["action"][
+        "values"
+    ][0] = 0.20
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(ExportError, match="base must remain locked"):
         list(iter_conveyorvla_al0_temporal_records(episode))
 
 

@@ -114,20 +114,23 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "_MOBILE_CARRY_STANDOFF_M = 0.50" in runtime_core
     assert "_MOBILE_CARRY_MIN_TRAVEL_M = 0.12" in runtime_core
     assert "_MOBILE_CARRY_BACKOFF_M = 0.40" in runtime_core
+    assert "_MOBILE_CARRY_BACKOFF_SPEED_MPS = -0.20" in runtime_core
     assert "_MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065" in runtime_core
     assert "_MOBILE_PLACE_CENTER_ABOVE_RIM_M = 0.020" in runtime_core
     assert "_MOBILE_SAFE_CARRY_CLEARANCE_M = 0.045" in runtime_core
-    assert "_MOBILE_PLACE_HOLD_START_ERROR_M = 0.025" in runtime_core
-    assert "_mobile_place_base_command(root_pose)" in runtime_core
     compact = "".join(runtime_core.split())
     assert "EvaluationConfig(require_settled_placement=False)" in compact
     assert "release_from_high_goal=False" in compact
     assert '_command_mobile_lift_target' not in runtime_core
     assert 'andphasein{"close","lift"}' not in compact
     assert "verify_timeout_s=6.0" in compact
+    assert "planar_reverse_goal(" in runtime_core
     assert "return planar_standoff_goal(" in runtime_core
-    assert "if self._mobile_backoff_pending:" in runtime_core
+    assert 'self._transition_mobile_carry("backoff",sim_time_s)' in compact
+    assert 'self._transition_mobile_carry("backoff_settle",sim_time_s)' in compact
     assert '"carry_turn"' in runtime_core
+    assert '"placement_base_lock":"zero_until_episode_complete"' in compact
+    assert "_mobile_place_base_command" not in runtime_core
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core
     assert "self._last_policy_action.copy_(" in runtime_core

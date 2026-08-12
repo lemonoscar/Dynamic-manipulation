@@ -20,6 +20,7 @@ from conveyor_bench.conveyorvla.temporal import (
     CAMERA_IDS as AL0_TEMPORAL_CAMERA_IDS,
     HISTORY_OFFSETS_MODEL_TICKS,
     JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M,
+    JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M,
     JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
     JOINT_TASK_REQUIRED_PHASE_ORDER,
     JOINT_TRAINING_PHASES,
@@ -1089,7 +1090,7 @@ def _camera_clip(
 def _joint_task_evidence(
     control_steps: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Fail closed unless one episode contains both navigation segments."""
+    """Fail closed unless one episode follows the joint teacher contract."""
 
     phase_first_control_indices: dict[str, int] = {}
     cursor = -1
@@ -1121,16 +1122,44 @@ def _joint_task_evidence(
     approach_displacement, approach_steps = phase_displacement(
         "mobile_approach"
     )
+    backoff_displacement, backoff_steps = phase_displacement("carry_backoff")
     carry_displacement, carry_steps = phase_displacement("carry_navigate")
     if approach_displacement < JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M:
         raise ExportError(
             "joint AL0 approach navigation displacement is too short: "
             f"{approach_displacement:.3f} m"
         )
+    if backoff_displacement < JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M:
+        raise ExportError(
+            "joint AL0 post-grasp backoff displacement is too short: "
+            f"{backoff_displacement:.3f} m"
+        )
     if carry_displacement < JOINT_TASK_CARRY_MIN_DISPLACEMENT_M:
         raise ExportError(
             "joint AL0 loaded navigation displacement is too short: "
             f"{carry_displacement:.3f} m"
+        )
+    backoff_actions = tuple(
+        _canonical_action(step)
+        for step in control_steps
+        if step.get("phase") == "carry_backoff"
+    )
+    if not backoff_actions or any(
+        action[0] >= -0.16 or abs(action[1]) > 1.0e-9
+        for action in backoff_actions
+    ):
+        raise ExportError(
+            "joint AL0 carry_backoff must use a negative longitudinal "
+            "command with zero lateral command"
+        )
+    placement_phases = {"carry", "preplace", "place_descend", "open"}
+    if any(
+        any(abs(value) > 1.0e-9 for value in _canonical_action(step)[:3])
+        for step in control_steps
+        if step.get("phase") in placement_phases
+    ):
+        raise ExportError(
+            "joint AL0 base must remain locked throughout loaded placement"
         )
     return {
         "schema_version": "conveyor-vla-al0-joint-task-evidence-1",
@@ -1143,6 +1172,15 @@ def _joint_task_evidence(
             "minimum_planar_displacement_m": (
                 JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M
             ),
+        },
+        "back_away_from_conveyor": {
+            "phase": "carry_backoff",
+            "control_steps": backoff_steps,
+            "planar_displacement_m": backoff_displacement,
+            "minimum_planar_displacement_m": (
+                JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M
+            ),
+            "command_direction": "negative_longitudinal",
         },
         "carry_to_sort_bin": {
             "phase": "carry_navigate",
