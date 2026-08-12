@@ -121,8 +121,8 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     compact = "".join(runtime_core.split())
     assert "EvaluationConfig(require_settled_placement=False)" in compact
     assert "release_from_high_goal=False" in compact
-    assert "self._mobile_lift_target_base" in runtime_core
-    assert "_command_mobile_lift_target(" in runtime_core
+    assert '_command_mobile_lift_target' not in runtime_core
+    assert 'andphasein{"close","lift"}' not in compact
     assert "verify_timeout_s=6.0" in compact
     assert "return planar_standoff_goal(" in runtime_core
     assert "return \"navigate\"" in runtime_core

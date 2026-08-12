@@ -1625,20 +1625,6 @@ class _ConveyorRuntimeCore:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase in {"close", "lift"}
-                        and not oracle_command.terminal
-                    ):
-                        # Preserve the orientation that actually established
-                        # bilateral contact.  Correcting the small floating-
-                        # base attitude error while lifting couples a large
-                        # wrist/shoulder motion into the fragile new grasp.
-                        target_tcp_pose_world = Pose(
-                            target_tcp_pose_world.xyz,
-                            state_before["tcp_world"].wxyz,
-                        )
-                    if (
-                        self.options.robot_mode
-                        is RobotMode.WHOLE_BODY_POLICY
                         and (
                             phase == "carry"
                             or self._mobile_continue_carry_before_place(
@@ -1739,19 +1725,6 @@ class _ConveyorRuntimeCore:
                         canonical_ee_delta = (0.0, 0.0, 0.0)
                         canonical_rotvec = (0.0, 0.0, 0.0)
                         last_command_target_base = state_before["tcp_base"].xyz
-                    elif (
-                        self.options.robot_mode
-                        is RobotMode.WHOLE_BODY_POLICY
-                        and phase == "lift"
-                    ):
-                        (
-                            canonical_ee_delta,
-                            canonical_rotvec,
-                            last_command_target_base,
-                        ) = self._command_mobile_lift_target(
-                            target_tcp_pose_world,
-                            state_before["tcp_base"],
-                        )
                     elif (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
@@ -3169,7 +3142,6 @@ class _ConveyorRuntimeCore:
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
-        self._mobile_lift_target_base: Pose | None = None
         self._gripper_requested_open = True
         self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
         self._gripper_transition_elapsed_s = (
@@ -3359,7 +3331,6 @@ class _ConveyorRuntimeCore:
     ) -> DynamicSortOracle:
         asset = resolved.target_asset
         affordance = asset.grasp_affordances[0]
-        self._mobile_lift_target_base = None
         # The mobile teacher lowers the held object into the tray before
         # opening.  The fixed-base ablation keeps its legacy rim-height target
         # because that distant low corner is outside its stationary workspace.
@@ -4278,29 +4249,6 @@ class _ConveyorRuntimeCore:
             translation_delta,
             tuple(float(value) for value in rotation_delta),
             commanded_pose.xyz,
-        )
-
-    def _command_mobile_lift_target(
-        self,
-        target_world: Pose,
-        current_tcp_base: Pose,
-    ) -> tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ]:
-        """Run the stationary grasp teacher's lift in the parked base frame."""
-
-        if self._mobile_lift_target_base is None:
-            self._mobile_lift_target_base = self._world_pose_to_root(
-                target_world
-            )
-        return self._apply_tcp_target_base(
-            self._mobile_lift_target_base,
-            current_tcp_base,
-            max_translation_m=_TEACHER_LIFT_STEP_M,
-            max_rotation_rad=_TEACHER_MAX_ROTATION_STEP_RAD,
-            solve_full_target=True,
         )
 
     def _command_mobile_retreat_joint_target(
