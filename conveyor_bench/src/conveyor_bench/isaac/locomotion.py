@@ -140,6 +140,43 @@ def heading_hysteresis_active(
     return abs(float(yaw_error_rad)) <= tolerance
 
 
+def overhead_place_waypoint(
+    current_xyz: tuple[float, float, float],
+    target_xyz: tuple[float, float, float],
+    *,
+    max_step_m: float,
+    planar_tolerance_m: float = 0.005,
+) -> tuple[float, float, float]:
+    """Stage a place path: lift if needed, move above, then descend."""
+
+    values = (*current_xyz, *target_xyz, max_step_m, planar_tolerance_m)
+    if not all(
+        isinstance(value, Real) and math.isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError("overhead waypoint values must be finite numbers")
+    if max_step_m <= 0.0 or planar_tolerance_m <= 0.0:
+        raise ValueError("overhead waypoint limits must be positive")
+
+    current = np.asarray(current_xyz, dtype=np.float64)
+    target = np.asarray(target_xyz, dtype=np.float64)
+    delta = target - current
+    waypoint = current.copy()
+    if delta[2] > planar_tolerance_m:
+        waypoint[2] += min(float(delta[2]), max_step_m)
+    else:
+        planar_distance = float(np.linalg.norm(delta[:2]))
+        if planar_distance > planar_tolerance_m:
+            step = min(planar_distance, max_step_m)
+            waypoint[:2] += delta[:2] * step / planar_distance
+        else:
+            waypoint[:2] = target[:2]
+            waypoint[2] += max(
+                -max_step_m, min(max_step_m, float(delta[2]))
+            )
+    return tuple(float(value) for value in waypoint)
+
+
 def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> dict[str, Any]:
     """Load and validate the frozen local policy contract."""
 

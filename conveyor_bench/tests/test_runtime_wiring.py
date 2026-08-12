@@ -114,6 +114,7 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "_MOBILE_CARRY_STANDOFF_M = 0.50" in runtime_core
     assert "_MOBILE_CARRY_MIN_TRAVEL_M = 0.12" in runtime_core
     assert "_MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065" in runtime_core
+    assert "_MOBILE_RELEASE_CLEARANCE_M = 0.085" in runtime_core
     assert "return planar_standoff_goal(" in runtime_core
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core

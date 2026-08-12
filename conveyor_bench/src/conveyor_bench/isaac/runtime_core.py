@@ -108,6 +108,7 @@ from .locomotion import (
     infer,
     leg_target,
     load_policy,
+    overhead_place_waypoint,
     planar_standoff_goal,
 )
 from .physics import apply_surface_velocity
@@ -238,6 +239,7 @@ _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
+_MOBILE_RELEASE_CLEARANCE_M = 0.085
 _TEACHER_RETREAT_CLEARANCE_M = 0.040
 _GRIPPER_OPEN_POSITION_M = 0.044
 _GRIPPER_CLOSED_POSITION_M = 0.0
@@ -990,6 +992,12 @@ class _ConveyorRuntimeCore:
                 },
                 "release_position_tolerance_m": (
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
+                ),
+                "release_clearance_above_tray_wall_m": (
+                    _MOBILE_RELEASE_CLEARANCE_M
+                    if self.options.robot_mode
+                    is RobotMode.WHOLE_BODY_POLICY
+                    else _TEACHER_RELEASE_CLEARANCE_M
                 ),
             },
             "joint_task_contract": {
@@ -3153,7 +3161,6 @@ class _ConveyorRuntimeCore:
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
-        self._place_lift_anchor_xy_world: tuple[float, float] | None = None
         self._gripper_requested_open = True
         self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
         self._gripper_transition_elapsed_s = (
@@ -3350,7 +3357,12 @@ class _ConveyorRuntimeCore:
             resolved.target_zone.floor_top_z_m
             + resolved.target_zone.wall_height_m
             + asset.half_extents_xyz[2]
-            + _TEACHER_RELEASE_CLEARANCE_M
+            + (
+                _MOBILE_RELEASE_CLEARANCE_M
+                if self.options.robot_mode
+                is RobotMode.WHOLE_BODY_POLICY
+                else _TEACHER_RELEASE_CLEARANCE_M
+            )
         )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
@@ -4072,44 +4084,17 @@ class _ConveyorRuntimeCore:
             state["tcp_world"].xyz, dtype=np.float64
         )
         target = np.asarray(oracle_target.xyz, dtype=np.float64)
-        # Lift to the requested carry height before translating toward a tray.
-        # A direct joint-space solve of the distant high goal can dip through
-        # the near wall even though both endpoints are collision-free.
-        vertical_gap = float(target[2] - current[2])
-        # Hold the measured XY until the loaded TCP reaches the carry plane.
-        # Do not gate on measured-vs-analytic wrist orientation: the imported
-        # USD and the PCT analytic chain have a small fixed attitude residual,
-        # so such a gate can never clear even after the joint target settles.
-        if abs(vertical_gap) > 0.005:
-            if self._place_lift_anchor_xy_world is None:
-                self._place_lift_anchor_xy_world = (
-                    float(current[0]),
-                    float(current[1]),
-                )
-            waypoint = np.asarray(
-                (
-                    *self._place_lift_anchor_xy_world,
-                    float(target[2]),
-                ),
-                dtype=np.float64,
-            )
-        else:
-            self._place_lift_anchor_xy_world = None
-            actuator_step_m = max(
-                waypoint_step_m, _MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M
-            )
-            delta = target - current
-            planar_distance = float(np.linalg.norm(delta[:2]))
-            waypoint = target.copy()
-            if planar_distance > actuator_step_m:
-                waypoint[:2] = (
-                    current[:2]
-                    + delta[:2] * actuator_step_m / planar_distance
-                )
-                waypoint[2] = target[2]
+        actuator_step_m = max(
+            waypoint_step_m, _MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M
+        )
+        waypoint = overhead_place_waypoint(
+            tuple(float(value) for value in current),
+            tuple(float(value) for value in target),
+            max_step_m=actuator_step_m,
+        )
         return Pose(
             tuple(float(value) for value in waypoint),
-            oracle_target.wxyz,
+            tuple(float(value) for value in state["tcp_world"].wxyz),
         )
 
     def _transition_mobile_carry(

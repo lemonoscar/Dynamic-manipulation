@@ -18,6 +18,7 @@ from conveyor_bench.isaac.locomotion import (
     heading_hysteresis_active,
     leg_target,
     load_contract,
+    overhead_place_waypoint,
     planar_standoff_goal,
     verify_policy_hash,
 )
@@ -276,3 +277,25 @@ def test_heading_hysteresis_rejects_invalid_limits():
             enter_tolerance_rad=0.4,
             exit_tolerance_rad=0.2,
         )
+
+
+def test_overhead_place_waypoint_lifts_before_translating():
+    assert overhead_place_waypoint(
+        (0.0, 0.0, 0.30),
+        (0.20, 0.10, 0.40),
+        max_step_m=0.03,
+    ) == pytest.approx((0.0, 0.0, 0.33))
+
+
+def test_overhead_place_waypoint_moves_above_before_descending():
+    waypoint = overhead_place_waypoint(
+        (0.0, 0.0, 0.60),
+        (0.20, 0.0, 0.40),
+        max_step_m=0.03,
+    )
+    assert waypoint == pytest.approx((0.03, 0.0, 0.60))
+    assert overhead_place_waypoint(
+        (0.20, 0.0, 0.60),
+        (0.20, 0.0, 0.40),
+        max_step_m=0.03,
+    ) == pytest.approx((0.20, 0.0, 0.57))
