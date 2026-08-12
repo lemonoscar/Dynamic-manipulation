@@ -228,6 +228,7 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 # only heading errors outside the audited straight-drive tolerance.
 _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD = 0.16
 _MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD = 0.35
+_MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065
 _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
@@ -4032,13 +4033,13 @@ class _ConveyorRuntimeCore:
         self, resolved: _ResolvedTask
     ) -> float:
         del resolved
-        return 0.045
+        return _MOBILE_NAVIGATION_POSITION_TOLERANCE_M
 
     def _mobile_settle_position_tolerance_m(
         self, resolved: _ResolvedTask
     ) -> float | None:
         del resolved
-        return 0.065
+        return _MOBILE_NAVIGATION_POSITION_TOLERANCE_M
 
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
