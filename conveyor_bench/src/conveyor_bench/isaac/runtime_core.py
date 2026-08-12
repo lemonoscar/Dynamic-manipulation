@@ -242,7 +242,7 @@ _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
-_MOBILE_PLACE_FLOOR_CLEARANCE_M = 0.010
+_MOBILE_PLACE_CENTER_ABOVE_RIM_M = 0.020
 _MOBILE_SAFE_CARRY_CLEARANCE_M = 0.045
 _TEACHER_RETREAT_CLEARANCE_M = 0.040
 _GRIPPER_OPEN_POSITION_M = 0.044
@@ -998,11 +998,14 @@ class _ConveyorRuntimeCore:
                 "release_position_tolerance_m": (
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
                 ),
-                "place_clearance_above_tray_floor_m": (
-                    _MOBILE_PLACE_FLOOR_CLEARANCE_M
+                "place_object_center_above_tray_rim_m": (
+                    _MOBILE_PLACE_CENTER_ABOVE_RIM_M
                     if self.options.robot_mode
                     is RobotMode.WHOLE_BODY_POLICY
-                    else _TEACHER_RELEASE_CLEARANCE_M
+                    else (
+                        resolved.target_asset.half_extents_xyz[2]
+                        + _TEACHER_RELEASE_CLEARANCE_M
+                    )
                 ),
             },
             "joint_task_contract": {
@@ -3335,13 +3338,14 @@ class _ConveyorRuntimeCore:
         asset = resolved.target_asset
         affordance = asset.grasp_affordances[0]
         # The mobile teacher lowers the held object into the tray before
-        # opening.  The fixed-base ablation keeps its legacy rim-height target
-        # because that distant low corner is outside its stationary workspace.
+        # opening.  The target leaves the can bottom 40 mm below the rim while
+        # avoiding the unstable, unreachable tray-floor pose.  The fixed-base
+        # ablation keeps its legacy target outside the mobile task contract.
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
             release_object_center_z = (
                 resolved.target_zone.floor_top_z_m
-                + asset.half_extents_xyz[2]
-                + _MOBILE_PLACE_FLOOR_CLEARANCE_M
+                + resolved.target_zone.wall_height_m
+                + _MOBILE_PLACE_CENTER_ABOVE_RIM_M
             )
         else:
             release_object_center_z = (

@@ -115,7 +115,7 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "_MOBILE_CARRY_MIN_TRAVEL_M = 0.12" in runtime_core
     assert "_MOBILE_CARRY_BACKOFF_M = 0.40" in runtime_core
     assert "_MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065" in runtime_core
-    assert "_MOBILE_PLACE_FLOOR_CLEARANCE_M = 0.010" in runtime_core
+    assert "_MOBILE_PLACE_CENTER_ABOVE_RIM_M = 0.020" in runtime_core
     assert "_MOBILE_SAFE_CARRY_CLEARANCE_M = 0.045" in runtime_core
     assert "_MOBILE_PLACE_HOLD_START_ERROR_M = 0.025" in runtime_core
     assert "_mobile_place_base_command(root_pose)" in runtime_core
