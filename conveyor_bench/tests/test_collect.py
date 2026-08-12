@@ -101,6 +101,7 @@ def test_collection_accepts_gpu_zero(tmp_path: Path) -> None:
     args = _args(tmp_path)
     args.asset_root.mkdir()
     args.physical_gpu = 0
+    args.belt_speed = 0.01
 
     assert module._resolve(args).physical_gpu == 0
 
