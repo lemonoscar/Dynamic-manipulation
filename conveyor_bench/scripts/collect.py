@@ -324,7 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--belt-speed", type=float, default=DYNAMIC_BELT_SPEED_MPS
     )
     parser.add_argument("--target-intercept-lead-time", type=float, default=5.0)
-    parser.add_argument("--max-duration", type=float, default=60.0)
+    parser.add_argument("--max-duration", type=float, default=90.0)
     parser.add_argument("--require-all-success", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser

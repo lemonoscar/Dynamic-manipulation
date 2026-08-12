@@ -117,6 +117,29 @@ def planar_standoff_goal(
     )
 
 
+def heading_hysteresis_active(
+    yaw_error_rad: float,
+    *,
+    was_active: bool,
+    enter_tolerance_rad: float,
+    exit_tolerance_rad: float,
+) -> bool:
+    """Latch straight driving until heading error crosses a wider limit."""
+
+    values = (yaw_error_rad, enter_tolerance_rad, exit_tolerance_rad)
+    if not all(
+        isinstance(value, Real) and math.isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError("heading hysteresis values must be finite numbers")
+    if not 0.0 < enter_tolerance_rad < exit_tolerance_rad <= math.pi:
+        raise ValueError(
+            "heading tolerances must satisfy 0 < enter < exit <= pi"
+        )
+    tolerance = exit_tolerance_rad if was_active else enter_tolerance_rad
+    return abs(float(yaw_error_rad)) <= tolerance
+
+
 def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> dict[str, Any]:
     """Load and validate the frozen local policy contract."""
 

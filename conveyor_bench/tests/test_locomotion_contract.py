@@ -15,6 +15,7 @@ from conveyor_bench.isaac.locomotion import (
     POLICY_SHA256,
     STATE_JOINT_ORDER,
     build_observation,
+    heading_hysteresis_active,
     leg_target,
     load_contract,
     planar_standoff_goal,
@@ -237,4 +238,41 @@ def test_planar_standoff_goal_rejects_a_fake_navigation_segment():
             (0.30, 0.0),
             standoff_m=0.26,
             minimum_travel_m=0.10,
+        )
+
+
+def test_heading_hysteresis_prevents_turn_drive_threshold_chatter():
+    assert heading_hysteresis_active(
+        0.15,
+        was_active=False,
+        enter_tolerance_rad=0.16,
+        exit_tolerance_rad=0.35,
+    )
+    assert heading_hysteresis_active(
+        0.21,
+        was_active=True,
+        enter_tolerance_rad=0.16,
+        exit_tolerance_rad=0.35,
+    )
+    assert not heading_hysteresis_active(
+        0.36,
+        was_active=True,
+        enter_tolerance_rad=0.16,
+        exit_tolerance_rad=0.35,
+    )
+    assert not heading_hysteresis_active(
+        0.21,
+        was_active=False,
+        enter_tolerance_rad=0.16,
+        exit_tolerance_rad=0.35,
+    )
+
+
+def test_heading_hysteresis_rejects_invalid_limits():
+    with pytest.raises(ValueError, match="0 < enter < exit"):
+        heading_hysteresis_active(
+            0.1,
+            was_active=False,
+            enter_tolerance_rad=0.4,
+            exit_tolerance_rad=0.2,
         )

@@ -104,6 +104,7 @@ from .locomotion import (
     POLICY_SHA256,
     STATE_JOINT_ORDER,
     build_observation,
+    heading_hysteresis_active,
     infer,
     leg_target,
     load_policy,
@@ -225,7 +226,8 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 # Loaded navigation turns to the tray first, then drives toward a target-facing
 # standoff pose.  The guardrail keeps lateral velocity disabled and corrects
 # only heading errors outside the audited straight-drive tolerance.
-_MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
+_MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD = 0.16
+_MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD = 0.35
 _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
@@ -3470,8 +3472,9 @@ class _ConveyorRuntimeCore:
         # CARRY includes the mobile retract, turn, and settle substages before
         # the deliberately slow overhead tray approach resumes.  The former
         # 15 s budget expired with the held object already moving correctly
-        # toward the tray, so retain a full 30 s for dynamic demonstrations.
-        return max(30.0, travel_s + 5.0)
+        # toward the tray.  The slow overhead placement then needs about
+        # 19 s after locomotion, so retain 45 s for dynamic demonstrations.
+        return max(45.0, travel_s + 5.0)
 
     def _mobile_preoracle_command(
         self,
@@ -3797,18 +3800,23 @@ class _ConveyorRuntimeCore:
             navigation_yaw_error = self._mobile_navigation_yaw_error(
                 root_pose
             )
-            yaw_command = self._mobile_navigation_yaw_command(
-                resolved, navigation_yaw_error
-            )
-            # The loaded policy stalled under a combined forward/negative-
-            # yaw command while carrying.  Turn first, then drive straight.
-            drive_heading_tolerance = (
-                self._mobile_navigation_drive_heading_tolerance_rad(
-                    resolved
-                )
-            )
-            drive_enabled = (
-                abs(navigation_yaw_error) <= drive_heading_tolerance
+            # Keep a completed gait burst latched through small heading drift.
+            # A single threshold toggled turn/drive every tick near 0.21 rad,
+            # repeatedly returning the recurrent actor to a standing fixed
+            # point.  Stop and reorient only after crossing the wider limit.
+            drive_enabled = heading_hysteresis_active(
+                navigation_yaw_error,
+                was_active=self._mobile_navigation_drive_active,
+                enter_tolerance_rad=(
+                    self._mobile_navigation_drive_heading_tolerance_rad(
+                        resolved
+                    )
+                ),
+                exit_tolerance_rad=(
+                    self._mobile_navigation_drive_exit_tolerance_rad(
+                        resolved
+                    )
+                ),
             )
             if (
                 drive_enabled
@@ -3819,6 +3827,13 @@ class _ConveyorRuntimeCore:
                     self._mobile_forward_policy_action_seed
                 )
             self._mobile_navigation_drive_active = drive_enabled
+            yaw_command = (
+                0.0
+                if drive_enabled
+                else self._mobile_navigation_yaw_command(
+                    resolved, navigation_yaw_error
+                )
+            )
             forward_command = (
                 self._mobile_navigate_forward_speed_mps(
                     resolved, root_pose
@@ -3976,7 +3991,13 @@ class _ConveyorRuntimeCore:
         self, resolved: _ResolvedTask
     ) -> float:
         del resolved
-        return _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD
+        return _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD
+
+    def _mobile_navigation_drive_exit_tolerance_rad(
+        self, resolved: _ResolvedTask
+    ) -> float:
+        del resolved
+        return _MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD
 
     def _mobile_navigation_yaw_command(
         self,
@@ -3984,7 +4005,10 @@ class _ConveyorRuntimeCore:
         yaw_error_rad: float,
     ) -> float:
         del resolved
-        if abs(yaw_error_rad) <= _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD:
+        if (
+            abs(yaw_error_rad)
+            <= _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD
+        ):
             return 0.0
         return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
 
@@ -4020,7 +4044,7 @@ class _ConveyorRuntimeCore:
             # so both sorting trays are reachable without weakening the
             # heading or angular-speed gates.
             "turn": 10.0,
-            "navigate": 8.0,
+            "navigate": 12.0,
             "settle": 4.0,
             # The overhead teacher deliberately advances only a few
             # millimetres per policy tick.  The measured loaded path from the
