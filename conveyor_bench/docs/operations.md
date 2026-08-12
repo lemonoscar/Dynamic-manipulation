@@ -117,7 +117,7 @@ python scripts/export.py EPISODE_ROOT --profile all --force
 ```
 
 命令成功不代替视觉检查。需要观察机器狗先走到传送带并驻车、机械臂跟随缓降抓取、
-收臂后负载导航到分类箱、再次驻车、俯视投放和释放后稳定。`carry_navigate` 为零帧或
+收臂后负载导航到分类箱、再次驻车、俯视投放以及释放后进入指定框。`carry_navigate` 为零帧或
 两段位移低于数据门禁时，即使旧评分器给出成功也不得进入训练。
 
 ## 7. 转换到 LeRobot v3

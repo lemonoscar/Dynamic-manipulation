@@ -19,7 +19,7 @@ Loaded navigation-to-bin
   → 机械臂收回到紧凑负载位姿
   → 机器狗转向、移动到分类箱前并再次驻车
 Overhead place
-  → 从上方移动、开爪投放、撤离并确认稳定
+  → 从上方移动、开爪投放并确认瓶子进入目标框
 ```
 
 完整成功要求四个阶段都成功。`fixed_base` 仅用于隔离机械臂和动态抓取问题，
@@ -68,7 +68,7 @@ NuRec 保持原始世界坐标，不移动 Gaussian 根节点。机器人和工�
 4. 从实测夹爪开度平滑闭合；
 5. 接触后继续跟随，直到稳定夹持；
 6. 俯视抬升、搬运和投放；
-7. 在目标框内释放并等待稳定。
+7. 在目标框上方释放，并观察到瓶子进入目标框。
 
 教师 profile 保留兼容 ID `overhead_target_follow_pick_place_v3`。该 `v3` 是已经落盘
 的数据身份，不能为了文件整洁而改写历史 episode。
@@ -108,7 +108,9 @@ sidecar 中虽然已有 apple、orange、bottle、box2 等文件，但“文件�
 - head/wrist/overview 相机门禁通过；
 - canonical 文件在 export 前后哈希不变；
 - 教师 profile、物品 fixture 和场景 provenance 与当前合同一致；
-- 没有 assisted diagnostic 控制。
+- 没有 assisted diagnostic 控制；
+- 目标曾被正确夹持，开爪释放后中心首次进入指定目标框；进入时仍在滚动不影响成功，
+  不要求静止或驻留；
 - `mobile_approach → track → close → lift → carry_navigate → open →
   verify_place` 顺序完整；
 - 接近传送带实际平面位移至少 `0.20 m`，负载导航至少 `0.10 m`。

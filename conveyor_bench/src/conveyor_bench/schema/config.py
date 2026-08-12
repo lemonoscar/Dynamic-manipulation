@@ -11,7 +11,7 @@ PROTOCOL_VERSION = "conveyor-bench-v1"
 
 @dataclass(frozen=True)
 class EvaluationConfig:
-    """Thresholds for release, placement, and settled-dwell evaluation."""
+    """Thresholds and mode for release-and-placement evaluation."""
 
     settled_linear_speed_mps: float = 0.02
     settled_angular_speed_radps: float = 0.10

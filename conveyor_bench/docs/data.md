@@ -46,6 +46,11 @@ episode/
 
 目录先以 `.inprogress` 写入，完整关闭并 `fsync` 后原子发布。中断目录不是有效 episode。
 
+当前采集清单将 `benchmark_config.evaluation.require_settled_placement` 写为 `false`：
+目标必须先被夹持并释放，释放后中心首次进入指定框即记为完成。线/角速度仍逐帧记录供
+质量分析，但不参与任务成功门槛。旧清单缺少该字段时按 `true` 解释，保持历史严格
+静止驻留语义。
+
 ## 3. Temporal export
 
 ConveyorVLA AL0 的 temporal 记录使用：
@@ -59,7 +64,7 @@ ConveyorVLA AL0 的 temporal 记录使用：
 
 当前 profile 为 `conveyorvla_al0_temporal_v3`，任务范围固定为
 `navigate_grasp_deliver`。每个来源 episode 必须按顺序包含接近传送带、动态跟随抓取、
-负载导航、开爪投放和稳定确认；第一段与第二段导航的实际平面位移分别不得小于
+负载导航、开爪投放和入框确认；第一段与第二段导航的实际平面位移分别不得小于
 `0.20 m` 和 `0.10 m`。旧的 `grasp_only` 记录不能进入该训练集。
 
 四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
