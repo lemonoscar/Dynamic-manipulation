@@ -222,7 +222,10 @@ _MOBILE_COMPACT_TCP_BASE = (
     -0.0005021194937836334,
     0.3825906961871689,
 )
-_MOBILE_CARRY_STANDOFF_M = 0.50
+# The top-down X5 placement branch is stable at roughly 0.45 m measured TCP
+# reach.  The locomotion gate may settle up to 65 mm short of its root goal,
+# so plan a 0.40 m standoff to keep the realized reach inside that envelope.
+_MOBILE_CARRY_STANDOFF_M = 0.40
 _MOBILE_CARRY_MIN_TRAVEL_M = 0.12
 _MOBILE_CARRY_BACKOFF_M = 0.40
 _MOBILE_CARRY_BACKOFF_SPEED_MPS = -0.20
