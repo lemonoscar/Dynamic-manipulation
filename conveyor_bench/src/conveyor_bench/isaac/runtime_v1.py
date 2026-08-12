@@ -948,6 +948,10 @@ class ConveyorRuntimeV1:
                 ),
                 "moving_grasp_strategy": "target_relative_follow_then_descend",
                 "target_prediction_horizon_s": 0.0,
+                "descent_target_generator": "time_parameterized_absolute_pose",
+                "descent_speed_mps": (
+                    _TEACHER_VERTICAL_STEP_M / self.control_dt
+                ),
                 "preplace_observation_dwell_s": (
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
                 ),
@@ -1751,6 +1755,7 @@ class ConveyorRuntimeV1:
                                     "select",
                                     "pregrasp",
                                     "track",
+                                    "descend",
                                     "close",
                                     "lift",
                                     # Loaded carry uses a staged Cartesian
@@ -3334,6 +3339,9 @@ class ConveyorRuntimeV1:
                     self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
                 ),
                 pregrasp_clearance_m=0.10,
+                descent_speed_mps=(
+                    _TEACHER_VERTICAL_STEP_M / self.control_dt
+                ),
                 # The release pose is already above the tray rim.  This extra
                 # clearance keeps the lowest registered part above the
                 # lowered far rail while matching the measured loaded X5

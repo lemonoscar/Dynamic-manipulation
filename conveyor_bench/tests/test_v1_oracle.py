@@ -33,6 +33,7 @@ def config(
         grasp_offset_world=(0.01, -0.02, 0.03),
         intercept_horizon_s=0.20,
         pregrasp_clearance_m=0.10,
+        descent_speed_mps=10.0,
         safe_carry_clearance_m=0.20,
         position_tolerance_m=1.0e-6,
         grasp_tolerance_m=1.0e-6,
@@ -250,6 +251,8 @@ def test_target_relative_teacher_follows_part_through_descent() -> None:
             config(),
             intercept_horizon_s=0.0,
             intercept_staging_y_world=None,
+            descent_speed_mps=0.05,
+            phase_timeout_s=3.0,
         )
     )
     oracle._transition(OraclePhase.PREGRASP, 0.0)
@@ -285,7 +288,28 @@ def test_target_relative_teacher_follows_part_through_descent() -> None:
 
     assert descent.phase is OraclePhase.DESCEND
     assert _position(descent)[1] == pytest.approx(0.18)
-    assert _position(descent)[2] == pytest.approx(0.23)
+    assert _position(descent)[2] == pytest.approx(0.325)
+
+    still_descending = oracle.step(
+        observation(
+            0.31,
+            target_position_world=(0.50, 0.20, 0.20),
+            target_velocity_world=(0.0, -0.20, 0.0),
+            tcp_position_world=_position(descent),
+        )
+    )
+    assert still_descending.phase is OraclePhase.DESCEND
+
+    close = oracle.step(
+        observation(
+            2.20,
+            target_position_world=(0.50, 0.20, 0.20),
+            target_velocity_world=(0.0, -0.20, 0.0),
+            tcp_position_world=(0.51, 0.18, 0.23),
+        )
+    )
+    assert close.phase is OraclePhase.CLOSE
+    assert close.gripper_command == 0.0
 
 
 def test_close_tracks_contacted_part_and_waits_for_gripper_hold() -> None:
@@ -357,7 +381,7 @@ def run_success_trace(
     commands.append(command)
     command = oracle.step(
         observation(
-            0.22,
+            0.17,
             tcp_position_world=_position(command),
             **bilateral_target_contact,
         )
@@ -367,10 +391,10 @@ def run_success_trace(
     command = oracle.step(
         observation(
             0.23,
-            target_position_world=LIFTED_TARGET_POSITION,
             tcp_position_world=_position(command),
+            left_contact_object_ids=(TARGET_ID,),
+            right_contact_object_ids=(TARGET_ID,),
             target_held=True,
-            target_lifted=True,
         )
     )
     commands.append(command)
@@ -396,7 +420,7 @@ def run_success_trace(
     commands.append(command)
     command = oracle.step(
         observation(
-            0.31,
+            0.26,
             target_position_world=LIFTED_TARGET_POSITION,
             tcp_position_world=_position(command),
             target_held=True,
@@ -418,8 +442,10 @@ def run_success_trace(
     command = oracle.step(
         observation(
             0.33,
+            target_position_world=LIFTED_TARGET_POSITION,
             tcp_position_world=_position(command),
-            target_released=True,
+            target_held=True,
+            target_lifted=True,
         )
     )
     commands.append(command)
@@ -428,12 +454,9 @@ def run_success_trace(
             0.34,
             tcp_position_world=_position(command),
             target_released=True,
-            target_in_goal=True,
-            target_settled=True,
         )
     )
     commands.append(command)
-
     command = oracle.step(
         observation(
             0.35,
@@ -444,19 +467,10 @@ def run_success_trace(
         )
     )
     commands.append(command)
+
     command = oracle.step(
         observation(
-            0.41,
-            tcp_position_world=_position(command),
-            target_released=True,
-            target_in_goal=False,
-            target_settled=True,
-        )
-    )
-    commands.append(command)
-    command = oracle.step(
-        observation(
-            0.42,
+            0.36,
             tcp_position_world=_position(command),
             target_released=True,
             target_in_goal=True,
@@ -466,7 +480,27 @@ def run_success_trace(
     commands.append(command)
     command = oracle.step(
         observation(
-            0.53,
+            0.42,
+            tcp_position_world=_position(command),
+            target_released=True,
+            target_in_goal=False,
+            target_settled=True,
+        )
+    )
+    commands.append(command)
+    command = oracle.step(
+        observation(
+            0.43,
+            tcp_position_world=_position(command),
+            target_released=True,
+            target_in_goal=True,
+            target_settled=True,
+        )
+    )
+    commands.append(command)
+    command = oracle.step(
+        observation(
+            0.54,
             tcp_position_world=_position(command),
             target_released=True,
             target_in_goal=True,
@@ -498,6 +532,7 @@ def test_complete_sort_visits_every_phase_and_requires_fresh_goal_dwell() -> Non
         OraclePhase.SELECT,
         OraclePhase.PREGRASP,
         OraclePhase.TRACK,
+        OraclePhase.DESCEND,
         OraclePhase.DESCEND,
         OraclePhase.CLOSE,
         OraclePhase.CLOSE,

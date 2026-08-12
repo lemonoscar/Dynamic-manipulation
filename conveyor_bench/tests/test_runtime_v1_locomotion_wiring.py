@@ -274,7 +274,7 @@ def test_close_phase_keeps_transport_tracking_after_contact() -> None:
     assert "continuous_commanded_open_fraction" in episode
 
 
-def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
+def test_teacher_ik_holds_staged_absolute_goals_while_labels_remain_bounded() -> None:
     tree = _runtime_tree()
     source = ast.unparse(_method(tree, "_apply_tcp_target_base"))
     episode = ast.unparse(_method(tree, "_run_episode"))
@@ -286,7 +286,7 @@ def test_teacher_ik_holds_the_full_goal_while_labels_remain_bounded() -> None:
     assert "solve_full_target=phase in" in episode
     start = episode.index("solve_full_target=phase in")
     full_goal_phases = episode[start : episode.index("},", start)]
-    assert "'descend'" not in full_goal_phases
+    assert "'descend'" in full_goal_phases
     assert "'close'" in full_goal_phases
     assert "'lift'" in full_goal_phases
     assert "for value in raw_delta" in source
@@ -300,7 +300,12 @@ def test_teacher_follows_current_part_without_predictive_intercept() -> None:
 
     assert "intercept_horizon_s=0.0" in source
     assert "intercept_staging_y_world=None" in source
+    assert (
+        "descent_speed_mps=_TEACHER_VERTICAL_STEP_M / self.control_dt"
+        in source
+    )
     assert "target_relative_follow_then_descend" in metadata
+    assert "time_parameterized_absolute_pose" in metadata
 
 
 def test_pregrasp_joint_posture_is_already_on_the_overhead_ik_branch() -> None:

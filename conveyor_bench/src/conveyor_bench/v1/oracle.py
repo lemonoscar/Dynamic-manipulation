@@ -106,6 +106,7 @@ class OracleConfig:
     close_on_target_contact: bool = False
     release_from_high_goal: bool = False
     pregrasp_clearance_m: float = 0.12
+    descent_speed_mps: float = 0.075
     safe_carry_clearance_m: float = 0.16
     position_tolerance_m: float = 0.015
     carry_position_tolerance_m: float | None = None
@@ -179,6 +180,7 @@ class OracleConfig:
             "object_height_m",
             "intercept_entry_tolerance_m",
             "pregrasp_clearance_m",
+            "descent_speed_mps",
             "safe_carry_clearance_m",
             "position_tolerance_m",
             "grasp_tolerance_m",
@@ -345,6 +347,17 @@ class DynamicSortOracle:
         staging_target = self._staging_pregrasp_position(predicted_target)
         grasp_target = self._grasp_position(predicted_target)
         descent_target = self._intercept_grasp_position(predicted_target)
+        descent_complete = True
+        if (
+            self.phase is OraclePhase.DESCEND
+            and self.config.intercept_staging_y_world is None
+        ):
+            descent_target = self._tracked_descent_position(
+                predicted_target, phase_elapsed
+            )
+            descent_complete = (
+                descent_target[2] <= grasp_target[2] + 1.0e-9
+            )
 
         if self.phase is OraclePhase.SETTLE:
             if phase_elapsed >= self.config.settle_duration_s:
@@ -394,7 +407,7 @@ class DynamicSortOracle:
                 )
             if self._near(observation.tcp_position_world, pregrasp_target):
                 self._transition(OraclePhase.DESCEND, observation.sim_time_s)
-                return self._command(grasp_target, gripper_command=1.0)
+                return self._command(pregrasp_target, gripper_command=1.0)
             return self._command(pregrasp_target, gripper_command=1.0)
 
         if self.phase is OraclePhase.DESCEND:
@@ -408,10 +421,13 @@ class DynamicSortOracle:
             if (
                 self.config.close_on_target_contact
                 and target_contact
-            ) or self._near(
-                observation.tcp_position_world,
-                descent_target,
-                tolerance=self.config.grasp_tolerance_m,
+            ) or (
+                descent_complete
+                and self._near(
+                    observation.tcp_position_world,
+                    descent_target,
+                    tolerance=self.config.grasp_tolerance_m,
+                )
             ):
                 self._transition(OraclePhase.CLOSE, observation.sim_time_s)
                 return self._command(descent_target, gripper_command=0.0)
@@ -665,6 +681,23 @@ class DynamicSortOracle:
         if staging_y is None:
             return target
         return (target[0], staging_y, target[2])
+
+    def _tracked_descent_position(
+        self,
+        target_position: Sequence[float],
+        phase_elapsed_s: float,
+    ) -> Vec3:
+        target = self._grasp_position(target_position)
+        return (
+            target[0],
+            target[1],
+            max(
+                target[2],
+                target[2]
+                + self.config.pregrasp_clearance_m
+                - self.config.descent_speed_mps * phase_elapsed_s,
+            ),
+        )
 
     def _target_entered_intercept_window(
         self, target_position: Sequence[float]
