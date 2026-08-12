@@ -78,7 +78,7 @@ def test_collection_defaults_to_dynamic_belt() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     (
-        ("physical_gpu", 1),
+        ("physical_gpu", 4),
         ("episodes", 9),
         ("belt_speed", 0.005),
         ("belt_speed", 0.02),
@@ -94,6 +94,15 @@ def test_collection_rejects_out_of_contract_work(
 
     with pytest.raises(module.CollectionError):
         module._resolve(args)
+
+
+def test_collection_accepts_gpu_zero(tmp_path: Path) -> None:
+    module = _load()
+    args = _args(tmp_path)
+    args.asset_root.mkdir()
+    args.physical_gpu = 0
+
+    assert module._resolve(args).physical_gpu == 0
 
 
 def test_stationary_collection_requires_registered_seed(tmp_path: Path) -> None:

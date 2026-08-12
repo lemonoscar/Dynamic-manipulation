@@ -344,8 +344,8 @@ def _resolve(args: argparse.Namespace) -> argparse.Namespace:
         args.kit_cache_root = args.kit_cache_root.expanduser().resolve(
             strict=True
         )
-    if args.physical_gpu not in {2, 3}:
-        raise CollectionError("collection is restricted to physical GPU 2 or 3")
+    if args.physical_gpu not in {0, 1, 2, 3}:
+        raise CollectionError("--physical-gpu must be one of 0, 1, 2, or 3")
     if not 1 <= args.episodes <= MAX_EPISODES_PER_PROCESS:
         raise CollectionError("--episodes must be within [1, 8]")
     if args.seed < 0:
