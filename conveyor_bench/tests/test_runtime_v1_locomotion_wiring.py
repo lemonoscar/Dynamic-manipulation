@@ -135,7 +135,7 @@ def test_arm_slew_preserves_the_audited_teacher_envelope() -> None:
     source = ast.unparse(_method(_runtime_tree(), "_slew_arm_target"))
 
     assert _literal_constant(tree, "_TEACHER_JOINT_STEP_RAD") == pytest.approx(
-        (0.006, 0.0075, 0.0075, 0.0075, 0.006, 0.0075)
+        (0.008, 0.0075, 0.0075, 0.0075, 0.008, 0.0075)
     )
     assert "per_joint = _TEACHER_JOINT_STEP_RAD" in source
     assert "if carrying_object" in source
