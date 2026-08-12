@@ -22,6 +22,7 @@ from conveyor_bench.conveyorvla.temporal import (
     JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M,
     JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M,
     JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
+    JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M,
     JOINT_TASK_REQUIRED_PHASE_ORDER,
     JOINT_TRAINING_PHASES,
     MODEL_HZ as AL0_TEMPORAL_ACTION_RATE_HZ,
@@ -1153,13 +1154,28 @@ def _joint_task_evidence(
             "command with zero lateral command"
         )
     placement_phases = {"carry", "preplace", "place_descend", "open"}
+    placement_steps = tuple(
+        step for step in control_steps if step.get("phase") in placement_phases
+    )
     if any(
         any(abs(value) > 1.0e-9 for value in _canonical_action(step)[:3])
-        for step in control_steps
-        if step.get("phase") in placement_phases
+        for step in placement_steps
     ):
         raise ExportError(
             "joint AL0 base must remain locked throughout loaded placement"
+        )
+    placement_start, _ = _pose(placement_steps[0], "robot_root_world")
+    placement_max_displacement = max(
+        math.hypot(
+            _pose(step, "robot_root_world")[0][0] - placement_start[0],
+            _pose(step, "robot_root_world")[0][1] - placement_start[1],
+        )
+        for step in placement_steps
+    )
+    if placement_max_displacement > JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M:
+        raise ExportError(
+            "joint AL0 base moved during loaded placement: "
+            f"{placement_max_displacement:.3f} m"
         )
     return {
         "schema_version": "conveyor-vla-al0-joint-task-evidence-1",
@@ -1189,6 +1205,14 @@ def _joint_task_evidence(
             "minimum_planar_displacement_m": (
                 JOINT_TASK_CARRY_MIN_DISPLACEMENT_M
             ),
+        },
+        "placement_base_lock": {
+            "phases": tuple(sorted(placement_phases)),
+            "maximum_planar_displacement_m": placement_max_displacement,
+            "allowed_planar_displacement_m": (
+                JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M
+            ),
+            "base_action": "zero",
         },
     }
 

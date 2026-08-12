@@ -126,6 +126,8 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "verify_timeout_s=6.0" in compact
     assert "planar_reverse_goal(" in runtime_core
     assert "return planar_standoff_goal(" in runtime_core
+    assert "goal_x, goal_y = self._mobile_release_xy(resolved)" in runtime_core
+    assert runtime_core.count("self._mobile_release_xy(resolved)") == 2
     assert 'self._transition_mobile_carry("backoff",sim_time_s)' in compact
     assert 'self._transition_mobile_carry("backoff_settle",sim_time_s)' in compact
     assert '"carry_turn"' in runtime_core

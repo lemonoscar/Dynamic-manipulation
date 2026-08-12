@@ -66,7 +66,8 @@ ConveyorVLA AL0 的 temporal 记录使用：
 `navigate_grasp_deliver`。每个来源 episode 必须按顺序包含接近传送带、动态跟随抓取、
 负向直退、转向目标框、负载导航、驻车投放和入框确认；三段实际平面位移分别不得小于
 `0.20 m`、`0.30 m` 和 `0.10 m`。`carry/preplace/place_descend/open` 阶段底盘动作必须
-严格为零。旧的 `grasp_only` 或不含直退证据的记录不能进入该训练集。
+严格为零，底盘实际平面漂移不得超过 `0.05 m`。旧的 `grasp_only` 或不含直退证据的
+记录不能进入该训练集。
 
 四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
 

@@ -64,6 +64,7 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
     assert config["data"]["placement_base_lock"] == (
         "zero_until_episode_complete"
     )
+    assert config["data"]["maximum_placement_base_displacement_m"] == 0.05
     assert config["streaming"]["require_episode_generation_id"] is True
     assert ACTION_DIMENSION_MASK[1] is False
     assert m0_dit_config(config).action_horizon == 20

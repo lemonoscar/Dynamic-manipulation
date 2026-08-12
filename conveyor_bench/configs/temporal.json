@@ -51,7 +51,8 @@
       "post_grasp_backoff": 0.30,
       "carry_to_sort_bin": 0.10
     },
-    "placement_base_lock": "zero_until_episode_complete"
+    "placement_base_lock": "zero_until_episode_complete",
+    "maximum_placement_base_displacement_m": 0.05
   },
   "vision": {
     "encoder": "Qwen3-VL-4B-Instruct",

@@ -55,6 +55,7 @@ JOINT_TASK_REQUIRED_PHASE_ORDER = (
 JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M = 0.20
 JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M = 0.30
 JOINT_TASK_CARRY_MIN_DISPLACEMENT_M = 0.10
+JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M = 0.05
 JOINT_TRAINING_PHASES = frozenset(
     {
         "mobile_settle",
@@ -316,6 +317,9 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
             "carry_to_sort_bin": JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
         },
         "placement_base_lock": "zero_until_episode_complete",
+        "maximum_placement_base_displacement_m": (
+            JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M
+        ),
     }
     for key, value in expected.items():
         if data.get(key) != value:

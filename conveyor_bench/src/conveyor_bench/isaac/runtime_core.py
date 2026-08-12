@@ -3358,23 +3358,8 @@ class _ConveyorRuntimeCore:
                 + asset.half_extents_xyz[2]
                 + _TEACHER_RELEASE_CLEARANCE_M
             )
-        zone_x = resolved.target_zone.center_xyz_m[0]
-        zone_y = resolved.target_zone.center_xyz_m[1]
-        local_zone_y = zone_y - self._task_world_origin_xyz()[1]
-        # Bias toward the tray's robot-facing inner quadrant while retaining
-        # enough wall clearance for the full 48 mm target, not merely its
-        # center point. This avoids the X5 lateral workspace boundary after
-        # the short mobile carry arc for both mirrored sorting trays.
-        # Loaded placement equilibrates short of the tray center in world X.
-        # Bias both mirrored drops toward the robot-facing half of the open
-        # floor, with the larger audited offset retained for the negative-yaw
-        # turn.  Even the widest 48 mm train part remains fully inside the
-        # 105 mm goal half-width.
-        reachable_release_x = zone_x - (
-            0.040 if local_zone_y < 0.0 else 0.025
-        )
-        reachable_release_y = zone_y - math.copysign(
-            0.07, local_zone_y
+        reachable_release_x, reachable_release_y = (
+            self._mobile_release_xy(resolved)
         )
         if affordance.approach_axis != "-z":
             raise RuntimeError(
@@ -3963,14 +3948,29 @@ class _ConveyorRuntimeCore:
     def _plan_mobile_carry_goal(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> tuple[float, tuple[float, float]]:
-        """Plan a measurable loaded navigation segment toward the tray."""
+        """Plan loaded navigation facing the exact reachable release point."""
 
-        goal_x, goal_y, _ = resolved.target_zone.center_xyz_m
+        goal_x, goal_y = self._mobile_release_xy(resolved)
         return planar_standoff_goal(
             (root_pose.xyz[0], root_pose.xyz[1]),
             (goal_x, goal_y),
             standoff_m=_MOBILE_CARRY_STANDOFF_M,
             minimum_travel_m=_MOBILE_CARRY_MIN_TRAVEL_M,
+        )
+
+    def _mobile_release_xy(
+        self, resolved: _ResolvedTask
+    ) -> tuple[float, float]:
+        """Return the shared navigation and overhead-placement target."""
+
+        zone_x, zone_y, _ = resolved.target_zone.center_xyz_m
+        local_zone_y = zone_y - self._task_world_origin_xyz()[1]
+        # Bias toward the robot-facing inner quadrant while preserving full
+        # can clearance. Navigation must face this same point; facing the tray
+        # center leaves a large lateral arm reach that drags the floating base.
+        return (
+            zone_x - (0.040 if local_zone_y < 0.0 else 0.025),
+            zone_y - math.copysign(0.07, local_zone_y),
         )
 
     def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:

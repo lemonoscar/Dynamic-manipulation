@@ -508,6 +508,24 @@ def test_al0_temporal_projection_rejects_base_motion_during_placement(
         list(iter_conveyorvla_al0_temporal_records(episode))
 
 
+def test_al0_temporal_projection_rejects_physical_placement_drift(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
+    rows = read_jsonl(episode / "steps.jsonl")
+    next(row for row in rows if row["phase"] == "place_descend")[
+        "robot_root_world"
+    ]["xyz"][0] += 0.06
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(ExportError, match="base moved during loaded placement"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
+
+
 def test_m0_projection_right_pads_and_preserves_canonical_source(tmp_path) -> None:
     episode = make_episode(tmp_path)
     before = (episode / "steps.jsonl").read_bytes()
