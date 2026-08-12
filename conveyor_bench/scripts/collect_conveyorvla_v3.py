@@ -19,6 +19,8 @@ SCRIPTS = PROJECT_ROOT / "scripts"
 SCHEMA_VERSION = "conveyorvla-v3-collection-1"
 TARGET = "cola"
 DESTINATION = "sort_bin_blue"
+TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
+DYNAMIC_BELT_SPEED_MPS = 0.01
 MAX_EPISODES_PER_PROCESS = 8
 STATIONARY_SEEDS = frozenset((1101, 1102, 1103, 2101, 3101))
 REQUIRED_FILES = (
@@ -208,7 +210,17 @@ def _episodes_for_seeds(
             raise CollectionError(f"duplicate episode seed: {seed}")
         metadata = episode_value.get("metadata")
         scene = metadata.get("scene_profile") if isinstance(metadata, Mapping) else None
+        teacher = (
+            metadata.get("demonstration_teacher")
+            if isinstance(metadata, Mapping)
+            else None
+        )
         fixture = scene.get("object_fixture_contract") if isinstance(scene, Mapping) else None
+        background = (
+            scene.get("background_collision_contract")
+            if isinstance(scene, Mapping)
+            else None
+        )
         task = episode_value.get("task")
         task_metadata = task.get("metadata") if isinstance(task, Mapping) else None
         if (
@@ -217,6 +229,13 @@ def _episodes_for_seeds(
             or not isinstance(fixture, Mapping)
             or fixture.get("all_rigid_bodies_valid") is not True
             or fixture.get("all_visuals_composed") is not True
+            or not isinstance(background, Mapping)
+            or background.get("render_visibility") != "invisible"
+            or not isinstance(teacher, Mapping)
+            or teacher.get("profile_id") != TEACHER_PROFILE_ID
+            or teacher.get("moving_grasp_strategy")
+            != "target_relative_follow_then_descend"
+            or teacher.get("target_prediction_horizon_s") != 0.0
             or not isinstance(task_metadata, Mapping)
             or task_metadata.get("target_asset_id") != TARGET
         ):
@@ -301,7 +320,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--episodes", type=int, default=3)
     parser.add_argument("--seed", type=int, default=1101)
-    parser.add_argument("--belt-speed", type=float, default=0.0)
+    parser.add_argument(
+        "--belt-speed", type=float, default=DYNAMIC_BELT_SPEED_MPS
+    )
     parser.add_argument("--target-intercept-lead-time", type=float, default=5.0)
     parser.add_argument("--max-duration", type=float, default=60.0)
     parser.add_argument("--require-all-success", action="store_true")
@@ -329,8 +350,10 @@ def _resolve(args: argparse.Namespace) -> argparse.Namespace:
         raise CollectionError("--episodes must be within [1, 8]")
     if args.seed < 0:
         raise CollectionError("--seed cannot be negative")
-    if not 0.0 <= args.belt_speed <= 0.01:
-        raise CollectionError("V3 pilot belt speed must be within [0, 0.01] m/s")
+    if args.belt_speed not in {0.0, DYNAMIC_BELT_SPEED_MPS}:
+        raise CollectionError(
+            "V3 collection belt speed must be 0.0 or 0.01 m/s"
+        )
     requested_seeds = set(range(args.seed, args.seed + args.episodes))
     if args.belt_speed == 0.0 and not requested_seeds <= STATIONARY_SEEDS:
         raise CollectionError(

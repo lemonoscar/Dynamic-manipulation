@@ -56,9 +56,31 @@ def test_v3_command_is_real_cola_three_camera_collection(tmp_path: Path) -> None
     assert "--/renderer/multiGpu/enabled=false" in kit_args
 
 
+def test_v3_collection_defaults_to_faster_dynamic_belt() -> None:
+    module = _load()
+
+    args = module.build_parser().parse_args(
+        (
+            "--asset-root",
+            "/tmp/assets",
+            "--output-root",
+            "/tmp/output",
+            "--physical-gpu",
+            "3",
+        )
+    )
+
+    assert args.belt_speed == pytest.approx(0.01)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
-    (("physical_gpu", 1), ("episodes", 9), ("belt_speed", 0.02)),
+    (
+        ("physical_gpu", 1),
+        ("episodes", 9),
+        ("belt_speed", 0.005),
+        ("belt_speed", 0.02),
+    ),
 )
 def test_v3_collection_rejects_out_of_contract_work(
     tmp_path: Path, field: str, value: object

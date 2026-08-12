@@ -10,7 +10,7 @@ V1 还提供独立的 `stationary_sort` 诊断任务，以零速传送带和五�
 为 `0.01 m/s`。新示教统一使用俯视抓取和俯视投放：预抓取/预放置各观察
 `0.5 s`，下探最高 `0.075 m/s`；夹爪从实测开度平滑运动 `0.7 s` 并保持
 `0.3 s`，接触后继续追踪运动零件。episode metadata 标记为
-`overhead_slow_pick_place_v2`，避免和早期水平进给或二值夹爪轨迹混用。
+`overhead_target_follow_pick_place_v3`，避免和早期固定截获、水平进给或二值夹爪轨迹混用。
 
 新增的 V3 视觉 profile 沿用 V1 物理与训练契约，以本地 3DGS 静态工位、Isaac
 动态前景和深度合成替换程序化背景。该 profile 当前只完成方案冻结，尚未放入真实

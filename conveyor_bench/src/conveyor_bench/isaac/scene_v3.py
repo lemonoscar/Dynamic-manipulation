@@ -517,10 +517,12 @@ def disable_liangzhu_background_collision(
         if not attribute.IsValid():
             attribute = collision.CreateCollisionEnabledAttr()
         attribute.Set(False)
+        UsdGeom.Imageable(prim).MakeInvisible()
         disabled.append(str(prim_path))
     return {
         "policy": "validated_then_disabled_for_collection",
         "reason": "avoid_duplicate_scanned_floor_contacts",
+        "render_visibility": "invisible",
         "replacement_collision_prim": V3_LOCAL_FLOOR_PATCH_PRIM_PATH,
         "disabled_collision_mesh_prims": disabled,
     }

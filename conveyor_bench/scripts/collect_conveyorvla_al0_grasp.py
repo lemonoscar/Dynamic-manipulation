@@ -63,7 +63,7 @@ LEGACY_PROFILE_SCHEMAS = {
     "m0_mobile": "conveyor-bench-m0-mobile-v1",
 }
 TEMPORAL_EXPORT_PROFILE = "conveyorvla_al0_temporal"
-TEACHER_PROFILE_ID = "overhead_slow_pick_place_v2"
+TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 
 
 class CollectionError(ValueError):

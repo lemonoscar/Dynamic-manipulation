@@ -102,9 +102,11 @@
     "training_requires_success": true,
     "diagnostic_assistance_allowed": false,
     "demonstration_teacher": {
-      "profile_id": "overhead_slow_pick_place_v2",
+      "profile_id": "overhead_target_follow_pick_place_v3",
       "overhead_approach_pitch_deg": 75.0,
       "pregrasp_observation_dwell_s": 0.5,
+      "moving_grasp_strategy": "target_relative_follow_then_descend",
+      "target_prediction_horizon_s": 0.0,
       "preplace_observation_dwell_s": 0.5,
       "maximum_vertical_speed_mps": 0.075,
       "maximum_lift_speed_mps": 0.1,

@@ -102,6 +102,9 @@ def test_validate_asset_bundle_and_write_native_runtime_layer(tmp_path: Path) ->
     assert str(bundle.scene_usda) in payload
     assert "</World/VisualScene/GaussianScene>" in payload
     assert "</World/PhysicsScene/CollisionScene>" in payload
+    visual_block, collision_block = payload.split('def Xform "Collision"', 1)
+    assert 'token visibility = "inherited"' in visual_block
+    assert 'token visibility = "invisible"' in collision_block
     for component in LIANGZHU_SCENE_TRANSLATION_XYZ_M:
         assert f"{component:.16g}" in payload
 

@@ -30,8 +30,9 @@ V1 的主任务是 Go2-X5 在横向传送带前移动、动态抓取指定零件
 工位参数和来源记录在
 [assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json](assets/workcells/conveyor_station_v1/ASSET_MANIFEST.json)。
 
-新采集必须使用 `overhead_slow_pick_place_v2` 示教：机械臂先在零件上方保持
-俯视观察，再以最高 `0.075 m/s` 的竖直速度下探；抓稳后竖直抬升，到分拣盘
+新采集必须使用 `overhead_target_follow_pick_place_v3` 示教：机械臂先随动到零件上方并
+保持俯视观察，再持续匹配零件水平运动、以最高 `0.075 m/s` 的速度缓慢下探，
+不在固定截获点等待，也不使用未来位姿预判；抓稳后竖直抬升，到分拣盘
 上方再次保持 `0.5 s` 俯视观察后释放。夹爪采用距竖直 `15°` 的可达俯视姿态，
 并按物体 affordance 对齐闭合轴。闭爪从实测关节开度起步，以五次 smoothstep
 在 `0.7 s` 内运动并保持 `0.3 s`；首次双指接触后，TCP 继续沿运输方向追踪零件，

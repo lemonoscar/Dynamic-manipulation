@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=1101)
-    parser.add_argument("--belt-speed", type=float, default=0.0)
+    parser.add_argument("--belt-speed", type=float, default=0.01)
     parser.add_argument("--target-intercept-lead-time", type=float)
     parser.add_argument("--max-duration", type=float, default=45.0)
     parser.add_argument("--active-objects", type=int, default=1)

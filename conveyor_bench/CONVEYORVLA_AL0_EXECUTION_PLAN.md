@@ -87,9 +87,10 @@ mobile_settle → mobile_approach → mobile_stabilize → arm_preposition
 训练指令统一为“抓取传送带零件并安全抬升”，不会把目标分拣盘作为模型条件。
 投放部分仍在 canonical episode 中供未来扩展，但不进入当前 grasp-only profile。
 
-canonical 示教器冻结为 `overhead_slow_pick_place_v2`：抓取和投放均使用距竖直
+canonical 示教器冻结为 `overhead_target_follow_pick_place_v3`：抓取和投放均使用距竖直
 `15°` 的俯视姿态，并按零件 `finger_closing_axis` 对齐夹爪；预抓取和预放置
-各保持 `0.5 s` 视觉观察。50 Hz 下普通移动、竖直下探、抬升单步上限分别为
+各保持 `0.5 s` 视觉观察。抓取阶段根据当前物体位姿持续水平随动并缓慢下降，
+不使用固定截获等待或未来位姿前视。50 Hz 下普通移动、竖直下探、抬升单步上限分别为
 `3.0/1.5/2.0 mm`。夹爪从实测开度出发，以五次 smoothstep 在 `0.7 s` 内闭合
 并保持 `0.3 s`；双指接触后 CLOSE 目标继续随运输方向更新。新 episode 必须在
 metadata 中携带 profile ID；缺失该字段的旧 episode 即使物理成功，也不能进入

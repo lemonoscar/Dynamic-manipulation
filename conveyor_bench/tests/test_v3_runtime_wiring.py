@@ -87,6 +87,8 @@ def test_v3_runtime_reuses_v1_collector_and_adds_scene_provenance() -> None:
 
     scene_source = _source(SCENE_PATH)
     assert "attribute.Set(False)" in scene_source
+    assert "UsdGeom.Imageable(prim).MakeInvisible()" in scene_source
+    assert '"render_visibility": "invisible"' in scene_source
     assert '"validated_then_disabled_for_collection"' in scene_source
     assert "V3_LOCAL_FLOOR_PATCH_PRIM_PATH" in scene_source
 

@@ -57,11 +57,21 @@ def test_v3_uses_native_nurec_and_separate_collision() -> None:
     assert config["physics_layer"]["procedural_ground_enabled"] is False
     assert config["physics_layer"]["local_invisible_floor_patch_enabled"] is True
     assert config["physics_layer"][
+        "scanned_collision_mesh_render_visibility"
+    ] == "invisible"
+    assert config["physics_layer"][
         "translated_kinematic_belt_contact_verified"
     ] is True
     assert config["gaussian_layer"]["asset_container"].endswith(".usdz")
     assert config["gaussian_layer"]["nurec_archive_member"].endswith(".nurec")
     assert config["visual_partition"]["procedural_v1_room_enabled"] is False
+    assert config["dynamic_grasp"] == {
+        "default_belt_speed_mps": 0.01,
+        "teacher_profile_id": "overhead_target_follow_pick_place_v3",
+        "strategy": "target_relative_follow_then_descend",
+        "target_prediction_horizon_s": 0.0,
+        "maximum_descent_speed_mps": 0.075,
+    }
 
 
 def test_v3_asset_delivery_is_ssh_sidecar_and_never_runtime_network() -> None:

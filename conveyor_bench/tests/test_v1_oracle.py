@@ -244,6 +244,50 @@ def test_intercept_staging_waits_for_target_entry():
     assert _position(command)[1] == pytest.approx(0.08)
 
 
+def test_target_relative_teacher_follows_part_through_descent() -> None:
+    oracle = DynamicSortOracle(
+        replace(
+            config(),
+            intercept_horizon_s=0.0,
+            intercept_staging_y_world=None,
+        )
+    )
+    oracle._transition(OraclePhase.PREGRASP, 0.0)
+
+    first = oracle.step(
+        observation(
+            0.10,
+            target_position_world=(0.50, 0.30, 0.20),
+            target_velocity_world=(0.0, -0.20, 0.0),
+        )
+    )
+    second = oracle.step(
+        observation(
+            0.20,
+            target_position_world=(0.50, 0.25, 0.20),
+            target_velocity_world=(0.0, -0.20, 0.0),
+        )
+    )
+
+    assert first.phase is OraclePhase.PREGRASP
+    assert second.phase is OraclePhase.PREGRASP
+    assert _position(first)[1] == pytest.approx(0.28)
+    assert _position(second)[1] == pytest.approx(0.23)
+
+    oracle._transition(OraclePhase.DESCEND, 0.20)
+    descent = oracle.step(
+        observation(
+            0.30,
+            target_position_world=(0.50, 0.20, 0.20),
+            target_velocity_world=(0.0, -0.20, 0.0),
+        )
+    )
+
+    assert descent.phase is OraclePhase.DESCEND
+    assert _position(descent)[1] == pytest.approx(0.18)
+    assert _position(descent)[2] == pytest.approx(0.23)
+
+
 def test_close_tracks_contacted_part_and_waits_for_gripper_hold() -> None:
     oracle = DynamicSortOracle(
         replace(config(), intercept_staging_y_world=0.08)

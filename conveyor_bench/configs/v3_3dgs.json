@@ -59,6 +59,7 @@
     "static_collision_prim": "/World/PhysicsScene/CollisionScene/LiangzhuCollision",
     "procedural_ground_enabled": false,
     "local_invisible_floor_patch_enabled": true,
+    "scanned_collision_mesh_render_visibility": "invisible",
     "local_floor_patch_size_xyz_m": [3.0, 3.4, 0.02],
     "translated_kinematic_belt_contact_verified": true,
     "gaussian_splats_have_collision": false
@@ -170,6 +171,13 @@
       "destination_receptacle"
     ],
     "procedural_v1_room_enabled": false
+  },
+  "dynamic_grasp": {
+    "default_belt_speed_mps": 0.01,
+    "teacher_profile_id": "overhead_target_follow_pick_place_v3",
+    "strategy": "target_relative_follow_then_descend",
+    "target_prediction_horizon_s": 0.0,
+    "maximum_descent_speed_mps": 0.075
   },
   "cameras": {
     "head_rgb": {

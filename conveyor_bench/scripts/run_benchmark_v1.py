@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help=(
             "Training curriculum only: spawn the target this many belt-seconds "
-            "upstream of the fixed intercept point."
+            "upstream of the tracking work zone."
         ),
     )
     parser.add_argument("--max-duration", type=float, default=20.0)

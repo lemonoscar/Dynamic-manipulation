@@ -225,15 +225,13 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 # cross-track error, inside the 0.045 m position gate.  Drive that chord
 # straight instead of asking the loaded policy for another coupled turn.
 _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
-_TEACHER_PROFILE_ID = "overhead_slow_pick_place_v2"
+_TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
 _TEACHER_LIFT_STEP_M = 0.002
 _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
-_TEACHER_INTERCEPT_MIN_HALF_WIDTH_M = 0.005
-_TEACHER_INTERCEPT_DWELL_MARGIN_S = 0.10
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
 _GRIPPER_OPEN_POSITION_M = 0.044
 _GRIPPER_CLOSED_POSITION_M = 0.0
@@ -272,22 +270,6 @@ _CAMERA_SPECS = (
     ),
     CameraSpec("overview_rgb", 480, 320, "observer_only"),
 )
-
-
-def _teacher_intercept_entry_tolerance_m(
-    belt_speed_mps: float,
-) -> float:
-    """Keep the moving part visible for the complete pregrasp dwell."""
-
-    return max(
-        _TEACHER_INTERCEPT_MIN_HALF_WIDTH_M,
-        0.5
-        * abs(float(belt_speed_mps))
-        * (
-            _TEACHER_PREGRASP_OBSERVATION_DWELL_S
-            + _TEACHER_INTERCEPT_DWELL_MARGIN_S
-        ),
-    )
 
 
 def _smoothstep5(value: float) -> float:
@@ -964,11 +946,8 @@ class ConveyorRuntimeV1:
                 "pregrasp_observation_dwell_s": (
                     _TEACHER_PREGRASP_OBSERVATION_DWELL_S
                 ),
-                "intercept_entry_tolerance_m": (
-                    _teacher_intercept_entry_tolerance_m(
-                        self.options.belt_speed_mps
-                    )
-                ),
+                "moving_grasp_strategy": "target_relative_follow_then_descend",
+                "target_prediction_horizon_s": 0.0,
                 "preplace_observation_dwell_s": (
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
                 ),
@@ -1585,24 +1564,6 @@ class ConveyorRuntimeV1:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase == "descend"
-                        and not oracle_command.terminal
-                    ):
-                        # Descend on the interception line and let the moving
-                        # part enter the gripper.  Once bilateral contact
-                        # starts, CLOSE follows the transport axis while the
-                        # fingers finish their slow trajectory.
-                        target_tcp_pose_world = Pose(
-                            (
-                                target_tcp_pose_world.xyz[0],
-                                self._intercept_y_world(resolved),
-                                target_tcp_pose_world.xyz[2],
-                            ),
-                            target_tcp_pose_world.wxyz,
-                        )
-                    if (
-                        self.options.robot_mode
-                        is RobotMode.WHOLE_BODY_POLICY
                         and phase in {"track", "descend", "close"}
                         and state_before["root_pose"].xyz[0]
                         < (
@@ -1790,7 +1751,6 @@ class ConveyorRuntimeV1:
                                     "select",
                                     "pregrasp",
                                     "track",
-                                    "descend",
                                     "close",
                                     "lift",
                                     # Loaded carry uses a staged Cartesian
@@ -3360,19 +3320,11 @@ class ConveyorRuntimeV1:
                 tcp_orientation_wxyz=top_down_tcp_orientation_wxyz(
                     affordance.finger_closing_axis
                 ),
-                intercept_horizon_s=0.12,
-                # Wait above a fixed intercept point instead of sweeping the
-                # floating arm laterally toward an upstream part.  Tracking
-                # begins only once the predicted part enters this window.
-                intercept_staging_y_world=self._intercept_y_world(resolved),
-                # Enter a narrow prediction window so the open 114 mm jaw is
-                # centered before its lower collision envelope reaches the
-                # 48 mm part.  A broad window closes above the moving part.
-                intercept_entry_tolerance_m=(
-                    _teacher_intercept_entry_tolerance_m(
-                        self.options.belt_speed_mps
-                    )
-                ),
+                # Teach reactive dynamic grasping: hover over the measured
+                # part, match its transport motion, then descend while still
+                # following it.  Do not wait at or predict a fixed intercept.
+                intercept_horizon_s=0.0,
+                intercept_staging_y_world=None,
                 # Contact is recorded as a learning signal, but closure waits
                 # for the Cartesian grasp gate.  The open finger bottoms touch
                 # the part about 50 mm above the pad center and must be allowed

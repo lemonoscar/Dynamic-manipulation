@@ -298,7 +298,7 @@ def Xform "LiangzhuScene"
         prepend references = @{scene_path}@</World/PhysicsScene/CollisionScene>
     )
     {{
-        token visibility = "inherited"
+        token visibility = "invisible"
     }}
 }}
 '''
