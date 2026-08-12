@@ -478,9 +478,16 @@ class DynamicSortOracle:
         if self.phase is OraclePhase.LIFT:
             if (
                 observation.target_lifted
-                and self._near(
-                    observation.tcp_position_world,
-                    self._lift_target_position,
+                # LIFT is a clearance gate, not an XY registration gate.
+                # Payload deflection can leave a securely held part a few
+                # centimetres from the pre-lift XY even after the commanded
+                # vertical height is reached.  CARRY owns the subsequent
+                # lateral correction, so waiting for full 3-D coincidence
+                # deadlocks an otherwise valid grasp at the safe height.
+                and observation.tcp_position_world[2]
+                >= (
+                    self._lift_target_position[2]
+                    - self.config.position_tolerance_m
                 )
             ):
                 self._transition(OraclePhase.CARRY, observation.sim_time_s)

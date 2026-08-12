@@ -340,6 +340,34 @@ def test_close_tracks_contacted_part_and_waits_for_gripper_hold() -> None:
     assert command.phase is OraclePhase.LIFT
 
 
+def test_lift_completes_on_safe_height_despite_payload_xy_deflection() -> None:
+    oracle = DynamicSortOracle(
+        replace(config(), position_tolerance_m=0.02)
+    )
+    oracle._lift_target_position = (0.50, 0.00, 0.50)
+    oracle._transition(OraclePhase.LIFT, 0.0)
+
+    command = oracle.step(
+        observation(
+            0.10,
+            tcp_position_world=(0.53, 0.00, 0.47),
+            target_held=True,
+            target_lifted=True,
+        )
+    )
+    assert command.phase is OraclePhase.LIFT
+
+    command = oracle.step(
+        observation(
+            0.20,
+            tcp_position_world=(0.53, 0.00, 0.49),
+            target_held=True,
+            target_lifted=True,
+        )
+    )
+    assert command.phase is OraclePhase.CARRY
+
+
 def run_success_trace(
     robot_mode: RobotMode = RobotMode.MOBILE_KINEMATIC,
 ):
