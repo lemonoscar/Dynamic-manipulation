@@ -501,6 +501,7 @@ def run_success_trace(
             tcp_position_world=_position(command),
             target_held=True,
             target_lifted=True,
+            target_in_goal=True,
         )
     )
     commands.append(command)

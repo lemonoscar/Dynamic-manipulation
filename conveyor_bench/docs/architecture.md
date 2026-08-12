@@ -105,7 +105,7 @@ mobile_settle
 → settle / select
 → pregrasp / track / descend
 → close / lift
-→ carry_retract / carry_backoff / carry_backoff_settle
+→ carry_backoff（直退时同步收拢机械臂）/ carry_backoff_settle
 → carry_turn（蓝框为左转）
 → carry_navigate / carry_settle
 → carry / preplace / place_descend
@@ -115,7 +115,7 @@ mobile_settle
 联合训练只接受 `whole_body_policy`。exporter 要求接近传送带至少 `0.20 m`、抓取后
 负向直退至少 `0.30 m`、负载导航至少 `0.10 m`，并要求 `carry/preplace/place_descend/open`
 阶段底盘动作严格为零。到达目标框后由低层 `root_pose_hold` 站立控制抵消机械臂反力，
-上层 VLA 不再输出导航动作。固定底盘只保留为
+且只有物体已经进入蓝框后才允许执行 `open`；上层 VLA 不再输出导航动作。固定底盘只保留为
 机械臂消融，不再能生成联合训练记录。`m0_*assist` 参数只用于历史诊断，任何启用
 assist 的 episode 都由 exporter 拒绝进入标准训练集。
 

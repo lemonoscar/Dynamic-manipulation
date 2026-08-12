@@ -524,11 +524,11 @@ class DynamicSortOracle:
 
         if self.phase is OraclePhase.PLACE_DESCEND:
             place_target = self._place_position()
-            if self._near(
-                observation.tcp_position_world,
-                place_target,
-                tolerance=self.config.grasp_tolerance_m,
-            ):
+            # Reaching the nominal TCP pose is not enough on a floating
+            # platform: payload deflection can leave the part outside the
+            # tray even while the wrist is on target.  Open only after the
+            # held object itself has crossed the scored goal boundary.
+            if observation.target_in_goal:
                 self._transition(OraclePhase.OPEN, observation.sim_time_s)
                 return self._command(place_target, gripper_command=1.0)
             return self._command(place_target, gripper_command=0.0)

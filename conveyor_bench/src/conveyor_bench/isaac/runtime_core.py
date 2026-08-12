@@ -1818,6 +1818,11 @@ class _ConveyorRuntimeCore:
                                     # for positive dz.
                                     "carry",
                                     "preplace",
+                                    # Descend actuation must pull toward the
+                                    # complete reachable tray pose. Solving a
+                                    # fresh 3 mm point from the lagging TCP
+                                    # lets gravity reverse the measured dz.
+                                    "place_descend",
                                     # Post-release ascent has the same
                                     # gravity-vs-local-waypoint failure mode
                                     # as loaded lift. Solve the staged high
@@ -3657,7 +3662,18 @@ class _ConveyorRuntimeCore:
             self._mobile_carry_orientation_base_wxyz = tuple(
                 float(value) for value in state["tcp_base"].wxyz
             )
-            self._transition_mobile_carry("retract", sim_time_s)
+            # Back away as soon as the vertical lift gate succeeds. Compact
+            # the arm concurrently, then require it to settle before the
+            # left turn. This preserves the safe carry posture without a
+            # visible stationary retraction pause beside the conveyor.
+            current_yaw = _yaw_from_wxyz(root_pose.wxyz)
+            self._mobile_goal_yaw_rad = current_yaw
+            self._mobile_goal_root_xy = planar_reverse_goal(
+                (root_pose.xyz[0], root_pose.xyz[1]),
+                current_yaw,
+                _MOBILE_CARRY_BACKOFF_M,
+            )
+            self._transition_mobile_carry("backoff", sim_time_s)
 
         assert self._mobile_carry_orientation_base_wxyz is not None
         # Retraction and locomotion constrain the compact TCP position but do
@@ -3699,49 +3715,6 @@ class _ConveyorRuntimeCore:
                 f"mobile carry stage {stage!r} exceeded its timeout",
             )
 
-        if stage == "retract":
-            compact_error = float(
-                torch.max(
-                    torch.abs(
-                        self.robot.data.joint_pos[:, self.arm_joint_ids]
-                        - torch.tensor(
-                            [_MOBILE_COMPACT_ARM],
-                            dtype=torch.float32,
-                            device=self.sim.device,
-                        )
-                    )
-                ).item()
-            )
-            arm_speed = float(
-                torch.max(
-                    torch.abs(
-                        self.robot.data.joint_vel[:, self.arm_joint_ids]
-                    )
-                ).item()
-            )
-            if self._mobile_carry_dwell(
-                compact_error <= 0.060 and arm_speed <= 0.35,
-                sim_time_s,
-                0.30,
-            ):
-                # Back straight away from the conveyor before any turn.  The
-                # tray-bearing turn is planned only after this reverse segment
-                # has stopped, so the head camera naturally acquires the bin.
-                current_yaw = _yaw_from_wxyz(root_pose.wxyz)
-                self._mobile_goal_yaw_rad = current_yaw
-                self._mobile_goal_root_xy = planar_reverse_goal(
-                    (root_pose.xyz[0], root_pose.xyz[1]),
-                    current_yaw,
-                    _MOBILE_CARRY_BACKOFF_M,
-                )
-                self._transition_mobile_carry("backoff", sim_time_s)
-                return (
-                    compact_target,
-                    (_MOBILE_CARRY_BACKOFF_SPEED_MPS, 0.0, 0.0),
-                    "carry_backoff",
-                )
-            return compact_target, (0.0, 0.0, 0.0), f"carry_{stage}"
-
         assert self._mobile_goal_yaw_rad is not None
         assert self._mobile_goal_root_xy is not None
         current_yaw = _yaw_from_wxyz(root_pose.wxyz)
@@ -3772,10 +3745,31 @@ class _ConveyorRuntimeCore:
             )
 
         if stage == "backoff_settle":
+            compact_error = float(
+                torch.max(
+                    torch.abs(
+                        self.robot.data.joint_pos[:, self.arm_joint_ids]
+                        - torch.tensor(
+                            [_MOBILE_COMPACT_ARM],
+                            dtype=torch.float32,
+                            device=self.sim.device,
+                        )
+                    )
+                ).item()
+            )
+            arm_speed = float(
+                torch.max(
+                    torch.abs(
+                        self.robot.data.joint_vel[:, self.arm_joint_ids]
+                    )
+                ).item()
+            )
             if self._mobile_carry_dwell(
                 planar_speed <= 0.07
                 and abs(root_twist.angular_xyz[2])
-                <= self._mobile_settle_angular_speed_tolerance_radps(resolved),
+                <= self._mobile_settle_angular_speed_tolerance_radps(resolved)
+                and compact_error <= 0.060
+                and arm_speed <= 0.35,
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
@@ -4108,7 +4102,6 @@ class _ConveyorRuntimeCore:
 
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
-            "retract": 6.0,
             "backoff": 5.0,
             "backoff_settle": 3.0,
             "turn": 10.0,

@@ -1153,6 +1153,24 @@ def _joint_task_evidence(
             "joint AL0 carry_backoff must use a negative longitudinal "
             "command with zero lateral command"
         )
+    turn_actions = tuple(
+        _canonical_action(step)
+        for step in control_steps
+        if step.get("phase") == "carry_turn"
+    )
+    if not turn_actions or not any(
+        action[2] >= 0.30 for action in turn_actions
+    ):
+        raise ExportError(
+            "joint AL0 carry_turn must include a positive-yaw left turn"
+        )
+    if any(
+        abs(action[0]) > 1.0e-9 or abs(action[1]) > 1.0e-9
+        for action in turn_actions
+    ):
+        raise ExportError(
+            "joint AL0 carry_turn must rotate in place with zero translation"
+        )
     placement_phases = {"carry", "preplace", "place_descend", "open"}
     placement_steps = tuple(
         step for step in control_steps if step.get("phase") in placement_phases
@@ -1216,6 +1234,11 @@ def _joint_task_evidence(
             "minimum_planar_displacement_m": (
                 JOINT_TASK_CARRY_MIN_DISPLACEMENT_M
             ),
+        },
+        "left_turn_to_sort_bin": {
+            "phase": "carry_turn",
+            "command_direction": "positive_yaw",
+            "translation": "zero",
         },
         "placement_base_lock": {
             "phases": tuple(sorted(placement_phases)),
