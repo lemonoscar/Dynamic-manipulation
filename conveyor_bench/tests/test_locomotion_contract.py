@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -299,3 +300,11 @@ def test_overhead_place_waypoint_moves_above_before_descending():
         (0.20, 0.0, 0.40),
         max_step_m=0.03,
     ) == pytest.approx((0.20, 0.0, 0.57))
+
+
+def test_overhead_place_waypoint_accepts_unbounded_hold_step():
+    assert overhead_place_waypoint(
+        (0.20, 0.0, 0.60),
+        (0.20, 0.0, 0.40),
+        max_step_m=math.inf,
+    ) == pytest.approx((0.20, 0.0, 0.40))

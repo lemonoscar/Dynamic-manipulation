@@ -149,13 +149,18 @@ def overhead_place_waypoint(
 ) -> tuple[float, float, float]:
     """Stage a place path: lift if needed, move above, then descend."""
 
-    values = (*current_xyz, *target_xyz, max_step_m, planar_tolerance_m)
+    values = (*current_xyz, *target_xyz, planar_tolerance_m)
     if not all(
         isinstance(value, Real) and math.isfinite(float(value))
         for value in values
     ):
         raise ValueError("overhead waypoint values must be finite numbers")
-    if max_step_m <= 0.0 or planar_tolerance_m <= 0.0:
+    if (
+        not isinstance(max_step_m, Real)
+        or math.isnan(float(max_step_m))
+        or max_step_m <= 0.0
+        or planar_tolerance_m <= 0.0
+    ):
         raise ValueError("overhead waypoint limits must be positive")
 
     current = np.asarray(current_xyz, dtype=np.float64)
