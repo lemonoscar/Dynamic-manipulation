@@ -304,6 +304,7 @@ def test_teacher_ik_holds_staged_absolute_goals_while_labels_remain_bounded() ->
     assert "'descend'" in full_goal_phases
     assert "'close'" in full_goal_phases
     assert "'lift'" in full_goal_phases
+    assert "'retreat'" in full_goal_phases
     assert "for value in raw_delta" in source
     assert "for value in next_position" in source
 

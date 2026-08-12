@@ -1778,6 +1778,11 @@ class ConveyorRuntimeV1:
                                     # for positive dz.
                                     "carry",
                                     "preplace",
+                                    # Post-release ascent has the same
+                                    # gravity-vs-local-waypoint failure mode
+                                    # as loaded lift. Solve the staged high
+                                    # pose while keeping the 3 mm action label.
+                                    "retreat",
                                 }
                             ),
                         )
