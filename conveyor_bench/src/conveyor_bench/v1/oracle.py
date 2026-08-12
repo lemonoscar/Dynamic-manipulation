@@ -108,6 +108,7 @@ class OracleConfig:
     pregrasp_clearance_m: float = 0.12
     descent_speed_mps: float = 0.075
     safe_carry_clearance_m: float = 0.16
+    retreat_clearance_m: float = 0.04
     position_tolerance_m: float = 0.015
     carry_position_tolerance_m: float | None = None
     grasp_tolerance_m: float = 0.010
@@ -182,6 +183,7 @@ class OracleConfig:
             "pregrasp_clearance_m",
             "descent_speed_mps",
             "safe_carry_clearance_m",
+            "retreat_clearance_m",
             "position_tolerance_m",
             "grasp_tolerance_m",
             "episode_timeout_s",
@@ -547,7 +549,7 @@ class DynamicSortOracle:
             )
 
         if self.phase is OraclePhase.RETREAT:
-            if self._near(observation.tcp_position_world, high_goal):
+            if self._retreat_clear(observation):
                 self._transition(
                     OraclePhase.VERIFY_PLACE, observation.sim_time_s
                 )
@@ -786,6 +788,19 @@ class DynamicSortOracle:
         ) or (
             self.config.release_from_high_goal
             and observation.target_in_goal
+        )
+
+    def _retreat_clear(self, observation: OracleObservation) -> bool:
+        required_vertical_clearance = (
+            0.5 * self.config.object_height_m
+            + self.config.retreat_clearance_m
+            + max(0.0, self.config.grasp_offset_world[2])
+        )
+        return (
+            observation.target_released
+            and observation.tcp_position_world[2]
+            - observation.target_position_world[2]
+            >= required_vertical_clearance
         )
 
     def _base_command(self) -> Vec3:

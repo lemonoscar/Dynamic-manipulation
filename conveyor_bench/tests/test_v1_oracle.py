@@ -368,6 +368,33 @@ def test_lift_completes_on_safe_height_despite_payload_xy_deflection() -> None:
     assert command.phase is OraclePhase.CARRY
 
 
+def test_retreat_completes_on_object_clearance_not_unneeded_high_goal() -> None:
+    oracle = DynamicSortOracle(config())
+    oracle._transition(OraclePhase.RETREAT, 0.0)
+
+    command = oracle.step(
+        observation(
+            0.10,
+            target_position_world=(0.50, 0.00, 0.30),
+            tcp_position_world=(0.80, 0.20, 0.40),
+            target_released=True,
+            target_in_goal=True,
+        )
+    )
+    assert command.phase is OraclePhase.RETREAT
+
+    command = oracle.step(
+        observation(
+            0.20,
+            target_position_world=(0.50, 0.00, 0.30),
+            tcp_position_world=(0.80, 0.20, 0.43),
+            target_released=True,
+            target_in_goal=True,
+        )
+    )
+    assert command.phase is OraclePhase.VERIFY_PLACE
+
+
 def run_success_trace(
     robot_mode: RobotMode = RobotMode.MOBILE_KINEMATIC,
 ):

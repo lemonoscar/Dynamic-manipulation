@@ -233,6 +233,7 @@ _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
+_TEACHER_RETREAT_CLEARANCE_M = 0.040
 _GRIPPER_OPEN_POSITION_M = 0.044
 _GRIPPER_CLOSED_POSITION_M = 0.0
 _GRIPPER_MOVE_DURATION_S = 0.70
@@ -964,6 +965,8 @@ class ConveyorRuntimeV1:
                 "cartesian_step_m": _TEACHER_CARTESIAN_STEP_M,
                 "vertical_step_m": _TEACHER_VERTICAL_STEP_M,
                 "lift_step_m": _TEACHER_LIFT_STEP_M,
+                "retreat_gate": "object_top_plus_vertical_clearance",
+                "retreat_clearance_m": _TEACHER_RETREAT_CLEARANCE_M,
                 "loaded_orientation_policy": (
                     "preserve_measured_overhead_grasp"
                 ),
@@ -3363,6 +3366,7 @@ class ConveyorRuntimeV1:
                 # lowered far rail while matching the measured loaded X5
                 # high-goal workspace.
                 safe_carry_clearance_m=0.025,
+                retreat_clearance_m=_TEACHER_RETREAT_CLEARANCE_M,
                 position_tolerance_m=0.020,
                 carry_position_tolerance_m=(
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
