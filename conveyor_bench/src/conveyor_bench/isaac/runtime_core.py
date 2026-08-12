@@ -219,7 +219,7 @@ _MOBILE_COMPACT_TCP_BASE = (
     -0.0005021194937836334,
     0.3825906961871689,
 )
-_MOBILE_CARRY_STANDOFF_M = 0.26
+_MOBILE_CARRY_STANDOFF_M = 0.50
 _MOBILE_CARRY_MIN_TRAVEL_M = 0.12
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_TURN_RATE_RADPS = 0.35
@@ -3652,11 +3652,6 @@ class _ConveyorRuntimeCore:
         root_pose: Pose = state["root_pose"]
         root_twist: Twist = state["root_twist"]
         if self._mobile_carry_stage is None:
-            goal_yaw, goal_root_xy = self._plan_mobile_carry_goal(
-                resolved, root_pose
-            )
-            self._mobile_goal_yaw_rad = goal_yaw
-            self._mobile_goal_root_xy = goal_root_xy
             # Preserve the base-frame wrist attitude that established and
             # lifted the grasp. A hard-coded world quaternion produced a
             # roughly 0.8 rad IK jump during retraction, driving the arm down
@@ -3666,8 +3661,6 @@ class _ConveyorRuntimeCore:
             )
             self._transition_mobile_carry("retract", sim_time_s)
 
-        assert self._mobile_goal_yaw_rad is not None
-        assert self._mobile_goal_root_xy is not None
         assert self._mobile_carry_orientation_base_wxyz is not None
         # Retraction and locomotion constrain the compact TCP position but do
         # not servo a fixed wrist attitude against floating-base motion.
@@ -3733,10 +3726,21 @@ class _ConveyorRuntimeCore:
                 sim_time_s,
                 0.30,
             ):
+                # Plan only after the loaded base has recovered and the arm
+                # is compact.  Planning before recovery preserved a stale
+                # start pose and placed the old 0.26 m goal inside the tray's
+                # collision envelope.
+                goal_yaw, goal_root_xy = self._plan_mobile_carry_goal(
+                    resolved, root_pose
+                )
+                self._mobile_goal_yaw_rad = goal_yaw
+                self._mobile_goal_root_xy = goal_root_xy
                 self._transition_mobile_carry("turn", sim_time_s)
                 stage = "turn"
             return compact_target, (0.0, 0.0, 0.0), f"carry_{stage}"
 
+        assert self._mobile_goal_yaw_rad is not None
+        assert self._mobile_goal_root_xy is not None
         current_yaw = _yaw_from_wxyz(root_pose.wxyz)
         yaw_error = _wrap_angle(
             self._mobile_goal_yaw_rad - current_yaw
