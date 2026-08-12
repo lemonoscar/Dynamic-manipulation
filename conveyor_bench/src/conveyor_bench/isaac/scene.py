@@ -54,7 +54,7 @@ TASK_AREA_GROUND_XYZ_M = (
     5.1261365028,
     -0.1381941050,
 )
-LOCAL_FLOOR_PATCH_PRIM_PATH = "/World/envs/env_0/LocalFloorPatch"
+ANALYTIC_GROUND_PRIM_PATH = "/World/ConveyorAnalyticGround"
 OBJECT_PRIM_BASENAMES = (
     "Object00",
     "Object01",
@@ -207,20 +207,21 @@ def _object_cfg(
 class ConveyorSceneCfg(ConveyorWorkcellCfg):
     """Validated workcell physics inside the Liangzhu NuRec backdrop."""
 
-    # The Liangzhu collision layer owns the floor. Keeping the preview ground
-    # would create two contact surfaces at nearly the same height.
-    ground = None
-
-    local_floor_patch = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/LocalFloorPatch",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.0, -0.01)),
-        spawn=sim_utils.CuboidCfg(
+    # Keep the locomotion checkpoint on the same infinite analytic plane used
+    # by its standalone gate.  A finite cuboid parented below the translated
+    # environment changed the settled root height and made the gait cycle in
+    # place.  The global plane is authored directly at the Liangzhu ground
+    # height and stays invisible behind native NuRec rendering.
+    ground = AssetBaseCfg(
+        prim_path=ANALYTIC_GROUND_PRIM_PATH,
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.0, 0.0, TASK_AREA_GROUND_XYZ_M[2])
+        ),
+        spawn=sim_utils.GroundPlaneCfg(
             visible=False,
-            size=(3.0, 3.4, 0.02),
-            collision_props=_collision(),
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 static_friction=1.0,
-                dynamic_friction=0.85,
+                dynamic_friction=1.0,
                 restitution=0.0,
             ),
         ),
@@ -445,7 +446,7 @@ def place_workcell_in_liangzhu_task_area(
     return {
         "environment_prim": env_prim_path,
         "workcell_ground_world_xyz_m": list(ground_xyz_m),
-        "local_floor_patch_prim": LOCAL_FLOOR_PATCH_PRIM_PATH,
+        "analytic_ground_prim": ANALYTIC_GROUND_PRIM_PATH,
         "nurec_scene_translation_xyz_m": [0.0, 0.0, 0.0],
     }
 
@@ -500,10 +501,10 @@ def disable_liangzhu_background_collision(
 ) -> dict[str, Any]:
     """Use the analytic task floor after proving the scanned layer exists."""
 
-    floor = stage.GetPrimAtPath(LOCAL_FLOOR_PATCH_PRIM_PATH)
+    floor = stage.GetPrimAtPath(ANALYTIC_GROUND_PRIM_PATH)
     if not floor.IsValid():
         raise RuntimeError(
-            f"local floor patch is missing: {LOCAL_FLOOR_PATCH_PRIM_PATH}"
+            f"analytic ground is missing: {ANALYTIC_GROUND_PRIM_PATH}"
         )
     disabled: list[str] = []
     for prim_path in collision_mesh_prims:
@@ -523,7 +524,7 @@ def disable_liangzhu_background_collision(
         "policy": "validated_then_disabled_for_collection",
         "reason": "avoid_duplicate_scanned_floor_contacts",
         "render_visibility": "invisible",
-        "replacement_collision_prim": LOCAL_FLOOR_PATCH_PRIM_PATH,
+        "replacement_collision_prim": ANALYTIC_GROUND_PRIM_PATH,
         "disabled_collision_mesh_prims": disabled,
     }
 
@@ -536,7 +537,7 @@ __all__ = [
     "OVERVIEW_CAMERA_OFFSET_XYZ",
     "OVERVIEW_CAMERA_OFFSET_WXYZ",
     "TASK_AREA_GROUND_XYZ_M",
-    "LOCAL_FLOOR_PATCH_PRIM_PATH",
+    "ANALYTIC_GROUND_PRIM_PATH",
     "OBJECT_PRIM_BASENAMES",
     "make_conveyor_scene_cfg",
     "disable_liangzhu_background_collision",

@@ -34,7 +34,9 @@ def test_scene_layers_nurec_over_the_validated_workcell() -> None:
     source = ast.unparse(scene)
 
     assert [ast.unparse(base) for base in scene.bases] == ["ConveyorWorkcellCfg"]
-    assert "ground = None" in source
+    assert "ground = AssetBaseCfg" in source
+    assert "prim_path=ANALYTIC_GROUND_PRIM_PATH" in source
+    assert "TASK_AREA_GROUND_XYZ_M[2]" in source
     assert "include_room_context=False" in source
     assert "include_local_sort_trays=True" in source
     assert "liangzhu_scene = None" in source
@@ -90,7 +92,9 @@ def test_runtime_reuses_core_and_adds_scene_provenance() -> None:
     assert "UsdGeom.Imageable(prim).MakeInvisible()" in scene_source
     assert '"render_visibility": "invisible"' in scene_source
     assert '"validated_then_disabled_for_collection"' in scene_source
-    assert "LOCAL_FLOOR_PATCH_PRIM_PATH" in scene_source
+    assert "ANALYTIC_GROUND_PRIM_PATH" in scene_source
+    assert "sim_utils.GroundPlaneCfg(" in scene_source
+    assert "dynamic_friction=1.0" in scene_source
 
 
 def test_task_frame_is_translated_before_teacher_control() -> None:
