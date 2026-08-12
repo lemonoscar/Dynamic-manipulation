@@ -229,6 +229,7 @@ _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
 _TEACHER_LIFT_STEP_M = 0.002
+_TEACHER_JOINT_STEP_RAD = (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
 _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
@@ -965,6 +966,7 @@ class ConveyorRuntimeV1:
                 "cartesian_step_m": _TEACHER_CARTESIAN_STEP_M,
                 "vertical_step_m": _TEACHER_VERTICAL_STEP_M,
                 "lift_step_m": _TEACHER_LIFT_STEP_M,
+                "joint_step_rad": list(_TEACHER_JOINT_STEP_RAD),
                 "retreat_gate": "object_top_plus_vertical_clearance",
                 "retreat_clearance_m": _TEACHER_RETREAT_CLEARANCE_M,
                 "loaded_orientation_policy": (
@@ -4526,17 +4528,22 @@ class ConveyorRuntimeV1:
         commanded = self._arm_target
         if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
             per_joint = (
-                (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
+                _TEACHER_JOINT_STEP_RAD
                 if carrying_object
                 else (0.020,) * len(ARM_JOINT_NAMES)
             )
-            delta_limit = torch.tensor(
-                [per_joint],
-                dtype=torch.float32,
-                device=self.sim.device,
-            )
         else:
-            delta_limit = torch.full_like(commanded, 0.08)
+            # Fixed-base demonstrations feed the same finite-frequency VLA
+            # contract as the mobile path. The former 0.08 rad/tick target
+            # jump made measured lift/carry motion 5--10x faster than the
+            # recorded 2--3 mm Cartesian action, creating inconsistent
+            # state/action pairs despite bounded labels.
+            per_joint = _TEACHER_JOINT_STEP_RAD
+        delta_limit = torch.tensor(
+            [per_joint],
+            dtype=torch.float32,
+            device=self.sim.device,
+        )
         # Project the stored command onto the segment between the measured
         # joint and the new IK solution.  Without this anti-windup step, a
         # target accumulated during descent can remain on the wrong side of

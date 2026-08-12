@@ -130,12 +130,17 @@ def test_runtime_locks_checkpoint_timing_and_cpu_fabric() -> None:
     assert "place_position_kinematics" not in resolve_source
 
 
-def test_loaded_arm_slew_preserves_the_audited_payload_envelope() -> None:
+def test_arm_slew_preserves_the_audited_teacher_envelope() -> None:
+    tree = _runtime_tree()
     source = ast.unparse(_method(_runtime_tree(), "_slew_arm_target"))
 
-    assert "(0.008, 0.01, 0.01, 0.01, 0.008, 0.01)" in source
+    assert _literal_constant(tree, "_TEACHER_JOINT_STEP_RAD") == pytest.approx(
+        (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
+    )
+    assert "per_joint = _TEACHER_JOINT_STEP_RAD" in source
     assert "if carrying_object" in source
     assert "else (0.02,) * len(ARM_JOINT_NAMES)" in source
+    assert "torch.full_like(commanded, 0.08)" not in source
 
 
 def test_mobile_place_lifts_before_translating_to_the_tray() -> None:
