@@ -230,6 +230,8 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD = 0.16
 _MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD = 0.35
 _MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065
+_MOBILE_PLACE_HOLD_START_ERROR_M = 0.025
+_MOBILE_PLACE_HOLD_STOP_ERROR_M = 0.005
 _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
@@ -1023,6 +1025,11 @@ class _ConveyorRuntimeCore:
                 "carry_minimum_planned_travel_m": (
                     _MOBILE_CARRY_MIN_TRAVEL_M
                 ),
+                "place_base_hold": {
+                    "command_forward_mps": 0.20,
+                    "start_error_m": _MOBILE_PLACE_HOLD_START_ERROR_M,
+                    "stop_error_m": _MOBILE_PLACE_HOLD_STOP_ERROR_M,
+                },
                 "training_minimum_realized_displacement_m": {
                     "approach_conveyor": 0.20,
                     "carry_to_sort_bin": 0.10,
@@ -3155,6 +3162,7 @@ class _ConveyorRuntimeCore:
         self._mobile_goal_root_xy: tuple[float, float] | None = None
         self._mobile_forward_policy_action_seed: torch.Tensor | None = None
         self._mobile_navigation_drive_active = False
+        self._mobile_place_drive_active = False
         self._mobile_carry_orientation_base_wxyz: (
             tuple[float, float, float, float] | None
         ) = None
@@ -3911,7 +3919,7 @@ class _ConveyorRuntimeCore:
                 self._transition_mobile_carry("place", sim_time_s)
                 return (
                     self._mobile_place_target(oracle_target, state),
-                    (0.0, 0.0, 0.0),
+                    self._mobile_place_base_command(root_pose),
                     "carry",
                 )
             return compact_target, (0.0, 0.0, 0.0), "carry_settle"
@@ -3919,7 +3927,7 @@ class _ConveyorRuntimeCore:
         assert stage == "place"
         return (
             self._mobile_place_target(oracle_target, state),
-            (0.0, 0.0, 0.0),
+            self._mobile_place_base_command(root_pose),
             "carry",
         )
 
@@ -4038,6 +4046,33 @@ class _ConveyorRuntimeCore:
             return 0.0
         return max(-0.35, min(0.35, 1.5 * yaw_error_rad))
 
+    def _mobile_place_base_command(
+        self, root_pose: Pose
+    ) -> tuple[float, float, float]:
+        """Hold the parked root against loaded-arm reaction forces."""
+
+        assert self._mobile_goal_root_xy is not None
+        yaw = _yaw_from_wxyz(root_pose.wxyz)
+        delta_x = self._mobile_goal_root_xy[0] - root_pose.xyz[0]
+        delta_y = self._mobile_goal_root_xy[1] - root_pose.xyz[1]
+        forward_error = math.cos(yaw) * delta_x + math.sin(yaw) * delta_y
+        threshold = (
+            _MOBILE_PLACE_HOLD_STOP_ERROR_M
+            if self._mobile_place_drive_active
+            else _MOBILE_PLACE_HOLD_START_ERROR_M
+        )
+        drive_active = forward_error > threshold
+        if (
+            drive_active
+            and not self._mobile_place_drive_active
+            and self._mobile_forward_policy_action_seed is not None
+        ):
+            self._last_policy_action.copy_(
+                self._mobile_forward_policy_action_seed
+            )
+        self._mobile_place_drive_active = drive_active
+        return (0.20, 0.0, 0.0) if drive_active else (0.0, 0.0, 0.0)
+
     def _mobile_turn_angular_speed_tolerance_radps(
         self, resolved: _ResolvedTask
     ) -> float:
@@ -4122,6 +4157,8 @@ class _ConveyorRuntimeCore:
             self._last_policy_action.copy_(
                 self._mobile_forward_policy_action_seed
             )
+        if stage == "place":
+            self._mobile_place_drive_active = False
         self._mobile_carry_stage = stage
         self._mobile_carry_stage_started_s = sim_time_s
         self._mobile_carry_stable_since_s = None
