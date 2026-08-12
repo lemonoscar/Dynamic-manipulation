@@ -11,14 +11,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from conveyor_bench.m0_mobile import (
+from conveyor_bench.conveyorvla.config import (
     MODEL_FAMILY,
     MODEL_NAME,
     MODEL_VARIANT,
     M0MobileNormalizer,
     load_m0_mobile_config,
 )
-from conveyor_bench.m0_online import (
+from conveyor_bench.conveyorvla.online import (
     ONLINE_SCHEMA_VERSION,
     M0OnlineClient,
     M0OnlineError,
@@ -34,8 +34,8 @@ from conveyor_bench.m0_online import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SERVER_SCRIPT = PROJECT_ROOT / "scripts" / "serve_m0_mobile.py"
-SPEC = importlib.util.spec_from_file_location("serve_m0_mobile", SERVER_SCRIPT)
+SERVER_SCRIPT = PROJECT_ROOT / "scripts" / "serve.py"
+SPEC = importlib.util.spec_from_file_location("serve", SERVER_SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 SERVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SERVER)

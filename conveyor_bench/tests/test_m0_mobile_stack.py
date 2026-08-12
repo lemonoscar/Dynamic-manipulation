@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from conveyor_bench.m0_mobile import (
+from conveyor_bench.conveyorvla.config import (
     CANONICAL_MODEL_ROOT_ENV,
     LEGACY_MODEL_ROOT_ENV,
     MODEL_NAME,

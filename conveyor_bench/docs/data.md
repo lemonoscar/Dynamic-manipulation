@@ -1,0 +1,146 @@
+# 数据格式与质量门禁
+
+## 1. 两层数据
+
+采集先生成审计友好的 canonical raw，再转换为训练友好的 LeRobot v3：
+
+```text
+Isaac episode
+  → canonical JSON/JSONL + 三路 PNG
+  → strict validation / audit / camera gate / export
+  → temporal JSONL
+  → LeRobot v3 parquet + H.264 MP4
+```
+
+raw 是证据源，LeRobot 是派生训练集。转换器不得改写 raw canonical 文件。
+
+## 2. Canonical episode
+
+一个已发布 episode 至少包含：
+
+```text
+episode/
+├── manifest.json
+├── summary.json
+├── steps.jsonl
+├── objects.jsonl
+├── action_chunks.jsonl
+├── events.jsonl
+├── camera_frames.jsonl
+├── frames/
+│   ├── head_rgb/*.png
+│   ├── wrist_rgb/*.png
+│   └── overview_rgb/*.png
+└── exports/
+```
+
+关键含义：
+
+- `manifest.json`：任务、seed、资产、相机、场景和 teacher provenance；
+- `summary.json`：成功、失败原因、阶段和计数；
+- `steps.jsonl`：50 Hz 机器人状态、canonical action 和事件状态；
+- `objects.jsonl`：目标/干扰物真值，仅用于教师和审计；
+- `camera_frames.jsonl`：25 Hz 捕获 tick、路径、尺寸、角色和质量统计；
+- `action_chunks.jsonl`：模型动作块身份和时间；
+- `events.jsonl`：抓取、释放、失败、阶段切换等离散事件。
+
+目录先以 `.inprogress` 写入，完整关闭并 `fsync` 后原子发布。中断目录不是有效 episode。
+
+## 3. Temporal export
+
+ConveyorVLA AL0 的 temporal 记录使用：
+
+- head `[t-2, t]`；
+- wrist `[t-2, t]`；
+- 当前 `state28`；
+- 未来 `20 × 10` 动作；
+- 25 Hz action rate，覆盖 `0.8 s`；
+- 5 Hz query，query stride 为 5 个 model tick。
+
+四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
+
+未来 TCP 行是相对 observation 时刻的独立目标，不是必须从第 0 行依次积分的增量。
+因此在线推理延迟导致前缀过期时，剩余目标仍有明确定义。
+
+## 4. LeRobot v3
+
+转换环境固定：
+
+- Python 3.10；
+- `lerobot==0.4.4`；
+- H.264；
+- PyAV 解码；
+- `use_videos=true`。
+
+视频特征：
+
+| key | 来源 |
+| --- | --- |
+| `observation.images.head_tminus2` | head，历史帧 |
+| `observation.images.head` | head，当前帧 |
+| `observation.images.wrist_tminus2` | wrist，历史帧 |
+| `observation.images.wrist` | wrist，当前帧 |
+
+另有 `observation.state`（28）、扁平化 `action`（20×10）和语言 `task`。
+
+## 5. 转换
+
+转换输入只能是已经通过全部门禁的成功根列表：
+
+```bash
+python scripts/convert_dataset.py \
+  --episode-list outputs/collection/successful_episode_roots.txt \
+  --output-root outputs/lerobot
+```
+
+小规模 smoke 使用 `--max-episodes 1`。输出目录必须是新的独立目录，转换器不会把
+数据上传到 Hugging Face，也不会依赖网络。
+
+## 6. 完整性检查
+
+每次转换至少验证：
+
+1. episode ID、帧计数和 task 索引一致；
+2. state 为 28 维、action 为 200 维扁平向量；
+3. 四个视频 feature 均存在；
+4. 每个视频至少首帧可由 PyAV 解码；
+5. 解码图像尺寸、dtype 和通道顺序正确；
+6. dataset frame count 与 manifest 一致；
+7. state 统计量有限，标准差下限有效；
+8. raw canonical 哈希在转换前后不变。
+
+建议除四路首帧外，再对第一/中间/最后 episode 抽取中间帧，检查时间对应和视觉内容。
+
+## 7. 分类规则
+
+当前只训练抓取，不训练物品分类。数据按以下维度分层统计，而不是作为分类标签：
+
+- `target_asset_id`；
+- `belt_speed_mps`；
+- `robot_mode`；
+- `seed`；
+- `task_success`；
+- `training_eligible`；
+- 场景、相机和 teacher profile 哈希。
+
+专家成功、任务失败和结构损坏三类必须分开：
+
+| 类型 | 保留 | 进入专家训练 |
+| --- | --- | --- |
+| 成功且全部门禁通过 | 是 | 是 |
+| 任务失败但数据完整 | 是，诊断区 | 否 |
+| runtime/结构/哈希/相机失败 | 隔离 | 否 |
+
+## 8. 数据兼容
+
+`conveyor-bench-v1` 是现有 raw 的稳定协议名，因此源代码迁移不会重写它。读取器必须
+按 schema 显式校验。旧 teacher、旧场景或 assisted 数据即使字段可读，也可能因当前
+训练合同不兼容而被 exporter 拒绝。
+
+若未来必须改变 canonical 字段：
+
+1. 写清变化和兼容边界；
+2. 增加新 schema version；
+3. 提供只读 migration 或明确拒绝；
+4. 禁止在原目录就地改写历史 raw；
+5. 重新执行 LeRobot round-trip。

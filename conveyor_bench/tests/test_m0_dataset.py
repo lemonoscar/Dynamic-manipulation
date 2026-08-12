@@ -9,8 +9,8 @@ import pytest
 pytest.importorskip("torch")
 Image = pytest.importorskip("PIL.Image")
 
-from conveyor_bench.m0_dataset import M0MobileDataset, make_m0_mobile_loader
-from conveyor_bench.m0_mobile import M0MobileError
+from conveyor_bench.conveyorvla.dataset import M0MobileDataset, make_m0_mobile_loader
+from conveyor_bench.conveyorvla.config import M0MobileError
 
 
 ACTION_MASK = [True, False, True, True, True, True, True, True, True, True]

@@ -16,7 +16,7 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
     write_lerobot_episodes,
 )
 from conveyor_bench.conveyorvla.temporal import load_temporal_config
-from conveyor_bench.m0_mobile import M0MobileError, M0MobileNormalizer
+from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
 
 def _record(config: dict, tick: int) -> dict:

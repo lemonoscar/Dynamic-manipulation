@@ -1,4 +1,4 @@
-"""Small synchronous MP4 writer used by the single-environment V0."""
+"""Small synchronous MP4 writer for single-environment collection."""
 
 from __future__ import annotations
 

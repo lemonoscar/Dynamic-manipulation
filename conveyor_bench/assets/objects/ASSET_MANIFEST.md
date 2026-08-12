@@ -1,4 +1,4 @@
-# ConveyorBench V1 procedural object library
+# ConveyorBench procedural object library
 
 This directory contains the canonical, machine-readable registry for the first
 eight conveyor parts. The geometry is constructed at runtime from project-local

@@ -1,0 +1,95 @@
+{
+  "schema_version": "conveyor-bench-config-1",
+  "episode_protocol_version": "conveyor-bench-v1",
+  "scene": {
+    "scene_id": "transverse_dynamic_sort_liangzhu_nurec_v3",
+    "renderer": "isaac_rtx_native_nurec",
+    "composition": "registered_nurec_background_with_isaac_foreground",
+    "task_area": "pct_liangzhu_coke_grasp_area",
+    "runtime_downloads_allowed": false
+  },
+  "assets": {
+    "robot": "assets/robots/go2_x5/go2_x5.urdf",
+    "robot_reference": {
+      "repository": "arm-vla-grasp-sim",
+      "branch": "pct_scene",
+      "commit": "c7fe62c7f9f8dcda89fef9c7e363594d7e486375"
+    },
+    "small_asset_lock": "assets/asset_lock.json",
+    "sidecar_root_environment": "CONVEYOR_BENCH_ASSET_ROOT",
+    "sidecar_manifest": "TRANSFER_MANIFEST.sha256",
+    "sidecar_delivery": "ssh_only"
+  },
+  "conveyor": {
+    "center_xyz_m": [0.70, 0.0, 0.31],
+    "size_xyz_m": [0.252, 1.56, 0.06],
+    "top_z_m": 0.34,
+    "transport_direction_xyz": [0.0, -1.0, 0.0],
+    "training_speed_mps": 0.01,
+    "surface_color_linear_rgb": [0.015, 0.10, 0.035]
+  },
+  "robot": {
+    "type": "go2_x5_mobile_manipulator",
+    "tcp_parent": "arm_link6",
+    "tcp_offset_xyz_m": [0.15757, 0.0, 0.0],
+    "gripper": "arx_finray",
+    "allowed_modes": ["fixed_base", "whole_body_policy"]
+  },
+  "cameras": {
+    "calibration_source": "arm-vla-grasp-sim/pct_scene",
+    "policy_cameras": ["head_rgb", "wrist_rgb"],
+    "observer_cameras": ["overview_rgb"],
+    "policy_resolution_wh": [640, 480],
+    "overview_resolution_wh": [480, 320],
+    "raw_rate_hz": 25,
+    "head_mount": {
+      "parent": "base",
+      "xyz_m": [0.28, 0.0, 0.07],
+      "wxyz": [0.5, -0.5, 0.5, -0.5]
+    },
+    "wrist_mount": {
+      "parent": "arm_link6",
+      "xyz_m": [0.0666580792, 0.0028071889, 0.0935779972],
+      "wxyz": [0.3377891849, -0.6214992221, 0.6185057335, -0.3421810063]
+    },
+    "intrinsics": {
+      "fx_px": 383.44608095,
+      "fy_px": 383.52724198,
+      "cx_px": 324.33479864,
+      "cy_px": 238.90275478
+    }
+  },
+  "task": {
+    "current_target_assets": ["cola"],
+    "destination_zone": "sort_bin_blue",
+    "subtasks": ["navigation", "dynamic_pick_and_place"],
+    "teacher_profile": "overhead_target_follow_pick_place_v3",
+    "moving_grasp_strategy": "target_relative_follow_then_descend",
+    "target_prediction_horizon_s": 0.0
+  },
+  "rates_hz": {
+    "physics": 400,
+    "control": 50,
+    "camera": 25,
+    "model": 25,
+    "policy_query": 5
+  },
+  "collection": {
+    "physical_gpu_allowlist": [2, 3],
+    "raw_format": "canonical_episode_png",
+    "training_format": "lerobot_v3_h264_pyav",
+    "formal_target_episodes": 384,
+    "training_eligible_requires": [
+      "task_success",
+      "canonical_validation",
+      "camera_gate",
+      "quality_audit",
+      "lossless_export"
+    ]
+  },
+  "status": {
+    "fixed_base_dynamic_pick_place": "passed",
+    "whole_body_navigation": "blocked_on_locomotion_gate",
+    "formal_mobile_collection": "not_started"
+  }
+}

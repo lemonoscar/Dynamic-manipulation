@@ -5,18 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "conveyor-bench"
 version = "0.1.0"
-description = "Protocol and recording core for the Go2-X5 conveyor benchmark."
+description = "Go2-X5 conveyor simulation, collection, and ConveyorVLA training."
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 aml = ["torch>=2.6"]
-m0 = [
-  "torch>=2.6",
-  "transformers>=4.57",
-  "safetensors>=0.6",
-  "Pillow>=10",
-]
 conveyorvla = [
   "torch>=2.6",
   "transformers>=4.57",

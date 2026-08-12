@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from conveyor_bench.isaac.arm_kinematics import CalibratedArmKinematics
-from conveyor_bench.v1.oracle import (
+from conveyor_bench.schema.oracle import (
     TOP_DOWN_X_CLOSING_YAW_DEG,
     top_down_tcp_orientation_wxyz,
 )

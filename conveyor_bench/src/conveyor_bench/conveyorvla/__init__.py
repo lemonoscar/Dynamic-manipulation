@@ -1,9 +1,4 @@
-"""Public ConveyorVLA contracts.
-
-Historical ``m0_*`` modules remain importable for checkpoint compatibility.
-New code should use this package for versioned ConveyorVLA data and runtime
-contracts.
-"""
+"""Public ConveyorVLA model, temporal-data, and streaming contracts."""
 
 from .streaming import ActionStreamBuffer, StreamChunk, StreamMerge
 from .lerobot_v3 import (

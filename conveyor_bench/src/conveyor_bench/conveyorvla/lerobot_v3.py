@@ -14,7 +14,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 import numpy as np
 
-from conveyor_bench.m0_mobile import M0MobileError, M0MobileNormalizer
+from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
 from .temporal import (
     ACTION_DIM,
@@ -36,7 +36,7 @@ LEROBOT_V3_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-lerobot-v3-config-1"
 DEFAULT_LEROBOT_V3_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs"
-    / "conveyorvla_al0_lerobot_v3.json"
+    / "dataset.json"
 )
 VIDEO_FEATURE_KEYS = (
     "observation.images.head_tminus2",

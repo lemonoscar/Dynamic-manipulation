@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import pytest
 
-from conveyor_bench.m0_dit import (
+from conveyor_bench.conveyorvla.dit import (
     GO2_X5_REINITIALIZED_ACTION_KEYS,
     M0DiTActionHead,
     M0DiTConfig,

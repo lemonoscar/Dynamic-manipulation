@@ -18,8 +18,8 @@ import numpy as np
 # and ``grasp_tcp_fixed_joint`` in the canonical local URDF.
 _TCP_OFFSET_X_M = 0.15757
 _BASE_TRANSFORM_XYZ = (0.12, 0.0, 0.43)
-# Arm mount relative to the Go2 root (``base``) link.  V0 uses the calibrated
-# world transform above because its root is fixed at z=0.38 m.  V1 uses this
+# Arm mount relative to the Go2 root (``base``) link.  Fixed-base diagnostics
+# use the calibrated world transform above; the mobile runtime uses this
 # local transform and converts world targets through the live robot root pose.
 _ROOT_FRAME_ARM_MOUNT_XYZ = (0.12, 0.0, 0.05)
 _JOINT_ORIGINS = (

@@ -7,13 +7,13 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from conveyor_bench.m0_dit import (
+from conveyor_bench.conveyorvla.dit import (
     GO2_X5_REINITIALIZED_ACTION_KEYS,
     M0DiTActionHead,
     M0DiTConfig,
 )
-from conveyor_bench.m0_mobile import load_m0_mobile_config
-from conveyor_bench.m0_policy import (
+from conveyor_bench.conveyorvla.config import load_m0_mobile_config
+from conveyor_bench.conveyorvla.policy import (
     ConveyorVLAAL0TemporalPolicy,
     M0MobilePolicy,
     Qwen3VLInterface,

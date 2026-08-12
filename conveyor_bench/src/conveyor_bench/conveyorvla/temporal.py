@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from conveyor_bench.m0_mobile import M0MobileError, M0MobileNormalizer
+from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
 
 TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-2"
@@ -18,7 +18,7 @@ GRIPPER_ACTION_SOURCE = "future_measured_joint_open_fraction"
 DEFAULT_TEMPORAL_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs"
-    / "conveyorvla_al0_temporal.json"
+    / "temporal.json"
 )
 CAMERA_IDS = ("head_rgb", "wrist_rgb")
 HISTORY_OFFSETS_MODEL_TICKS = (-2, 0)

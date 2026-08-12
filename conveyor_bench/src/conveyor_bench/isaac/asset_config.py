@@ -205,7 +205,7 @@ def make_go2_x5_policy_cfg() -> ArticulationCfg:
     """Return the checkpoint-matched floating-base locomotion articulation.
 
     This is the single source of truth shared by the standalone locomotion
-    gate and the V1 whole-body runtime.  The PCT reference deliberately uses
+    gate and the whole-body runtime.  The PCT reference deliberately uses
     the canonical URDF here so stale USD layers cannot replace its robot
     geometry, joints, materials, or collision meshes.
     """

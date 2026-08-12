@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from conveyor_bench.v1.exporters import (
+from conveyor_bench.schema.exporters import (
     ExportError,
     canonical_to_m0_mobile_action,
     iter_m0_mobile_records,
     m0_mobile_to_canonical_action,
 )
-from conveyor_bench.v1.stationary import STATIONARY_SCENARIOS
+from conveyor_bench.schema.stationary import STATIONARY_SCENARIOS
 
 
 def _write_json(path: Path, value) -> None:

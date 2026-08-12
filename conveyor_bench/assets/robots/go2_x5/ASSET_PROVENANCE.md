@@ -22,7 +22,7 @@ This directory is a self-contained local snapshot used by ConveyorBench.
   `arm_link6 + (0.15757, 0, 0) m`. The original `arm_link7` and `arm_link8`
   collision meshes remain active and receive PCT's `convexDecomposition`,
   0.002 m contact offset, and zero rest offset before the first physics reset.
-- Runtime camera calibration is vendored in `scene_v1.py`: the head camera is
+- Runtime camera calibration is vendored in `isaac/workcell.py`: the head camera is
   parented to `base`, and the wrist camera to `arm_link6`, using the exact PCT
   ROS optical-frame transforms and D436 640x480 OpenCV intrinsics. No sibling
   repository is imported at runtime.

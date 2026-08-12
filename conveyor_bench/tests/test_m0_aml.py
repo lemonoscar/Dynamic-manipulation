@@ -2,7 +2,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from conveyor_bench.m0_aml import AMLActionHead, AMLConfig
+from conveyor_bench.conveyorvla.aml import AMLActionHead, AMLConfig
 
 
 class _PerfectActionHead(AMLActionHead):

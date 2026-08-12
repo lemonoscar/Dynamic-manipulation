@@ -1,72 +1,24 @@
 # Dynamic Manipulation
 
-Dynamic Manipulation 是面向 Go2-X5 移动操作机器人的动态传送带抓取与分拣项目。
-当前核心实现为 **ConveyorBench**：它提供 Isaac Sim / Isaac Lab 场景、机器人与
-工位资产、动态抓取任务协议、轨迹记录、数据校验，以及面向 DynamicVLA 和
-ConveyorVLA 的离线导出工具。当前策略基线的正式名称是 **ConveyorVLA AL0**；
-仓库中的 `m0_*` 仅保留为既有数据、检查点和在线协议的兼容标识。
+Dynamic Manipulation 面向 Go2-X5 移动操作机器人，研究在横向传送带上完成导航、
+动态跟踪抓取和放置的视觉语言动作策略。当前策略称为 **ConveyorVLA AL0**，
+仿真与数据平台位于 [`conveyor_bench/`](conveyor_bench/)。
 
-## 项目内容
+仓库只维护一套现行实现。过去的 V0/V1/V2/V3 是迭代历史，不再以并列源码存在：
 
-- V0：单目标、固定机身的动态传送带抓取基线。
-- V1：多物体动态分拣任务，支持 `fixed_base` 消融模式与
-  `whole_body_policy` 移动操作模式。
-- V1 静态诊断：传送带速度严格为零的单物体抓取—携带—投放任务，冻结
-  `3 train / 1 val / 1 test` 五个场景，用于先验证 AL0 的基础操作能力；不计入
-  动态 benchmark 分数。
-- V2：双目标连续分拣和强制持物移动的远端投放任务，提供 2 个场景、7 个允许
-  组合、严格事件/位移校验及 AL0/DynamicVLA 上下文投影。
-- V3：在 Liangzhu 原生 NuRec/3DGS 背景中组合 Isaac 动态机器人、深绿色传送带、
-  真实可乐罐视觉资产和分拣盒，并严格沿用 V1 canonical episode 协议。
-- 统一的 400 Hz 物理、50 Hz 控制和 25 Hz 相机/模型时钟。
-- Go2-X5 的本地 USD、URDF、mesh 与移动策略资产。
-- episode 原子写入、严格校验、质量审计和相机时变门禁。
-- DynamicVLA 与 ConveyorVLA AL0 两种离线数据视图；后者继续读取 legacy
-  `m0_mobile_v1` profile。
-- AL0 50 Hz 因果动作块导出，以及不依赖外部仓库的最小 AML 训练烟测。
-- AL0 temporal v2：head/wrist 双帧运动观测、20×10 的 25 Hz 独立未来目标、
-  generation-aware 流式合并和低速单物体成功配额采集器。
-- AL0 在线服务、阶段门禁与 Go2-X5/Isaac 闭环入口，完整记录模型身份、
-  service/AL0 控制边界和请求时延。
+- 旧实现由 Git commit/tag 保存；
+- 已有 episode 继续使用不可变的 `conveyor-bench-v1` 数据协议；
+- LeRobot 的 `v3.0` 表示数据格式，不表示第三套 benchmark；
+- 当前运行时统一使用 Liangzhu NuRec 背景、Isaac 动态前景和 PCT 对齐的 Go2-X5。
 
-> 本仓库包含基准框架和本地资产，不包含训练完成的 VLA 模型。Isaac Sim、
-> Isaac Lab、PyTorch、NumPy 和 OpenCV 等运行环境需要在宿主机上准备。
+## 当前状态
 
-> 许可证边界：whole-body 运行所需的本地 `policy.pt` 尚无已确认的权重专属
-> 再分发许可证。它可用于当前项目的本地研究与验收，但在公开分发该二进制前，
-> 必须取得授权或替换为许可明确的权重；审计记录见
-> `conveyor_bench/assets/policies/go2_x5_pct_dog_only/PROVENANCE.md`。
+- 固定底盘、单可乐罐、`0.01 m/s` 动态抓取—投放教师正例已通过；
+- 相机、场景、sidecar 资产和 raw → LeRobot v3 转换链路已经接入；
+- 完整移动任务仍受 locomotion gate 阻塞，不能宣称导航闭环已经成功；
+- 当前正式代码只启用 `cola`，四零件 × 两速度 × 48 条的 384 条矩阵仍是后续目标。
 
-## 目录结构
-
-```text
-Dynamic/
-├── conveyor_bench/
-│   ├── assets/                 # 机器人、工位、物体、分拣盒与策略资产
-│   ├── configs/                # V0/V1/V2 配置与 V3 NuRec/训练格式快照
-│   ├── scripts/                # 预检、仿真、采集、校验、审计与导出入口
-│   ├── src/conveyor_bench/     # 协议、控制、记录和 Isaac 运行时实现
-│   ├── tests/                  # 无需启动 Isaac Sim 的单元测试
-│   ├── BENCHMARK_V1_SPEC.md    # V1 冻结规范
-│   ├── BENCHMARK_V2_SPEC.md    # V2 场景、任务与评价规范
-│   ├── BENCHMARK_V3_3DGS_SPEC.md # V3 原生 NuRec/Isaac 组合规范
-│   ├── COLLECTION_V2_GUIDE.md  # V2 采集、校验和导出手册
-│   └── README.md               # 完整使用与采集说明
-```
-
-详细的任务定义、物理门禁、数据格式和完整采集命令请阅读
-[ConveyorBench 使用说明](conveyor_bench/README.md)。V1 的冻结协议见
-[BENCHMARK_V1_SPEC.md](conveyor_bench/BENCHMARK_V1_SPEC.md)，采集与验收流程见
-[COLLECTION_GUIDE.md](conveyor_bench/COLLECTION_GUIDE.md)。V2 规范与采集入口见
-[BENCHMARK_V2_SPEC.md](conveyor_bench/BENCHMARK_V2_SPEC.md) 和
-[COLLECTION_V2_GUIDE.md](conveyor_bench/COLLECTION_V2_GUIDE.md)。
-V3 的资产边界、组合渲染和验收门禁见
-[BENCHMARK_V3_3DGS_SPEC.md](conveyor_bench/BENCHMARK_V3_3DGS_SPEC.md)。
-
-## 环境准备
-
-推荐使用已经安装 Isaac Sim、Isaac Lab、PyTorch 和 OpenCV 的 Python 3.11
-环境：
+## 快速入口
 
 ```bash
 cd conveyor_bench
@@ -75,93 +27,14 @@ python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-协议、记录器和大部分校验逻辑可以脱离 Isaac Sim 测试：
+完整说明：
 
-```bash
-PYTHONDONTWRITEBYTECODE=1 \
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-python -m pytest -p no:cacheprovider
-```
+- [项目与命令](conveyor_bench/README.md)
+- [任务和场景规范](conveyor_bench/docs/benchmark.md)
+- [代码与模型架构](conveyor_bench/docs/architecture.md)
+- [数据格式](conveyor_bench/docs/data.md)
+- [采集、训练和测评操作](conveyor_bench/docs/operations.md)
+- [状态与已知问题](conveyor_bench/docs/status.md)
+- [版本迁移说明](conveyor_bench/docs/history.md)
 
-## V2 最小预检与运行示例
-
-不启动 Isaac 即可先解析双目标连续任务：
-
-```bash
-cd conveyor_bench
-python scripts/run_benchmark_v2.py \
-  --scene transverse_near_sort_v2 \
-  --task-family continuous_multi_target \
-  --robot-mode fixed_base \
-  --seed 0 \
-  --dry-run-task
-```
-
-冻结源码候选 `0a2fd7c…` 已完成 near fixed-base 双目标连续分拣，以及 remote
-whole-body 蓝/黄双向投放；连续持物位移分别为 `0.735903 m` 和 `0.778166 m`。
-本机 RTX 4060 上的 near/remote 三相机正例也已依次通过 strict validator、
-temporal camera gate 与 DynamicVLA/AL0 双导出。尚未覆盖的语言条件、
-near whole-body、其余物体/速度/seed 矩阵仍需按 V2 手册小规模验收，不能直接
-外推为大规模采集结论。
-
-面向下一阶段训练的 AL0 profile 已按“观测后预测未来动作”重做因果
-对齐；其数据契约、导出和 AML 烟测命令见
-[V1 采集手册](conveyor_bench/COLLECTION_GUIDE.md)。
-在线部署、闭环命令和 2026-08-03 的实测失败边界见
-[ConveyorVLA AL0 在线闭环与验收](conveyor_bench/CONVEYORVLA_AL0_GUIDE.md)。
-DynamicVLA 时序机制的代码级分析与下一代动态抓取方案见
-[ConveyorVLA AL1 设计](conveyor_bench/CONVEYORVLA_AL1_DESIGN.md)。
-当前正式执行的数据、流式控制与低速采集合同见
-[ConveyorVLA AL0 执行方案](conveyor_bench/CONVEYORVLA_AL0_EXECUTION_PLAN.md)。
-
-## V1 最小运行示例
-
-下面的命令采集一条固定机身、单目标、带三相机数据的 V1 episode：
-
-```bash
-cd conveyor_bench
-python scripts/run_benchmark_v1.py \
-  --robot-mode fixed_base \
-  --episodes 1 \
-  --seed 0 \
-  --split train \
-  --task-family single_target \
-  --belt-speed 0.06 \
-  --max-duration 20 \
-  --active-objects 1 \
-  --target-asset part_red_block \
-  --destination sort_bin_blue \
-  --output-dir outputs/gate/v1_fixed \
-  --enable_cameras \
-  --save-camera-frames \
-  --require-all-success \
-  --headless \
-  --device cpu
-```
-
-校验生成的数据：
-
-```bash
-python scripts/validate_v1_dataset.py outputs/gate/v1_fixed
-```
-
-运行产生的 episode、视频、导出数据和缓存默认写入 `conveyor_bench/outputs/`，
-该目录不会提交到 Git。
-
-## 当前状态
-
-截至 2026-08-12，V3 已不再是方案占位：68 个 Liangzhu/objects sidecar 文件
-已完成逐文件 SHA-256 校验，原生 NuRec 背景、PCT 对齐的 Go2-X5 与 head/wrist
-相机、Isaac 动态传送带和真实可乐罐视觉均已进入同一渲染与物理循环。
-
-提交 `8651d82` 对应的固定底盘教师树已采得一条完整动态抓取—投放正例：
-`14.02 s`、701 个 50 Hz 控制样本、head/wrist/overview 各 350 帧。目标在下降
-阶段被持续跟随，XY 平均误差约 `2.23 mm`，最终在蓝色料框内释放并稳定；strict
-validator、quality audit 和 temporal camera gate 均通过，episode 标记为
-`training_eligible=true`。
-
-完整移动操作尚未验收。任务现明确拆为 Navigation 和 Dynamic Pick-and-Place
-两个连续子任务。当前 PCT 对齐资产上的 `whole_body_policy` 基线在
-`mobile_approach` 超时，只产生约 `0.043 m` 净前移，尚未进入物体生成与抓取
-阶段。因此目前只可把上述 fixed-base 数据视为操作专家正例，不能宣称已经获得
-“导航 + 动态抓取 + 放置”的完整移动专家数据，也不能据此宣称 VLA 闭环成功。
+大体积 NuRec 与物品资产通过 SSH sidecar 交付，不进入 Git，也不允许运行时联网下载。

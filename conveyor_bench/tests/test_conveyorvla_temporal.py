@@ -23,8 +23,8 @@ from conveyor_bench.conveyorvla.temporal import (
     relative_tcp_target,
     temporal_sample_from_record,
 )
-from conveyor_bench.m0_mobile import M0MobileError, M0MobileNormalizer
-from conveyor_bench.m0_policy import m0_dit_config
+from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
+from conveyor_bench.conveyorvla.policy import m0_dit_config
 
 
 def _chunk(
