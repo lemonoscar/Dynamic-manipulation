@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import hashlib
 import json
+import math
 from numbers import Real
 from pathlib import Path
 from typing import Any
@@ -82,6 +83,38 @@ _POLICY_DIRECTORY = (
 )
 DEFAULT_POLICY_PATH = _POLICY_DIRECTORY / "policy.pt"
 DEFAULT_CONTRACT_PATH = _POLICY_DIRECTORY / "contract.json"
+
+
+def planar_standoff_goal(
+    start_xy: tuple[float, float],
+    target_xy: tuple[float, float],
+    *,
+    standoff_m: float,
+    minimum_travel_m: float = 0.0,
+) -> tuple[float, tuple[float, float]]:
+    """Return a target-facing planar goal before a workcell endpoint."""
+
+    values = (*start_xy, *target_xy, standoff_m, minimum_travel_m)
+    if not all(
+        isinstance(value, Real) and math.isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError("standoff planning values must be finite numbers")
+    if standoff_m <= 0.0 or minimum_travel_m < 0.0:
+        raise ValueError(
+            "standoff must be positive and minimum travel non-negative"
+        )
+    delta_x = float(target_xy[0] - start_xy[0])
+    delta_y = float(target_xy[1] - start_xy[1])
+    distance = math.hypot(delta_x, delta_y)
+    if distance <= standoff_m + minimum_travel_m:
+        raise ValueError("target is too close for the required navigation segment")
+    yaw = math.atan2(delta_y, delta_x)
+    scale = standoff_m / distance
+    return yaw, (
+        float(target_xy[0] - delta_x * scale),
+        float(target_xy[1] - delta_y * scale),
+    )
 
 
 def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> dict[str, Any]:

@@ -107,6 +107,7 @@ from .locomotion import (
     infer,
     leg_target,
     load_policy,
+    planar_standoff_goal,
 )
 from .physics import apply_surface_velocity
 from .workcell import (
@@ -217,13 +218,13 @@ _MOBILE_COMPACT_TCP_BASE = (
     -0.0005021194937836334,
     0.3825906961871689,
 )
+_MOBILE_CARRY_STANDOFF_M = 0.26
+_MOBILE_CARRY_MIN_TRAVEL_M = 0.12
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_TURN_RATE_RADPS = 0.35
-# The post-turn residual is a chord to the planned arc endpoint, so its
-# bearing is not identical to the final arc yaw.  The measured negative-yaw
-# replay starts navigation at 0.193 rad heading error but only 0.030 m of
-# cross-track error, inside the 0.045 m position gate.  Drive that chord
-# straight instead of asking the loaded policy for another coupled turn.
+# Loaded navigation turns to the tray first, then drives toward a target-facing
+# standoff pose.  The guardrail keeps lateral velocity disabled and corrects
+# only heading errors outside the audited straight-drive tolerance.
 _MOBILE_NAVIGATE_HEADING_TOLERANCE_RAD = 0.21
 _TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
 _TEACHER_CARTESIAN_STEP_M = 0.003
@@ -987,7 +988,35 @@ class _ConveyorRuntimeCore:
                 "release_position_tolerance_m": (
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
                 ),
-            }
+            },
+            "joint_task_contract": {
+                "schema_version": "conveyor-vla-al0-joint-task-1",
+                "enabled": (
+                    self.options.robot_mode
+                    is RobotMode.WHOLE_BODY_POLICY
+                ),
+                "task_scope": "navigate_grasp_deliver",
+                "required_phase_order": [
+                    "mobile_approach",
+                    "track",
+                    "close",
+                    "lift",
+                    "carry_navigate",
+                    "open",
+                    "verify_place",
+                ],
+                "approach_target_local_x_m": (
+                    _LOCOMOTION_APPROACH_TARGET_X_M
+                ),
+                "carry_goal_standoff_m": _MOBILE_CARRY_STANDOFF_M,
+                "carry_minimum_planned_travel_m": (
+                    _MOBILE_CARRY_MIN_TRAVEL_M
+                ),
+                "training_minimum_realized_displacement_m": {
+                    "approach_conveyor": 0.20,
+                    "carry_to_sort_bin": 0.10,
+                },
+            },
         }
 
     def _resolve_entities(self) -> None:
@@ -2249,6 +2278,14 @@ class _ConveyorRuntimeCore:
                     gripper_open
                 )
                 applied_policy_action = self._apply_base_command(base_command)
+                if (
+                    phase == "mobile_approach"
+                    and base_command[0] >= 0.16
+                    and abs(base_command[2]) <= 0.05
+                ):
+                    self._mobile_forward_policy_action_seed = (
+                        self._last_policy_action.clone()
+                    )
                 for _ in range(self.physics_decimation):
                     self.scene.write_data_to_sim()
                     self._step_physics()
@@ -3105,6 +3142,8 @@ class _ConveyorRuntimeCore:
         self._mobile_carry_stable_since_s: float | None = None
         self._mobile_goal_yaw_rad: float | None = None
         self._mobile_goal_root_xy: tuple[float, float] | None = None
+        self._mobile_forward_policy_action_seed: torch.Tensor | None = None
+        self._mobile_navigation_drive_active = False
         self._mobile_carry_orientation_base_wxyz: (
             tuple[float, float, float, float] | None
         ) = None
@@ -3710,9 +3749,18 @@ class _ConveyorRuntimeCore:
             ):
                 next_stage = self._mobile_post_turn_stage(resolved)
                 self._transition_mobile_carry(next_stage, sim_time_s)
+                transition_command = (0.0, 0.0, 0.0)
+                if next_stage == "navigate":
+                    transition_command = (
+                        self._mobile_navigate_forward_speed_mps(
+                            resolved, root_pose
+                        ),
+                        0.0,
+                        0.0,
+                    )
                 return (
                     compact_target,
-                    (0.0, 0.0, 0.0),
+                    transition_command,
                     f"carry_{next_stage}",
                 )
             yaw_command = (
@@ -3762,6 +3810,15 @@ class _ConveyorRuntimeCore:
             drive_enabled = (
                 abs(navigation_yaw_error) <= drive_heading_tolerance
             )
+            if (
+                drive_enabled
+                and not self._mobile_navigation_drive_active
+                and self._mobile_forward_policy_action_seed is not None
+            ):
+                self._last_policy_action.copy_(
+                    self._mobile_forward_policy_action_seed
+                )
+            self._mobile_navigation_drive_active = drive_enabled
             forward_command = (
                 self._mobile_navigate_forward_speed_mps(
                     resolved, root_pose
@@ -3828,22 +3885,19 @@ class _ConveyorRuntimeCore:
     def _plan_mobile_carry_goal(
         self, resolved: _ResolvedTask, root_pose: Pose
     ) -> tuple[float, tuple[float, float]]:
-        """Face the selected tray before switching to stance manipulation."""
+        """Plan a measurable loaded navigation segment toward the tray."""
 
         goal_x, goal_y, _ = resolved.target_zone.center_xyz_m
-        goal_yaw = math.atan2(
-            goal_y - root_pose.xyz[1],
-            goal_x - root_pose.xyz[0],
+        return planar_standoff_goal(
+            (root_pose.xyz[0], root_pose.xyz[1]),
+            (goal_x, goal_y),
+            standoff_m=_MOBILE_CARRY_STANDOFF_M,
+            minimum_travel_m=_MOBILE_CARRY_MIN_TRAVEL_M,
         )
-        return goal_yaw, (root_pose.xyz[0], root_pose.xyz[1])
 
     def _mobile_post_turn_stage(self, resolved: _ResolvedTask) -> str:
         del resolved
-        # The checkpoint can execute the loaded turn, but every audited pure-
-        # forward continuation converges to a standing fixed point.  Both
-        # trays remain in the calibrated arm workspace at the measured turn
-        # endpoint, so continue directly to the stable placement controller.
-        return "settle"
+        return "navigate"
 
     def _mobile_continue_carry_before_place(
         self, resolved: _ResolvedTask, oracle_phase: str
@@ -3956,7 +4010,7 @@ class _ConveyorRuntimeCore:
         self, resolved: _ResolvedTask
     ) -> float | None:
         del resolved
-        return None
+        return 0.065
 
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
@@ -3966,7 +4020,7 @@ class _ConveyorRuntimeCore:
             # so both sorting trays are reachable without weakening the
             # heading or angular-speed gates.
             "turn": 10.0,
-            "navigate": 6.0,
+            "navigate": 8.0,
             "settle": 4.0,
             # The overhead teacher deliberately advances only a few
             # millimetres per policy tick.  The measured loaded path from the
@@ -4032,6 +4086,19 @@ class _ConveyorRuntimeCore:
     def _transition_mobile_carry(
         self, stage: str, sim_time_s: float
     ) -> None:
+        if stage == "navigate":
+            self._mobile_navigation_drive_active = False
+        if (
+            stage == "navigate"
+            and self._mobile_forward_policy_action_seed is not None
+        ):
+            # Resume the gait state proven during the unloaded approach.  The
+            # feed-forward actor observes its previous action; seeding that
+            # history avoids the loaded standing fixed point reached after an
+            # in-place turn.
+            self._last_policy_action.copy_(
+                self._mobile_forward_policy_action_seed
+            )
         self._mobile_carry_stage = stage
         self._mobile_carry_stage_started_s = sim_time_s
         self._mobile_carry_stable_since_s = None

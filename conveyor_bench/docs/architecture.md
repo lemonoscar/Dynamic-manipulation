@@ -33,7 +33,7 @@ Policy
 直接覆盖旧实现。仅以下版本标识继续保留：
 
 - `conveyor-bench-v1`：已经落盘的 canonical episode 协议；
-- `conveyor-vla-al0-temporal-v2`：现有训练记录格式；
+- `conveyor-vla-al0-temporal-v3`：导航—抓取—配送联合训练记录格式；
 - LeRobot `v3.0`：第三方数据格式；
 - 历史 teacher/profile/scene ID：用于拒绝不兼容旧数据。
 
@@ -105,12 +105,16 @@ mobile_settle
 → settle / select
 → pregrasp / track / descend
 → close / lift
-→ carry_retract / carry
-→ preplace / release / verify
+→ carry_retract / carry_turn
+→ carry_navigate / carry_settle
+→ carry / preplace / place_descend
+→ open / retreat / verify_place
 ```
 
-固定底盘会跳过真实导航动作，但仍保留阶段身份。`m0_*assist` 参数只用于历史诊断，
-任何启用 assist 的 episode 都由 exporter 拒绝进入标准训练集。
+联合训练只接受 `whole_body_policy`。exporter 要求接近传送带的平面位移至少
+`0.20 m`、负载导航至少 `0.10 m`，并逐项验证上述关键阶段顺序。固定底盘只保留为
+机械臂消融，不再能生成联合训练记录。`m0_*assist` 参数只用于历史诊断，任何启用
+assist 的 episode 都由 exporter 拒绝进入标准训练集。
 
 ## 7. 扩展规则
 

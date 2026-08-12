@@ -36,9 +36,9 @@ def _record(config: dict, tick: int) -> dict:
             }
         )
     return {
-        "schema_version": "conveyor-vla-al0-temporal-v2",
-        "profile": "conveyorvla_al0_temporal_v2",
-        "policy_task_scope": "grasp_only",
+        "schema_version": "conveyor-vla-al0-temporal-v3",
+        "profile": "conveyorvla_al0_temporal_v3",
+        "policy_task_scope": "navigate_grasp_deliver",
         "gripper_action_source": "future_measured_joint_open_fraction",
         "source_task_outcome": "success",
         "source_assisted": False,

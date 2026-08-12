@@ -18,9 +18,13 @@ from uuid import uuid4
 from conveyor_bench.conveyorvla.temporal import (
     ACTION_HORIZON as AL0_TEMPORAL_ACTION_HORIZON,
     CAMERA_IDS as AL0_TEMPORAL_CAMERA_IDS,
-    GRASP_TRAINING_PHASES,
     HISTORY_OFFSETS_MODEL_TICKS,
+    JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M,
+    JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
+    JOINT_TASK_REQUIRED_PHASE_ORDER,
+    JOINT_TRAINING_PHASES,
     MODEL_HZ as AL0_TEMPORAL_ACTION_RATE_HZ,
+    POLICY_TASK_SCOPE,
     TEMPORAL_PROFILE as AL0_TEMPORAL_PROFILE,
     TEMPORAL_SCHEMA_VERSION as AL0_TEMPORAL_SCHEMA_VERSION,
     relative_tcp_target,
@@ -1082,15 +1086,86 @@ def _camera_clip(
     }
 
 
+def _joint_task_evidence(
+    control_steps: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Fail closed unless one episode contains both navigation segments."""
+
+    phase_first_control_indices: dict[str, int] = {}
+    cursor = -1
+    for required_phase in JOINT_TASK_REQUIRED_PHASE_ORDER:
+        match = next(
+            (
+                index
+                for index in range(cursor + 1, len(control_steps))
+                if control_steps[index].get("phase") == required_phase
+            ),
+            None,
+        )
+        if match is None:
+            raise ExportError(
+                "joint AL0 episode is missing ordered phase "
+                f"{required_phase!r}"
+            )
+        phase_first_control_indices[required_phase] = match
+        cursor = match
+
+    def phase_displacement(phase: str) -> tuple[float, int]:
+        rows = [step for step in control_steps if step.get("phase") == phase]
+        if len(rows) < 2:
+            return 0.0, len(rows)
+        first, _ = _pose(rows[0], "robot_root_world")
+        last, _ = _pose(rows[-1], "robot_root_world")
+        return math.hypot(last[0] - first[0], last[1] - first[1]), len(rows)
+
+    approach_displacement, approach_steps = phase_displacement(
+        "mobile_approach"
+    )
+    carry_displacement, carry_steps = phase_displacement("carry_navigate")
+    if approach_displacement < JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M:
+        raise ExportError(
+            "joint AL0 approach navigation displacement is too short: "
+            f"{approach_displacement:.3f} m"
+        )
+    if carry_displacement < JOINT_TASK_CARRY_MIN_DISPLACEMENT_M:
+        raise ExportError(
+            "joint AL0 loaded navigation displacement is too short: "
+            f"{carry_displacement:.3f} m"
+        )
+    return {
+        "schema_version": "conveyor-vla-al0-joint-task-evidence-1",
+        "required_phase_order": JOINT_TASK_REQUIRED_PHASE_ORDER,
+        "phase_first_control_indices": phase_first_control_indices,
+        "approach_conveyor": {
+            "phase": "mobile_approach",
+            "control_steps": approach_steps,
+            "planar_displacement_m": approach_displacement,
+            "minimum_planar_displacement_m": (
+                JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M
+            ),
+        },
+        "carry_to_sort_bin": {
+            "phase": "carry_navigate",
+            "control_steps": carry_steps,
+            "planar_displacement_m": carry_displacement,
+            "minimum_planar_displacement_m": (
+                JOINT_TASK_CARRY_MIN_DISPLACEMENT_M
+            ),
+        },
+    }
+
+
 def iter_conveyorvla_al0_temporal_records(
     episode_directory: str | Path,
     config: BenchmarkConfig | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Yield grasp-only two-frame observations and 25 Hz future-pose targets."""
+    """Yield joint navigation/manipulation observations and future targets."""
 
     benchmark = config or BenchmarkConfig.v1()
     if benchmark.control_hz != 50 or benchmark.model_hz != 25:
-        raise ExportError("AL0 temporal v2 requires 50 Hz control and 25 Hz model clocks")
+        raise ExportError(
+            "AL0 temporal v3 requires 50 Hz control and 25 Hz model clocks"
+        )
     episode_path, episode, task, source_result = _episode_context(
         episode_directory
     )
@@ -1098,9 +1173,17 @@ def iter_conveyorvla_al0_temporal_records(
     if source_result.outcome != "success":
         return
 
-    task_metadata = _mapping(task.get("metadata"), "manifest.episode.task.metadata")
+    task_metadata = _mapping(
+        task.get("metadata"), "manifest.episode.task.metadata"
+    )
     if task_metadata.get("active_object_count") != 1:
-        raise ExportError("AL0 temporal grasp data requires exactly one active object")
+        raise ExportError(
+            "AL0 temporal joint data requires exactly one active object"
+        )
+    if task.get("robot_mode") != "whole_body_policy":
+        raise ExportError(
+            "AL0 temporal joint data requires whole_body_policy episodes"
+        )
     policy_camera_ids = _camera_ids_for_role(episode, "policy_observation")
     if policy_camera_ids != AL0_TEMPORAL_CAMERA_IDS:
         raise ExportError(
@@ -1115,6 +1198,7 @@ def iter_conveyorvla_al0_temporal_records(
     }
     control_steps = _load_control_steps(episode_path, benchmark)
     _reject_m0_diagnostic_assist(episode, control_steps)
+    joint_task_evidence = _joint_task_evidence(control_steps)
     control_by_sim_step = {
         _integer(step.get("sim_step"), "sim_step"): step for step in control_steps
     }
@@ -1123,16 +1207,15 @@ def iter_conveyorvla_al0_temporal_records(
         for index, step in enumerate(control_steps)
     }
     belt_speed = _number(task.get("belt_speed_mps"), "task.belt_speed_mps")
-    instruction = (
-        "Grasp the moving conveyor part and lift it safely."
-        if belt_speed > 0.0
-        else "Grasp the stationary conveyor part and lift it safely."
-    )
+    instruction = task.get("instruction")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise ExportError("joint AL0 task instruction must be a non-empty string")
+    instruction = instruction.strip()
 
     for source in model_ticks:
         source_tick = _integer(source.get("model_tick"), "model_tick")
         source_phase = source.get("phase")
-        if source_phase not in GRASP_TRAINING_PHASES:
+        if source_phase not in JOINT_TRAINING_PHASES:
             continue
         history_steps = tuple(
             by_model_tick.get(source_tick + offset)
@@ -1146,7 +1229,10 @@ def iter_conveyorvla_al0_temporal_records(
             continue
         history = tuple(step for step in history_steps if step is not None)
         future = tuple(step for step in future_steps if step is not None)
-        if any(step.get("phase") not in GRASP_TRAINING_PHASES for step in future):
+        if any(
+            step.get("phase") not in JOINT_TRAINING_PHASES
+            for step in future
+        ):
             continue
 
         source_root_xyz, source_root_wxyz = _pose(source, "robot_root_world")
@@ -1194,7 +1280,8 @@ def iter_conveyorvla_al0_temporal_records(
             "source_steps_path": "steps.jsonl",
             "source_instruction": task.get("instruction"),
             "instruction": instruction,
-            "policy_task_scope": "grasp_only",
+            "policy_task_scope": POLICY_TASK_SCOPE,
+            "joint_task_evidence": joint_task_evidence,
             "sample_id": (
                 f"{episode.get('episode_id')}:model-tick-{source_tick}"
             ),
@@ -1387,7 +1474,7 @@ def export_conveyorvla_al0_temporal_episode(
         destination,
     )
     if source_result.outcome == "success" and count == 0:
-        raise ExportError("successful episode produced no AL0 temporal grasp records")
+        raise ExportError("successful episode produced no AL0 temporal joint records")
     return ExportSummary(
         AL0_TEMPORAL_PROFILE,
         episode_path,

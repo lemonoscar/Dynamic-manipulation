@@ -1,13 +1,13 @@
 {
-  "schema_version": "conveyor-vla-al0-temporal-config-2",
+  "schema_version": "conveyor-vla-al0-temporal-config-3",
   "model_identity": {
     "family": "ConveyorVLA",
     "variant": "AL0",
-    "profile": "temporal_v2",
+    "profile": "temporal_v3_joint_task",
     "name": "ConveyorVLA AL0"
   },
   "data": {
-    "profile": "conveyorvla_al0_temporal_v2",
+    "profile": "conveyorvla_al0_temporal_v3",
     "camera_order": [
       "head_rgb",
       "wrist_rgb"
@@ -33,7 +33,20 @@
     "gripper_action_source": "future_measured_joint_open_fraction",
     "object_state_is_model_input": false,
     "overview_camera_is_model_input": false,
-    "policy_task_scope": "grasp_only"
+    "policy_task_scope": "navigate_grasp_deliver",
+    "required_phase_order": [
+      "mobile_approach",
+      "track",
+      "close",
+      "lift",
+      "carry_navigate",
+      "open",
+      "verify_place"
+    ],
+    "minimum_navigation_displacement_m": {
+      "approach_conveyor": 0.20,
+      "carry_to_sort_bin": 0.10
+    }
   },
   "vision": {
     "encoder": "Qwen3-VL-4B-Instruct",

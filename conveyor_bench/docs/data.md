@@ -57,6 +57,11 @@ ConveyorVLA AL0 的 temporal 记录使用：
 - 25 Hz action rate，覆盖 `0.8 s`；
 - 5 Hz query，query stride 为 5 个 model tick。
 
+当前 profile 为 `conveyorvla_al0_temporal_v3`，任务范围固定为
+`navigate_grasp_deliver`。每个来源 episode 必须按顺序包含接近传送带、动态跟随抓取、
+负载导航、开爪投放和稳定确认；第一段与第二段导航的实际平面位移分别不得小于
+`0.20 m` 和 `0.10 m`。旧的 `grasp_only` 记录不能进入该训练集。
+
 四张输入图来自两台物理相机的两个时刻。overview 不进入 temporal export。
 
 未来 TCP 行是相对 observation 时刻的独立目标，不是必须从第 0 行依次积分的增量。
@@ -111,9 +116,10 @@ python scripts/convert_dataset.py \
 
 建议除四路首帧外，再对第一/中间/最后 episode 抽取中间帧，检查时间对应和视觉内容。
 
-## 7. 分类规则
+## 7. 任务与分层规则
 
-当前只训练抓取，不训练物品分类。数据按以下维度分层统计，而不是作为分类标签：
+当前不增加独立的物品类别分类头；策略学习的是完整导航、抓取、配送和按任务指定目标
+框投放。数据按以下维度分层统计：
 
 - `target_asset_id`；
 - `belt_speed_mps`；
@@ -121,6 +127,7 @@ python scripts/convert_dataset.py \
 - `seed`；
 - `task_success`；
 - `training_eligible`；
+- 两段导航的实际位移与 phase 顺序；
 - 场景、相机和 teacher profile 哈希。
 
 专家成功、任务失败和结构损坏三类必须分开：
@@ -136,6 +143,10 @@ python scripts/convert_dataset.py \
 `conveyor-bench-v1` 是现有 raw 的稳定协议名，因此源代码迁移不会重写它。读取器必须
 按 schema 显式校验。旧 teacher、旧场景或 assisted 数据即使字段可读，也可能因当前
 训练合同不兼容而被 exporter 拒绝。
+
+`temporal_v2/grasp_only` 是历史派生格式，不就地改写。若其 canonical raw 具备完整
+联合轨迹证据，可从 raw 重新导出 temporal v3；缺少负载导航证据的旧成功数据必须保留
+为消融或诊断数据。
 
 若未来必须改变 canonical 字段：
 

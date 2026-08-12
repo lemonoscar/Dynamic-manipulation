@@ -11,9 +11,10 @@ from typing import Any, Callable, Mapping, Sequence
 from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
 
-TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-2"
-TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v2"
-TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v2"
+TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-3"
+TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v3"
+TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v3"
+POLICY_TASK_SCOPE = "navigate_grasp_deliver"
 GRIPPER_ACTION_SOURCE = "future_measured_joint_open_fraction"
 DEFAULT_TEMPORAL_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
@@ -39,7 +40,18 @@ ACTION_DIMENSION_MASK = (
     True,
     True,
 )
-GRASP_TRAINING_PHASES = frozenset(
+JOINT_TASK_REQUIRED_PHASE_ORDER = (
+    "mobile_approach",
+    "track",
+    "close",
+    "lift",
+    "carry_navigate",
+    "open",
+    "verify_place",
+)
+JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M = 0.20
+JOINT_TASK_CARRY_MIN_DISPLACEMENT_M = 0.10
+JOINT_TRAINING_PHASES = frozenset(
     {
         "mobile_settle",
         "mobile_approach",
@@ -53,6 +65,16 @@ GRASP_TRAINING_PHASES = frozenset(
         "close",
         "lift",
         "carry_retract",
+        "carry_turn",
+        "carry_navigate",
+        "carry_settle",
+        "carry_recover",
+        "carry",
+        "preplace",
+        "place_descend",
+        "open",
+        "retreat",
+        "verify_place",
     }
 )
 
@@ -122,8 +144,10 @@ def temporal_sample_from_record(
         raise M0MobileError("record has an unsupported temporal schema")
     if record.get("profile") != TEMPORAL_PROFILE:
         raise M0MobileError("record has an unsupported temporal profile")
-    if record.get("policy_task_scope") != "grasp_only":
-        raise M0MobileError("temporal record must use grasp_only task scope")
+    if record.get("policy_task_scope") != POLICY_TASK_SCOPE:
+        raise M0MobileError(
+            f"temporal record must use {POLICY_TASK_SCOPE} task scope"
+        )
     if record.get("gripper_action_source") != GRIPPER_ACTION_SOURCE:
         raise M0MobileError(
             "temporal record must use future measured gripper actions"
@@ -278,6 +302,12 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
         "action_rate_hz": MODEL_HZ,
         "control_rate_hz": CONTROL_HZ,
         "gripper_action_source": GRIPPER_ACTION_SOURCE,
+        "policy_task_scope": POLICY_TASK_SCOPE,
+        "required_phase_order": list(JOINT_TASK_REQUIRED_PHASE_ORDER),
+        "minimum_navigation_displacement_m": {
+            "approach_conveyor": JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M,
+            "carry_to_sort_bin": JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
+        },
     }
     for key, value in expected.items():
         if data.get(key) != value:
@@ -420,10 +450,14 @@ __all__ = [
     "CAMERA_IDS",
     "CONTROL_HZ",
     "DEFAULT_TEMPORAL_CONFIG_PATH",
-    "GRASP_TRAINING_PHASES",
     "GRIPPER_ACTION_SOURCE",
     "HISTORY_OFFSETS_MODEL_TICKS",
+    "JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M",
+    "JOINT_TASK_CARRY_MIN_DISPLACEMENT_M",
+    "JOINT_TASK_REQUIRED_PHASE_ORDER",
+    "JOINT_TRAINING_PHASES",
     "MODEL_HZ",
+    "POLICY_TASK_SCOPE",
     "STATE_DIM",
     "TEMPORAL_CONFIG_SCHEMA_VERSION",
     "TEMPORAL_PROFILE",

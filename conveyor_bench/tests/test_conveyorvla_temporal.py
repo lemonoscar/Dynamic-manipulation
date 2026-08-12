@@ -16,6 +16,7 @@ from conveyor_bench.conveyorvla.temporal import (
     ACTION_DIMENSION_MASK,
     ACTION_HORIZON,
     GRIPPER_ACTION_SOURCE,
+    POLICY_TASK_SCOPE,
     TEMPORAL_PROFILE,
     TEMPORAL_SCHEMA_VERSION,
     load_temporal_config,
@@ -54,6 +55,7 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
     assert config["data"]["history_offsets_model_ticks"] == [-2, 0]
     assert config["data"]["action_horizon"] == 20
     assert config["data"]["action_rate_hz"] == 25
+    assert config["data"]["policy_task_scope"] == POLICY_TASK_SCOPE
     assert config["streaming"]["require_episode_generation_id"] is True
     assert ACTION_DIMENSION_MASK[1] is False
     assert m0_dit_config(config).action_horizon == 20
@@ -190,7 +192,7 @@ def test_temporal_record_loader_keeps_only_policy_inputs(tmp_path: Path) -> None
     record = {
         "schema_version": TEMPORAL_SCHEMA_VERSION,
         "profile": TEMPORAL_PROFILE,
-        "policy_task_scope": "grasp_only",
+        "policy_task_scope": POLICY_TASK_SCOPE,
         "gripper_action_source": GRIPPER_ACTION_SOURCE,
         "sample_id": "sample-a",
         "source_episode_id": "episode-a",

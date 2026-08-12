@@ -103,6 +103,19 @@ def test_task_frame_is_translated_before_teacher_control() -> None:
     assert "task_origin_world_xyz=self._task_world_origin_xyz()" in runtime_core
 
 
+def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
+    runtime_core = _source(RUNTIME_CORE_PATH)
+
+    assert "_LOCOMOTION_APPROACH_TARGET_X_M = 0.08" in runtime_core
+    assert "_MOBILE_CARRY_STANDOFF_M = 0.26" in runtime_core
+    assert "_MOBILE_CARRY_MIN_TRAVEL_M = 0.12" in runtime_core
+    assert "return planar_standoff_goal(" in runtime_core
+    assert "return \"navigate\"" in runtime_core
+    assert "self._mobile_forward_policy_action_seed" in runtime_core
+    assert "self._last_policy_action.copy_(" in runtime_core
+    assert '"task_scope": "navigate_grasp_deliver"' in runtime_core
+
+
 def test_probe_and_collection_have_explicit_asset_roots() -> None:
     probe = _source(PROBE_PATH)
     runner = _source(RUN_PATH)

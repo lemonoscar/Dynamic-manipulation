@@ -58,6 +58,7 @@ python scripts/collect.py \
   --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
   --output-root outputs/pilot \
   --physical-gpu 2 \
+  --robot-mode whole_body_policy \
   --episodes 1 \
   --seed 1101 \
   --belt-speed 0.01 \
@@ -80,13 +81,15 @@ python scripts/collect.py \
 CUDA_VISIBLE_DEVICES=2 python scripts/collect.py \
   --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
   --output-root outputs/pilot/gpu2 \
-  --physical-gpu 2 --episodes 2 --seed 1101 \
+  --physical-gpu 2 --robot-mode whole_body_policy \
+  --episodes 2 --seed 1101 \
   --belt-speed 0.01 --require-all-success
 
 CUDA_VISIBLE_DEVICES=3 python scripts/collect.py \
   --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
   --output-root outputs/pilot/gpu3 \
-  --physical-gpu 3 --episodes 2 --seed 1201 \
+  --physical-gpu 3 --robot-mode whole_body_policy \
+  --episodes 2 --seed 1201 \
   --belt-speed 0.01 --require-all-success
 ```
 
@@ -113,8 +116,9 @@ python scripts/check_camera_gate.py EPISODE_ROOT \
 python scripts/export.py EPISODE_ROOT --profile all --force
 ```
 
-命令成功不代替视觉检查。需要观察目标跟随、缓降、连续夹爪闭合、稳定抬升、俯视投放
-和释放后稳定。
+命令成功不代替视觉检查。需要观察机器狗先走到传送带并驻车、机械臂跟随缓降抓取、
+收臂后负载导航到分类箱、再次驻车、俯视投放和释放后稳定。`carry_navigate` 为零帧或
+两段位移低于数据门禁时，即使旧评分器给出成功也不得进入训练。
 
 ## 7. 转换到 LeRobot v3
 
@@ -141,7 +145,6 @@ CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
   --lerobot-root outputs/lerobot_pilot \
   --output-dir outputs/checkpoints/al0_pilot \
   --model-root /diff/wallx_workspace/dzb/models/conveyorvla-al0 \
-  --allow-fixed-base \
   --belt-speed 0.01
 ```
 

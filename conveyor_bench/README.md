@@ -21,7 +21,7 @@ scripts/collect.py
   → scripts/train.py
 ```
 
-数据中的 `conveyor-bench-v1`、`temporal_v2` 和 LeRobot `v3.0` 是兼容协议标识，
+数据中的 `conveyor-bench-v1`、`temporal_v3` 和 LeRobot `v3.0` 是兼容协议标识，
 不是三套并行运行时。不要为新实验复制 `runtime_v4.py`；直接修改当前实现，由 Git
 提交保存历史，并在数据契约变化时升级 `schema_version`。
 
@@ -105,6 +105,7 @@ python scripts/collect.py \
   --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
   --output-root outputs/smoke \
   --physical-gpu 2 \
+  --robot-mode whole_body_policy \
   --episodes 1 \
   --seed 1101 \
   --belt-speed 0.01 \
@@ -143,7 +144,8 @@ CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
 - PCT 对齐的 Go2-X5、head/wrist 标定和第三视角已接入；
 - Liangzhu NuRec 背景与 Isaac 动态前景已完成注册组合；
 - 固定底盘、动态可乐罐跟随抓取和投放已有完整成功证据；
-- `whole_body_policy` 在 `mobile_approach` 阶段位移不足，完整导航仍未通过；
+- 联合专家已接入“接近—抓取—负载导航—投放”状态机和训练数据硬门禁，真实 Isaac
+  联合烟测结果以 `docs/status.md` 为准；
 - 当前 sidecar 仅把 `cola` 注册为可训练刚体，其他下载物品尚未完成抓取 fixture；
 - 384 条矩阵不能启动，直到四个训练零件和第二档速度都通过同样门禁。
 

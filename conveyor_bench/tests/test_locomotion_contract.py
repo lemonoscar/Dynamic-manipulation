@@ -17,6 +17,7 @@ from conveyor_bench.isaac.locomotion import (
     build_observation,
     leg_target,
     load_contract,
+    planar_standoff_goal,
     verify_policy_hash,
 )
 
@@ -212,3 +213,28 @@ def test_policy_hash_rejects_tampered_artifact(tmp_path):
 
     with pytest.raises(ValueError, match="SHA256 mismatch"):
         verify_policy_hash(tampered)
+
+
+def test_planar_standoff_goal_preserves_travel_and_faces_target():
+    yaw, goal = planar_standoff_goal(
+        (0.08, 0.0),
+        (0.34, 0.40),
+        standoff_m=0.26,
+        minimum_travel_m=0.12,
+    )
+
+    assert yaw == pytest.approx(np.arctan2(0.40, 0.26))
+    assert np.linalg.norm(np.asarray(goal) - (0.34, 0.40)) == pytest.approx(
+        0.26
+    )
+    assert np.linalg.norm(np.asarray(goal) - (0.08, 0.0)) > 0.12
+
+
+def test_planar_standoff_goal_rejects_a_fake_navigation_segment():
+    with pytest.raises(ValueError, match="too close"):
+        planar_standoff_goal(
+            (0.0, 0.0),
+            (0.30, 0.0),
+            standoff_m=0.26,
+            minimum_travel_m=0.10,
+        )

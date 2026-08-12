@@ -22,7 +22,8 @@ V0 和已经被覆盖的 V2 场景/CLI 不在 live tree 中维护，可从 Git �
 - canonical raw 继续是 `conveyor-bench-v1`；
 - teacher profile `overhead_target_follow_pick_place_v3` 继续保留；
 - scene ID 中已有的 `_v3` 继续保留；
-- temporal export 继续识别 `temporal_v2`；
+- 当前联合训练使用 `temporal_v3`；历史 `temporal_v2/grasp_only` 派生文件保留但不再
+  被联合训练入口接受；
 - LeRobot 继续使用数据格式 `v3.0`。
 
 这些名称用于判断已有数据是否可读，不表示源码中存在并行版本。

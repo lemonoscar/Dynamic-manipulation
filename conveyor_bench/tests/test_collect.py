@@ -71,6 +71,7 @@ def test_collection_defaults_to_dynamic_belt() -> None:
     )
 
     assert args.belt_speed == pytest.approx(0.01)
+    assert args.robot_mode == "whole_body_policy"
 
 
 @pytest.mark.parametrize(

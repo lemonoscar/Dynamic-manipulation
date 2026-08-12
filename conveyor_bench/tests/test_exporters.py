@@ -349,6 +349,46 @@ def read_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
+def add_joint_task_trace(episode: Path) -> None:
+    phases = (
+        *("mobile_approach" for _ in range(5)),
+        "arm_preposition",
+        "settle",
+        "select",
+        "pregrasp",
+        "track",
+        "track",
+        "descend",
+        "descend",
+        "close",
+        "lift",
+        "carry_retract",
+        "carry_turn",
+        *("carry_navigate" for _ in range(5)),
+        "carry_settle",
+        "carry",
+        "preplace",
+        "place_descend",
+        "open",
+        "retreat",
+        "verify_place",
+        "verify_place",
+    )
+    rows = read_jsonl(episode / "steps.jsonl")
+    for row in rows:
+        tick = row["model_tick"]
+        row["phase"] = phases[tick]
+        if tick <= 4:
+            row["robot_root_world"]["xyz"][0] = -0.22 + 0.075 * tick
+        elif 17 <= tick <= 21:
+            row["robot_root_world"]["xyz"][1] = 2.0 + 0.03 * (
+                tick - 17
+            )
+        if 14 <= tick <= 26:
+            row["metadata"]["held_instance_id"] = "target"
+    write_jsonl(episode / "steps.jsonl", rows)
+
+
 def test_dynamicvla_projection_uses_model_ticks_history_and_future_offset(
     tmp_path,
 ) -> None:
@@ -390,12 +430,20 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
     manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
     write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
 
     records = list(iter_conveyorvla_al0_temporal_records(episode))
     first = records[0]
 
     assert len(records) == 8
-    assert first["profile"] == "conveyorvla_al0_temporal_v2"
+    assert first["profile"] == "conveyorvla_al0_temporal_v3"
+    assert first["policy_task_scope"] == "navigate_grasp_deliver"
+    assert first["joint_task_evidence"]["approach_conveyor"][
+        "planar_displacement_m"
+    ] == pytest.approx(0.30)
+    assert first["joint_task_evidence"]["carry_to_sort_bin"][
+        "planar_displacement_m"
+    ] == pytest.approx(0.12)
     assert first["observation_model_tick"] == 2
     assert first["observation_control_tick"] == 5
     assert first["history_model_ticks"] == (0, 2)
@@ -415,6 +463,18 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     )
     assert first["future_offsets_model_ticks"] == tuple(range(1, 21))
     assert first["object_state_is_model_input"] is False
+
+
+def test_al0_temporal_projection_rejects_missing_loaded_navigation(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+
+    with pytest.raises(ExportError, match="missing ordered phase"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
 
 
 def test_m0_projection_right_pads_and_preserves_canonical_source(tmp_path) -> None:

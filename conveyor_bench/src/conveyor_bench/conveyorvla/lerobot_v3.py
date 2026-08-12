@@ -25,6 +25,7 @@ from .temporal import (
     GRIPPER_ACTION_SOURCE,
     HISTORY_OFFSETS_MODEL_TICKS,
     MODEL_HZ,
+    POLICY_TASK_SCOPE,
     STATE_DIM,
     TEMPORAL_PROFILE,
     TEMPORAL_SCHEMA_VERSION,
@@ -32,7 +33,7 @@ from .temporal import (
 )
 
 
-LEROBOT_V3_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-lerobot-v3-config-1"
+LEROBOT_V3_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-lerobot-v3-config-2"
 DEFAULT_LEROBOT_V3_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs"
@@ -428,7 +429,7 @@ def _validate_config(config: Mapping[str, Any]) -> None:
     expected_source = {
         "profile": TEMPORAL_PROFILE,
         "schema_version": TEMPORAL_SCHEMA_VERSION,
-        "required_task_scope": "grasp_only",
+        "required_task_scope": POLICY_TASK_SCOPE,
         "required_outcome": "success",
         "require_unassisted": True,
     }

@@ -16,6 +16,7 @@ from .lerobot_v3 import (
 )
 from .temporal import (
     GRIPPER_ACTION_SOURCE,
+    POLICY_TASK_SCOPE,
     TEMPORAL_CONFIG_SCHEMA_VERSION,
     TEMPORAL_PROFILE,
     TEMPORAL_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ __all__ = [
     "DEFAULT_LEROBOT_V3_CONFIG_PATH",
     "LEROBOT_V3_CONFIG_SCHEMA_VERSION",
     "GRIPPER_ACTION_SOURCE",
+    "POLICY_TASK_SCOPE",
     "StreamChunk",
     "StreamMerge",
     "TEMPORAL_CONFIG_SCHEMA_VERSION",

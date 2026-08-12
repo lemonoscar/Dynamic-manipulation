@@ -11,6 +11,10 @@
 - 俯视、目标相对跟随、缓降、连续夹爪闭合、抬升和投放教师；
 - canonical raw、严格校验、质量审计、相机门禁和无损导出；
 - raw PNG 到 LeRobot v3 H.264/PyAV 的转换与训练入口；
+- `navigate_grasp_deliver` 联合专家状态机：接近传送带、动态抓取、负载导航到分类箱、
+  俯视投放；
+- temporal v3 联合训练入口：强制关键 phase 顺序以及 `0.20 m / 0.10 m` 两段实际
+  导航位移门禁；
 - 一条固定底盘完整正例：约 14.02 秒、701 个 control step、三路 1050 张 PNG，
   抓取—投放成功并通过已有数据门禁。
 
@@ -28,16 +32,18 @@
 
 ## 当前阻塞
 
-完整任务仍未成功。`whole_body_policy` 在 PCT 对齐场景的 `mobile_approach` 阶段
-4 秒内只产生约 `0.043 m` 净前移，物体尚未生成，episode 随后超时。该数据不是
-专家失败负样本，而是 locomotion gate 失败。
+上一版 `whole_body_policy` 在 PCT 对齐场景的 `mobile_approach` 阶段 4 秒内只产生约
+`0.043 m` 净前移，物体尚未生成，episode 随后超时；更早的成功轨迹虽完成投放，
+但 `carry_navigate` 为零帧，只是原地转向后由机械臂够到分类箱。两类数据都不满足新
+联合合同。当前代码已修正联合状态与训练门禁，但仍须用真实 Isaac episode 验证两段
+实际位移、负载稳定性和最终投放，不能仅凭单元测试宣称成功。
 
 当前物品池也未达到正式矩阵要求。sidecar 虽包含多个物品文件，只有 `cola` 完成了
 尺度、碰撞、质量、摩擦和抓取 affordance 的训练级 fixture。
 
 ## 下一步顺序
 
-1. 在同一 PCT/NuRec 场景重新校准并通过 Navigation/驻车 gate；
+1. 在同一 PCT/NuRec 场景跑通一条联合 episode，并核验两段导航位移与完整 phase；
 2. 保持 fixed-base 教师作为机械臂消融基准；
 3. 为另外三个训练物品完成刚体 fixture 和逐物品 stationary/dynamic pilot；
 4. 冻结第二档传送带速度，并证明教师节拍和 VLA 查询频率匹配；

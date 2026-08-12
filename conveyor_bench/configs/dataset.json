@@ -1,5 +1,5 @@
 {
-  "schema_version": "conveyor-vla-al0-lerobot-v3-config-1",
+  "schema_version": "conveyor-vla-al0-lerobot-v3-config-2",
   "model_identity": {
     "family": "ConveyorVLA",
     "variant": "AL0",
@@ -13,10 +13,10 @@
     "use_videos": true
   },
   "source": {
-    "profile": "conveyorvla_al0_temporal_v2",
-    "schema_version": "conveyor-vla-al0-temporal-v2",
+    "profile": "conveyorvla_al0_temporal_v3",
+    "schema_version": "conveyor-vla-al0-temporal-v3",
     "export_relative_path": "exports/conveyorvla_al0_temporal.jsonl",
-    "required_task_scope": "grasp_only",
+    "required_task_scope": "navigate_grasp_deliver",
     "required_outcome": "success",
     "require_unassisted": true
   },

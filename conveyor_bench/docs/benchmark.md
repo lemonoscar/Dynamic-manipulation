@@ -6,18 +6,23 @@
 
 ## 1. 任务目标
 
-一个完整 episode 包含两个连续子任务：
+一个完整 episode 包含四个连续阶段：
 
 ```text
-Navigation
+Navigation-to-conveyor
   → 机器狗移动到可见、可抓、安全的操作位姿
   → 通过位置、航向和速度驻车门禁
-Dynamic Pick-and-Place
+Dynamic grasp
   → 俯视观察并持续跟随传送带目标
-  → 缓慢下降、闭合、抬升、搬运、投放和稳定确认
+  → 缓慢下降、闭合并稳定抬升
+Loaded navigation-to-bin
+  → 机械臂收回到紧凑负载位姿
+  → 机器狗转向、移动到分类箱前并再次驻车
+Overhead place
+  → 从上方移动、开爪投放、撤离并确认稳定
 ```
 
-完整成功要求两个子任务都成功。`fixed_base` 仅用于隔离机械臂和动态抓取问题，
+完整成功要求四个阶段都成功。`fixed_base` 仅用于隔离机械臂和动态抓取问题，
 属于消融/教师模式，不能代替移动操作结果。
 
 ## 2. 场景
@@ -104,6 +109,9 @@ sidecar 中虽然已有 apple、orange、bottle、box2 等文件，但“文件�
 - canonical 文件在 export 前后哈希不变；
 - 教师 profile、物品 fixture 和场景 provenance 与当前合同一致；
 - 没有 assisted diagnostic 控制。
+- `mobile_approach → track → close → lift → carry_navigate → open →
+  verify_place` 顺序完整；
+- 接近传送带实际平面位移至少 `0.20 m`，负载导航至少 `0.10 m`。
 
 任务失败可保留用于诊断或未来失败建模，但不能计入专家成功配额。结构损坏、丢帧、
 哈希不一致、运行异常和资产不一致的数据必须隔离，不得作为负样本。
