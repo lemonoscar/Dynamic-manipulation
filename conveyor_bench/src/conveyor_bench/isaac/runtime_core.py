@@ -241,7 +241,8 @@ _TEACHER_MAX_ROTATION_STEP_RAD = 0.01
 _TEACHER_PREGRASP_OBSERVATION_DWELL_S = 0.50
 _TEACHER_PREPLACE_OBSERVATION_DWELL_S = 0.50
 _TEACHER_RELEASE_CLEARANCE_M = 0.005
-_MOBILE_RELEASE_CLEARANCE_M = 0.085
+_MOBILE_PLACE_FLOOR_CLEARANCE_M = 0.010
+_MOBILE_SAFE_CARRY_CLEARANCE_M = 0.045
 _TEACHER_RETREAT_CLEARANCE_M = 0.040
 _GRIPPER_OPEN_POSITION_M = 0.044
 _GRIPPER_CLOSED_POSITION_M = 0.0
@@ -252,7 +253,6 @@ _MOBILE_PLACE_DESCEND_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M = 0.030
 _MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
-_MOBILE_ROOT_HOLD_MIN_X_M = 0.025
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
 _M0_SERVICE_PREPOSITION_PHASES = frozenset(
@@ -997,8 +997,8 @@ class _ConveyorRuntimeCore:
                 "release_position_tolerance_m": (
                     _MOBILE_RELEASE_POSITION_TOLERANCE_M
                 ),
-                "release_clearance_above_tray_wall_m": (
-                    _MOBILE_RELEASE_CLEARANCE_M
+                "place_clearance_above_tray_floor_m": (
+                    _MOBILE_PLACE_FLOOR_CLEARANCE_M
                     if self.options.robot_mode
                     is RobotMode.WHOLE_BODY_POLICY
                     else _TEACHER_RELEASE_CLEARANCE_M
@@ -1625,21 +1625,6 @@ class _ConveyorRuntimeCore:
                     if (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
-                        and phase in {"track", "descend", "close"}
-                        and state_before["root_pose"].xyz[0]
-                        < (
-                            self._task_world_origin_xyz()[0]
-                            + _MOBILE_ROOT_HOLD_MIN_X_M
-                        )
-                    ):
-                        # The locomotion actor has a tested forward dead-zone
-                        # and no audited reverse/lateral command.  Apply its
-                        # smallest valid forward command only after the arm
-                        # load has pushed the root behind the hold threshold.
-                        requested_base_command = (0.16, 0.0, 0.0)
-                    if (
-                        self.options.robot_mode
-                        is RobotMode.WHOLE_BODY_POLICY
                         and phase in {"close", "lift"}
                         and not oracle_command.terminal
                     ):
@@ -1754,6 +1739,19 @@ class _ConveyorRuntimeCore:
                         canonical_ee_delta = (0.0, 0.0, 0.0)
                         canonical_rotvec = (0.0, 0.0, 0.0)
                         last_command_target_base = state_before["tcp_base"].xyz
+                    elif (
+                        self.options.robot_mode
+                        is RobotMode.WHOLE_BODY_POLICY
+                        and phase == "lift"
+                    ):
+                        (
+                            canonical_ee_delta,
+                            canonical_rotvec,
+                            last_command_target_base,
+                        ) = self._command_mobile_lift_target(
+                            target_tcp_pose_world,
+                            state_before["tcp_base"],
+                        )
                     elif (
                         self.options.robot_mode
                         is RobotMode.WHOLE_BODY_POLICY
@@ -3171,6 +3169,7 @@ class _ConveyorRuntimeCore:
         self._mobile_retreat_arm_target: (
             tuple[float, float, float, float, float, float] | None
         ) = None
+        self._mobile_lift_target_base: Pose | None = None
         self._gripper_requested_open = True
         self._gripper_transition_start_m = _GRIPPER_OPEN_POSITION_M
         self._gripper_transition_elapsed_s = (
@@ -3360,20 +3359,23 @@ class _ConveyorRuntimeCore:
     ) -> DynamicSortOracle:
         asset = resolved.target_asset
         affordance = asset.grasp_affordances[0]
-        # Release above the tray rim and let gravity produce the final settled
-        # pose. Commanding the TCP to the tray floor is both physically wrong
-        # and outside the low corner of the X5 workspace.
-        release_object_center_z = (
-            resolved.target_zone.floor_top_z_m
-            + resolved.target_zone.wall_height_m
-            + asset.half_extents_xyz[2]
-            + (
-                _MOBILE_RELEASE_CLEARANCE_M
-                if self.options.robot_mode
-                is RobotMode.WHOLE_BODY_POLICY
-                else _TEACHER_RELEASE_CLEARANCE_M
+        self._mobile_lift_target_base = None
+        # The mobile teacher lowers the held object into the tray before
+        # opening.  The fixed-base ablation keeps its legacy rim-height target
+        # because that distant low corner is outside its stationary workspace.
+        if self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY:
+            release_object_center_z = (
+                resolved.target_zone.floor_top_z_m
+                + asset.half_extents_xyz[2]
+                + _MOBILE_PLACE_FLOOR_CLEARANCE_M
             )
-        )
+        else:
+            release_object_center_z = (
+                resolved.target_zone.floor_top_z_m
+                + resolved.target_zone.wall_height_m
+                + asset.half_extents_xyz[2]
+                + _TEACHER_RELEASE_CLEARANCE_M
+            )
         zone_x = resolved.target_zone.center_xyz_m[0]
         zone_y = resolved.target_zone.center_xyz_m[1]
         local_zone_y = zone_y - self._task_world_origin_xyz()[1]
@@ -3420,18 +3422,19 @@ class _ConveyorRuntimeCore:
                 # the part about 50 mm above the pad center and must be allowed
                 # to slide around it before the jaw closes.
                 close_on_target_contact=False,
-                release_from_high_goal=(
-                    self.options.robot_mode is RobotMode.WHOLE_BODY_POLICY
-                ),
+                release_from_high_goal=False,
                 pregrasp_clearance_m=0.10,
                 descent_speed_mps=(
                     _TEACHER_VERTICAL_STEP_M / self.control_dt
                 ),
-                # The release pose is already above the tray rim.  This extra
-                # clearance keeps the lowest registered part above the
-                # lowered far rail while matching the measured loaded X5
-                # high-goal workspace.
-                safe_carry_clearance_m=0.025,
+                # Keep the carried object above the tray wall, then execute a
+                # separate slow PLACE_DESCEND before opening the fingers.
+                safe_carry_clearance_m=(
+                    _MOBILE_SAFE_CARRY_CLEARANCE_M
+                    if self.options.robot_mode
+                    is RobotMode.WHOLE_BODY_POLICY
+                    else 0.025
+                ),
                 retreat_clearance_m=_TEACHER_RETREAT_CLEARANCE_M,
                 position_tolerance_m=0.020,
                 carry_position_tolerance_m=(
@@ -4275,6 +4278,29 @@ class _ConveyorRuntimeCore:
             translation_delta,
             tuple(float(value) for value in rotation_delta),
             commanded_pose.xyz,
+        )
+
+    def _command_mobile_lift_target(
+        self,
+        target_world: Pose,
+        current_tcp_base: Pose,
+    ) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]:
+        """Run the stationary grasp teacher's lift in the parked base frame."""
+
+        if self._mobile_lift_target_base is None:
+            self._mobile_lift_target_base = self._world_pose_to_root(
+                target_world
+            )
+        return self._apply_tcp_target_base(
+            self._mobile_lift_target_base,
+            current_tcp_base,
+            max_translation_m=_TEACHER_LIFT_STEP_M,
+            max_rotation_rad=_TEACHER_MAX_ROTATION_STEP_RAD,
+            solve_full_target=True,
         )
 
     def _command_mobile_retreat_joint_target(
