@@ -119,6 +119,7 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core
     assert "self._last_policy_action.copy_(" in runtime_core
+    assert "for value in measured_arm.detach().cpu().tolist()" in runtime_core
     assert '"task_scope": "navigate_grasp_deliver"' in runtime_core
 
 

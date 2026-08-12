@@ -3899,6 +3899,15 @@ class _ConveyorRuntimeCore:
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
+                measured_arm = self.robot.data.joint_pos[
+                    0, self.arm_joint_ids
+                ]
+                self._arm_ik_seed = tuple(
+                    float(value)
+                    for value in measured_arm.detach().cpu().tolist()
+                )
+                self._last_ik_error_m = 0.0
+                self._last_ik_iterations = 0
                 self._transition_mobile_carry("place", sim_time_s)
                 return (
                     self._mobile_place_target(oracle_target, state),
