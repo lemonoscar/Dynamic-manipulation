@@ -113,6 +113,7 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "_LOCOMOTION_APPROACH_TARGET_X_M = 0.08" in runtime_core
     assert "_MOBILE_CARRY_STANDOFF_M = 0.50" in runtime_core
     assert "_MOBILE_CARRY_MIN_TRAVEL_M = 0.12" in runtime_core
+    assert "_MOBILE_CARRY_BACKOFF_M = 0.40" in runtime_core
     assert "_MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065" in runtime_core
     assert "_MOBILE_PLACE_FLOOR_CLEARANCE_M = 0.010" in runtime_core
     assert "_MOBILE_SAFE_CARRY_CLEARANCE_M = 0.045" in runtime_core
@@ -125,6 +126,8 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert 'andphasein{"close","lift"}' not in compact
     assert "verify_timeout_s=6.0" in compact
     assert "return planar_standoff_goal(" in runtime_core
+    assert "if self._mobile_backoff_pending:" in runtime_core
+    assert '"carry_turn"' in runtime_core
     assert "return \"navigate\"" in runtime_core
     assert "self._mobile_forward_policy_action_seed" in runtime_core
     assert "self._last_policy_action.copy_(" in runtime_core

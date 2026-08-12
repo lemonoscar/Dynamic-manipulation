@@ -222,6 +222,7 @@ _MOBILE_COMPACT_TCP_BASE = (
 )
 _MOBILE_CARRY_STANDOFF_M = 0.50
 _MOBILE_CARRY_MIN_TRAVEL_M = 0.12
+_MOBILE_CARRY_BACKOFF_M = 0.40
 _MOBILE_CARRY_SETTLE_S = 0.40
 _MOBILE_TURN_RATE_RADPS = 0.35
 # Loaded navigation turns to the tray first, then drives toward a target-facing
@@ -1027,6 +1028,7 @@ class _ConveyorRuntimeCore:
                 "carry_minimum_planned_travel_m": (
                     _MOBILE_CARRY_MIN_TRAVEL_M
                 ),
+                "post_grasp_backoff_m": _MOBILE_CARRY_BACKOFF_M,
                 "place_base_hold": {
                     "command_forward_mps": 0.20,
                     "start_error_m": _MOBILE_PLACE_HOLD_START_ERROR_M,
@@ -3133,6 +3135,7 @@ class _ConveyorRuntimeCore:
         self._mobile_carry_stable_since_s: float | None = None
         self._mobile_goal_yaw_rad: float | None = None
         self._mobile_goal_root_xy: tuple[float, float] | None = None
+        self._mobile_backoff_pending = False
         self._mobile_forward_policy_action_seed: torch.Tensor | None = None
         self._mobile_navigation_drive_active = False
         self._mobile_place_drive_active = False
@@ -3468,12 +3471,9 @@ class _ConveyorRuntimeCore:
             0.0,
             (spawn_y - intercept_y) / speed,
         )
-        # CARRY includes the mobile retract, turn, and settle substages before
-        # the deliberately slow overhead tray approach resumes.  The former
-        # 15 s budget expired with the held object already moving correctly
-        # toward the tray.  The slow overhead placement then needs about
-        # 19 s after locomotion, so retain 45 s for dynamic demonstrations.
-        return max(45.0, travel_s + 5.0)
+        # CARRY includes compact-arm retraction, an explicit 0.4 m backoff,
+        # return navigation, and the deliberately slow overhead tray approach.
+        return max(60.0, travel_s + 5.0)
 
     def _mobile_preoracle_command(
         self,
@@ -3885,6 +3885,17 @@ class _ConveyorRuntimeCore:
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
+                if self._mobile_backoff_pending:
+                    (
+                        self._mobile_goal_yaw_rad,
+                        self._mobile_goal_root_xy,
+                    ) = self._plan_mobile_carry_goal(resolved, root_pose)
+                    self._transition_mobile_carry("turn", sim_time_s)
+                    return (
+                        compact_target,
+                        (0.0, 0.0, 0.0),
+                        "carry_turn",
+                    )
                 measured_arm = self.robot.data.joint_pos[
                     0, self.arm_joint_ids
                 ]
@@ -3915,6 +3926,20 @@ class _ConveyorRuntimeCore:
         """Plan a measurable loaded navigation segment toward the tray."""
 
         goal_x, goal_y, _ = resolved.target_zone.center_xyz_m
+        away_x = root_pose.xyz[0] - goal_x
+        away_y = root_pose.xyz[1] - goal_y
+        distance = math.hypot(away_x, away_y)
+        if distance <= _MOBILE_CARRY_STANDOFF_M + _MOBILE_CARRY_MIN_TRAVEL_M:
+            if distance <= 1.0e-9:
+                raise ValueError("cannot back off from a coincident tray goal")
+            scale = _MOBILE_CARRY_BACKOFF_M / distance
+            backoff_goal = (
+                root_pose.xyz[0] + away_x * scale,
+                root_pose.xyz[1] + away_y * scale,
+            )
+            self._mobile_backoff_pending = True
+            return math.atan2(away_y, away_x), backoff_goal
+        self._mobile_backoff_pending = False
         return planar_standoff_goal(
             (root_pose.xyz[0], root_pose.xyz[1]),
             (goal_x, goal_y),
@@ -4078,11 +4103,10 @@ class _ConveyorRuntimeCore:
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
             "retract": 6.0,
-            # The loaded negative-yaw turn settles more slowly than its
-            # positive-yaw counterpart.  Keep the same measured envelope as
-            # so both sorting trays are reachable without weakening the
-            # heading or angular-speed gates.
-            "turn": 10.0,
+            # A close tray requires an explicit backoff and then an almost
+            # 180-degree return turn; allow the audited 0.35 rad/s command to
+            # finish without weakening its heading or angular-speed gates.
+            "turn": 14.0,
             "navigate": 12.0,
             "settle": 4.0,
             # The overhead teacher deliberately advances only a few
