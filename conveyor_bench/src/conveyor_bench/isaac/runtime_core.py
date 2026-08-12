@@ -3453,10 +3453,16 @@ class _ConveyorRuntimeCore:
                 preplace_dwell_s=(
                     _TEACHER_PREPLACE_OBSERVATION_DWELL_S
                 ),
-                # Long bars and shafts can rock for almost three seconds
-                # after a correct in-tray release. Preserve the full 0.5 s
-                # physical settled dwell while allowing that motion to end.
-                verify_timeout_s=6.0,
+                # A can released above the tray rim can roll to the far wall
+                # for about 12 seconds before settling.  Preserve the strict
+                # linear/angular thresholds and full 0.5 s dwell; extend only
+                # the observation window instead of mislabelling motion.
+                verify_timeout_s=(
+                    20.0
+                    if self.options.robot_mode
+                    is RobotMode.WHOLE_BODY_POLICY
+                    else 6.0
+                ),
                 # Lateral placement is deliberately rate-limited while the
                 # arm carries a part.  Both robot modes need the same timeout
                 # envelope to reach and settle over the side trays.
