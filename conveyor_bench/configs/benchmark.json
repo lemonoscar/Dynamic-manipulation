@@ -63,7 +63,9 @@
     "current_target_assets": ["cola"],
     "destination_zone": "sort_bin_blue",
     "subtasks": ["navigation", "dynamic_pick_and_place"],
-    "teacher_profile": "overhead_target_follow_pick_place_v3",
+    "teacher_profile": "overhead_target_follow_pick_place_v4",
+    "spawn_policy": "episode_initialization_continuous_transport",
+    "target_intercept_lead_time_s": 8.0,
     "moving_grasp_strategy": "target_relative_follow_then_descend",
     "target_prediction_horizon_s": 0.0
   },

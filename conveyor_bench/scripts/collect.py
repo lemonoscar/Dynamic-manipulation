@@ -19,7 +19,7 @@ SCRIPTS = PROJECT_ROOT / "scripts"
 SCHEMA_VERSION = "conveyorvla-v3-collection-1"
 TARGET = "cola"
 DESTINATION = "sort_bin_blue"
-TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
+TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v4"
 DYNAMIC_BELT_SPEED_MPS = 0.01
 MAX_EPISODES_PER_PROCESS = 8
 STATIONARY_SEEDS = frozenset((1101, 1102, 1103, 2101, 3101))
@@ -238,6 +238,8 @@ def _episodes_for_seeds(
             or teacher.get("target_prediction_horizon_s") != 0.0
             or not isinstance(task_metadata, Mapping)
             or task_metadata.get("target_asset_id") != TARGET
+            or task_metadata.get("spawn_policy")
+            != "episode_initialization_continuous_transport"
         ):
             raise CollectionError(f"scene/object provenance gate failed: {episode}")
         result[int(seed)] = episode.resolve()
@@ -323,7 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--belt-speed", type=float, default=DYNAMIC_BELT_SPEED_MPS
     )
-    parser.add_argument("--target-intercept-lead-time", type=float, default=5.0)
+    parser.add_argument("--target-intercept-lead-time", type=float, default=8.0)
     parser.add_argument("--max-duration", type=float, default=90.0)
     parser.add_argument("--require-all-success", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

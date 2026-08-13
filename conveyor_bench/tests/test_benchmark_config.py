@@ -47,6 +47,10 @@ def test_collection_status_does_not_overclaim_mobile_readiness() -> None:
         "navigation",
         "dynamic_pick_and_place",
     ]
+    assert config["task"]["spawn_policy"] == (
+        "episode_initialization_continuous_transport"
+    )
+    assert config["task"]["target_intercept_lead_time_s"] == 8.0
     assert config["status"]["fixed_base_dynamic_pick_place"] == "passed"
     assert config["status"]["whole_body_navigation"] == (
         "blocked_on_locomotion_gate"

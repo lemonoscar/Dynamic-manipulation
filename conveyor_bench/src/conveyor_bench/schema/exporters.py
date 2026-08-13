@@ -23,6 +23,7 @@ from conveyor_bench.conveyorvla.temporal import (
     JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M,
     JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
     JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M,
+    JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M,
     JOINT_TASK_REQUIRED_PHASE_ORDER,
     JOINT_TRAINING_PHASES,
     MODEL_HZ as AL0_TEMPORAL_ACTION_RATE_HZ,
@@ -1140,6 +1141,48 @@ def _joint_task_evidence(
             "joint AL0 loaded navigation displacement is too short: "
             f"{carry_displacement:.3f} m"
         )
+    retract_steps = tuple(
+        step for step in control_steps if step.get("phase") == "carry_retract"
+    )
+    if any(
+        any(abs(value) > 1.0e-9 for value in _canonical_action(step)[:3])
+        for step in retract_steps
+    ):
+        raise ExportError(
+            "joint AL0 base must remain locked until carry retraction completes"
+        )
+    if any(
+        _mapping(step.get("metadata"), "step.metadata").get(
+            "mobile_stance_lock_active"
+        )
+        is not True
+        for step in retract_steps
+    ):
+        raise ExportError(
+            "joint AL0 stance lock must remain active during carry retraction"
+        )
+    if any(
+        not _mapping(step.get("metadata"), "step.metadata").get(
+            "held_instance_id"
+        )
+        for step in retract_steps
+    ):
+        raise ExportError(
+            "joint AL0 payload must remain held during carry retraction"
+        )
+    retract_start, _ = _pose(retract_steps[0], "robot_root_world")
+    retract_max_displacement = max(
+        math.hypot(
+            _pose(step, "robot_root_world")[0][0] - retract_start[0],
+            _pose(step, "robot_root_world")[0][1] - retract_start[1],
+        )
+        for step in retract_steps
+    )
+    if retract_max_displacement > JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M:
+        raise ExportError(
+            "joint AL0 base moved before carry retraction completed: "
+            f"{retract_max_displacement:.3f} m"
+        )
     backoff_actions = tuple(
         _canonical_action(step)
         for step in control_steps
@@ -1226,6 +1269,16 @@ def _joint_task_evidence(
                 JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M
             ),
             "command_direction": "negative_longitudinal",
+        },
+        "pre_backoff_carry_retraction": {
+            "phase": "carry_retract",
+            "control_steps": len(retract_steps),
+            "maximum_planar_displacement_m": retract_max_displacement,
+            "allowed_planar_displacement_m": (
+                JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M
+            ),
+            "base_action": "zero",
+            "stance_controller": "low_level_root_pose_hold",
         },
         "carry_to_sort_bin": {
             "phase": "carry_navigate",

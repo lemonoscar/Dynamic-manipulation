@@ -237,7 +237,7 @@ _MOBILE_TURN_RATE_RADPS = 0.35
 _MOBILE_NAVIGATE_HEADING_ENTER_TOLERANCE_RAD = 0.16
 _MOBILE_NAVIGATE_HEADING_EXIT_TOLERANCE_RAD = 0.35
 _MOBILE_NAVIGATION_POSITION_TOLERANCE_M = 0.065
-_TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v3"
+_TEACHER_PROFILE_ID = "overhead_target_follow_pick_place_v4"
 _TEACHER_CARTESIAN_STEP_M = 0.003
 _TEACHER_VERTICAL_STEP_M = 0.0015
 _TEACHER_LIFT_STEP_M = 0.002
@@ -259,6 +259,7 @@ _MOBILE_PLACE_HOLD_STEP_M = _TEACHER_VERTICAL_STEP_M
 _MOBILE_PLACE_ACTUATOR_LOOKAHEAD_M = 0.030
 _MOBILE_RELEASE_POSITION_TOLERANCE_M = 0.045
 _MOBILE_INTERCEPT_Y_WORLD_M = 0.10
+_DEFAULT_TARGET_INTERCEPT_LEAD_TIME_S = 8.0
 _M0_DIAGNOSTIC_PREGRASP_CLEARANCE_M = 0.10
 _M0_SERVICE_PREPOSITION_PHASES = frozenset(
     {"arm_preposition", "sequential_rearm"}
@@ -964,6 +965,9 @@ class _ConveyorRuntimeCore:
                     _TEACHER_PREGRASP_OBSERVATION_DWELL_S
                 ),
                 "moving_grasp_strategy": "target_relative_follow_then_descend",
+                "target_spawn_policy": (
+                    "episode_initialization_continuous_transport"
+                ),
                 "target_prediction_horizon_s": 0.0,
                 "descent_target_generator": "time_parameterized_absolute_pose",
                 "descent_speed_mps": (
@@ -1024,6 +1028,7 @@ class _ConveyorRuntimeCore:
                     "track",
                     "close",
                     "lift",
+                    "carry_retract",
                     "carry_backoff",
                     "carry_backoff_settle",
                     "carry_turn",
@@ -1043,6 +1048,13 @@ class _ConveyorRuntimeCore:
                 "post_grasp_backoff_speed_mps": (
                     _MOBILE_CARRY_BACKOFF_SPEED_MPS
                 ),
+                "pre_backoff_base_lock": (
+                    "zero_until_compact_carry_ready"
+                ),
+                "pre_backoff_stance_controller": (
+                    "low_level_root_pose_hold"
+                ),
+                "maximum_pre_backoff_base_displacement_m": 0.005,
                 "placement_base_lock": "zero_until_episode_complete",
                 "placement_stance_controller": "low_level_root_pose_hold",
                 "training_minimum_realized_displacement_m": {
@@ -1403,17 +1415,20 @@ class _ConveyorRuntimeCore:
 
         try:
             self._reset_episode(resolved)
+            # The first target exists from episode initialization and moves
+            # with the belt while the robot approaches.  Robot readiness
+            # gates oracle activation only; it must never gate visibility.
+            initial_spawn_assets = self._spawn_assets_for_current_target(
+                resolved
+            )
+            self._spawn_task_objects(resolved, initial_spawn_assets)
+            target_spawned = True
             if self.options.robot_mode is RobotMode.FIXED_BASE:
                 self._preposition_fixed_arm()
                 if self._spawn_not_before_s(resolved) > 0.0:
                     approach_stage = "sequential_rearm"
                     stage_started_at = 0.0
                 else:
-                    initial_spawn_assets = (
-                        self._spawn_assets_for_current_target(resolved)
-                    )
-                    self._spawn_task_objects(resolved, initial_spawn_assets)
-                    target_spawned = True
                     oracle = self._make_oracle(resolved, sim_time_s=0.0)
 
             recorder.record_event(
@@ -1580,17 +1595,18 @@ class _ConveyorRuntimeCore:
                             )
                             self._last_ik_error_m = 0.0
                             self._last_ik_iterations = 0
-                        spawn_assets = self._spawn_assets_for_current_target(
-                            resolved
-                        )
-                        self._spawn_task_objects(resolved, spawn_assets)
-                        target_spawned = True
-                        self._record_spawn_events(
-                            recorder,
-                            resolved,
-                            time_s=sim_time_s,
-                            assets=spawn_assets,
-                        )
+                        if not target_spawned:
+                            spawn_assets = (
+                                self._spawn_assets_for_current_target(resolved)
+                            )
+                            self._spawn_task_objects(resolved, spawn_assets)
+                            target_spawned = True
+                            self._record_spawn_events(
+                                recorder,
+                                resolved,
+                                time_s=sim_time_s,
+                                assets=spawn_assets,
+                            )
                         oracle = self._make_oracle(
                             resolved, sim_time_s=sim_time_s
                         )
@@ -1615,8 +1631,9 @@ class _ConveyorRuntimeCore:
                             }
                         phase = "settle"
                         if self._m0_client is not None:
-                            # Never apply a chunk inferred from an image in
-                            # which the service-gated object was still absent.
+                            # Drop pre-handoff actions so oracle activation
+                            # starts from a fresh observation, even though the
+                            # target has remained visible since initialization.
                             m0_chunk = ()
                             m0_chunk_sequence = None
                             m0_chunk_server_ms = None
@@ -2988,6 +3005,13 @@ class _ConveyorRuntimeCore:
                 * self.options.belt_speed_mps
                 * self.options.target_intercept_lead_time_s
             )
+        else:
+            spawn_y_by_id[target.object_id] = (
+                _MOBILE_INTERCEPT_Y_WORLD_M
+                - TRANSPORT_DIRECTION_WORLD[1]
+                * self.options.belt_speed_mps
+                * _DEFAULT_TARGET_INTERCEPT_LEAD_TIME_S
+            )
         task_type = (
             TaskType.STATIONARY_SORT
             if stationary
@@ -3072,6 +3096,12 @@ class _ConveyorRuntimeCore:
                 ),
                 "target_intercept_lead_time_s": (
                     self.options.target_intercept_lead_time_s
+                    if self.options.target_intercept_lead_time_s is not None
+                    else (
+                        None
+                        if stationary
+                        else _DEFAULT_TARGET_INTERCEPT_LEAD_TIME_S
+                    )
                 ),
                 "stationary_scenario": (
                     {
@@ -3091,7 +3121,8 @@ class _ConveyorRuntimeCore:
                 "active_object_count": len(assets),
                 "spawn_x_by_id": spawn_x_by_id,
                 "spawn_y_by_id": spawn_y_by_id,
-                "spawn_policy": (
+                "spawn_policy": "episode_initialization_continuous_transport",
+                "oracle_activation_policy": (
                     "after_mobile_approach_and_arm_preposition"
                     if self.options.robot_mode
                     is RobotMode.WHOLE_BODY_POLICY
@@ -3662,18 +3693,11 @@ class _ConveyorRuntimeCore:
             self._mobile_carry_orientation_base_wxyz = tuple(
                 float(value) for value in state["tcp_base"].wxyz
             )
-            # Back away as soon as the vertical lift gate succeeds. Compact
-            # the arm concurrently, then require it to settle before the
-            # left turn. This preserves the safe carry posture without a
-            # visible stationary retraction pause beside the conveyor.
-            current_yaw = _yaw_from_wxyz(root_pose.wxyz)
-            self._mobile_goal_yaw_rad = current_yaw
-            self._mobile_goal_root_xy = planar_reverse_goal(
-                (root_pose.xyz[0], root_pose.xyz[1]),
-                current_yaw,
-                _MOBILE_CARRY_BACKOFF_M,
-            )
-            self._transition_mobile_carry("backoff", sim_time_s)
+            # After the vertical lift, park the base and return the arm to its
+            # standard loaded posture.  Backoff is enabled only after this
+            # joint-space target is reached and settled.
+            self._mobile_stance_lock_anchor = root_pose
+            self._transition_mobile_carry("retract", sim_time_s)
 
         assert self._mobile_carry_orientation_base_wxyz is not None
         # Retraction and locomotion constrain the compact TCP position but do
@@ -3715,6 +3739,47 @@ class _ConveyorRuntimeCore:
                 f"mobile carry stage {stage!r} exceeded its timeout",
             )
 
+        if stage == "retract":
+            compact_error = float(
+                torch.max(
+                    torch.abs(
+                        self.robot.data.joint_pos[:, self.arm_joint_ids]
+                        - torch.tensor(
+                            [_MOBILE_COMPACT_ARM],
+                            dtype=torch.float32,
+                            device=self.sim.device,
+                        )
+                    )
+                ).item()
+            )
+            arm_speed = float(
+                torch.max(
+                    torch.abs(
+                        self.robot.data.joint_vel[:, self.arm_joint_ids]
+                    )
+                ).item()
+            )
+            if self._mobile_carry_dwell(
+                compact_error <= 0.060 and arm_speed <= 0.35,
+                sim_time_s,
+                0.30,
+            ):
+                current_yaw = _yaw_from_wxyz(root_pose.wxyz)
+                self._mobile_goal_yaw_rad = current_yaw
+                self._mobile_goal_root_xy = planar_reverse_goal(
+                    (root_pose.xyz[0], root_pose.xyz[1]),
+                    current_yaw,
+                    _MOBILE_CARRY_BACKOFF_M,
+                )
+                self._mobile_stance_lock_anchor = None
+                self._transition_mobile_carry("backoff", sim_time_s)
+                return (
+                    compact_target,
+                    (_MOBILE_CARRY_BACKOFF_SPEED_MPS, 0.0, 0.0),
+                    "carry_backoff",
+                )
+            return compact_target, (0.0, 0.0, 0.0), "carry_retract"
+
         assert self._mobile_goal_yaw_rad is not None
         assert self._mobile_goal_root_xy is not None
         current_yaw = _yaw_from_wxyz(root_pose.wxyz)
@@ -3745,31 +3810,10 @@ class _ConveyorRuntimeCore:
             )
 
         if stage == "backoff_settle":
-            compact_error = float(
-                torch.max(
-                    torch.abs(
-                        self.robot.data.joint_pos[:, self.arm_joint_ids]
-                        - torch.tensor(
-                            [_MOBILE_COMPACT_ARM],
-                            dtype=torch.float32,
-                            device=self.sim.device,
-                        )
-                    )
-                ).item()
-            )
-            arm_speed = float(
-                torch.max(
-                    torch.abs(
-                        self.robot.data.joint_vel[:, self.arm_joint_ids]
-                    )
-                ).item()
-            )
             if self._mobile_carry_dwell(
                 planar_speed <= 0.07
                 and abs(root_twist.angular_xyz[2])
-                <= self._mobile_settle_angular_speed_tolerance_radps(resolved)
-                and compact_error <= 0.060
-                and arm_speed <= 0.35,
+                <= self._mobile_settle_angular_speed_tolerance_radps(resolved),
                 sim_time_s,
                 _MOBILE_CARRY_SETTLE_S,
             ):
@@ -4102,6 +4146,7 @@ class _ConveyorRuntimeCore:
 
     def _mobile_carry_stage_timeout_s(self, stage: str) -> float:
         return {
+            "retract": 6.0,
             "backoff": 5.0,
             "backoff_settle": 3.0,
             "turn": 10.0,

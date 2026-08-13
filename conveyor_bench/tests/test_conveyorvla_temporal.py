@@ -61,6 +61,18 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
         "post_grasp_backoff": 0.30,
         "carry_to_sort_bin": 0.10,
     }
+    assert config["data"]["required_phase_order"][4:7] == [
+        "carry_retract",
+        "carry_backoff",
+        "carry_turn",
+    ]
+    assert config["data"]["pre_backoff_base_lock"] == (
+        "zero_until_compact_carry_ready"
+    )
+    assert config["data"]["pre_backoff_stance_controller"] == (
+        "low_level_root_pose_hold"
+    )
+    assert config["data"]["maximum_pre_backoff_base_displacement_m"] == 0.005
     assert config["data"]["placement_base_lock"] == (
         "zero_until_episode_complete"
     )

@@ -45,6 +45,7 @@ JOINT_TASK_REQUIRED_PHASE_ORDER = (
     "track",
     "close",
     "lift",
+    "carry_retract",
     "carry_backoff",
     "carry_turn",
     "carry_navigate",
@@ -55,6 +56,7 @@ JOINT_TASK_REQUIRED_PHASE_ORDER = (
 JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M = 0.20
 JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M = 0.30
 JOINT_TASK_CARRY_MIN_DISPLACEMENT_M = 0.10
+JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M = 0.005
 JOINT_TASK_PLACEMENT_MAX_DISPLACEMENT_M = 0.05
 JOINT_TRAINING_PHASES = frozenset(
     {
@@ -316,6 +318,11 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
             "post_grasp_backoff": JOINT_TASK_BACKOFF_MIN_DISPLACEMENT_M,
             "carry_to_sort_bin": JOINT_TASK_CARRY_MIN_DISPLACEMENT_M,
         },
+        "pre_backoff_base_lock": "zero_until_compact_carry_ready",
+        "pre_backoff_stance_controller": "low_level_root_pose_hold",
+        "maximum_pre_backoff_base_displacement_m": (
+            JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M
+        ),
         "placement_base_lock": "zero_until_episode_complete",
         "placement_stance_controller": "low_level_root_pose_hold",
         "maximum_placement_base_displacement_m": (
@@ -467,6 +474,7 @@ __all__ = [
     "HISTORY_OFFSETS_MODEL_TICKS",
     "JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M",
     "JOINT_TASK_CARRY_MIN_DISPLACEMENT_M",
+    "JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M",
     "JOINT_TASK_REQUIRED_PHASE_ORDER",
     "JOINT_TRAINING_PHASES",
     "MODEL_HZ",

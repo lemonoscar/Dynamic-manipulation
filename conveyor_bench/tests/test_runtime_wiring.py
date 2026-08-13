@@ -105,6 +105,17 @@ def test_task_frame_is_translated_before_teacher_control() -> None:
     assert '"task_world_origin_xyz_m": task_origin' in runtime_core
     assert "resolved.manifest.belt_surface_z_m" in runtime_core
     assert "task_origin_world_xyz=self._task_world_origin_xyz()" in runtime_core
+    reset = runtime_core.index("self._reset_episode(resolved)")
+    initial_spawn = runtime_core.index(
+        "self._spawn_task_objects(resolved, initial_spawn_assets)", reset
+    )
+    control_loop = runtime_core.index(
+        "for control_index in range", initial_spawn
+    )
+    assert reset < initial_spawn < control_loop
+    assert '"spawn_policy": "episode_initialization_continuous_transport"' in (
+        runtime_core
+    )
 
 
 def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
@@ -129,7 +140,10 @@ def test_joint_expert_navigates_before_grasp_and_while_loaded() -> None:
     assert "goal_x, goal_y = self._mobile_release_xy(resolved)" in runtime_core
     assert runtime_core.count("self._mobile_release_xy(resolved)") == 2
     assert 'self._transition_mobile_carry("backoff",sim_time_s)' in compact
-    assert 'self._transition_mobile_carry("retract",sim_time_s)' not in compact
+    assert 'self._transition_mobile_carry("retract",sim_time_s)' in compact
+    assert "self._mobile_stance_lock_anchor = root_pose" in runtime_core
+    assert "compact_error <= 0.060 and arm_speed <= 0.35" in runtime_core
+    assert "self._mobile_stance_lock_anchor = None" in runtime_core
     assert 'self._transition_mobile_carry("backoff_settle",sim_time_s)' in compact
     assert '"carry_turn"' in runtime_core
     assert '"placement_base_lock":"zero_until_episode_complete"' in compact

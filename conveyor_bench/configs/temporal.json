@@ -39,6 +39,7 @@
       "track",
       "close",
       "lift",
+      "carry_retract",
       "carry_backoff",
       "carry_turn",
       "carry_navigate",
@@ -51,6 +52,9 @@
       "post_grasp_backoff": 0.30,
       "carry_to_sort_bin": 0.10
     },
+    "pre_backoff_base_lock": "zero_until_compact_carry_ready",
+    "pre_backoff_stance_controller": "low_level_root_pose_hold",
+    "maximum_pre_backoff_base_displacement_m": 0.005,
     "placement_base_lock": "zero_until_episode_complete",
     "placement_stance_controller": "low_level_root_pose_hold",
     "maximum_placement_base_displacement_m": 0.05
@@ -117,12 +121,12 @@
     "active_objects_per_episode": 1,
     "pilot_belt_speeds_mps": [0.01, 0.02],
     "deferred_belt_speeds_mps": [0.03, 0.06],
-    "target_intercept_lead_time_s": 5.0,
+    "target_intercept_lead_time_s": 8.0,
     "formal_episode_target": 384,
     "training_requires_success": true,
     "diagnostic_assistance_allowed": false,
     "demonstration_teacher": {
-      "profile_id": "overhead_target_follow_pick_place_v3",
+      "profile_id": "overhead_target_follow_pick_place_v4",
       "overhead_approach_pitch_deg": 75.0,
       "pregrasp_observation_dwell_s": 0.5,
       "moving_grasp_strategy": "target_relative_follow_then_descend",

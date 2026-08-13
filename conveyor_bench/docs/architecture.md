@@ -105,14 +105,16 @@ mobile_settle
 → settle / select
 → pregrasp / track / descend
 → close / lift
-→ carry_backoff（直退时同步收拢机械臂）/ carry_backoff_settle
+→ carry_retract（底盘锁定，收回标准携带位）
+→ carry_backoff / carry_backoff_settle
 → carry_turn（蓝框为左转）
 → carry_navigate / carry_settle
 → carry / preplace / place_descend
 → open / retreat / verify_place
 ```
 
-联合训练只接受 `whole_body_policy`。exporter 要求接近传送带至少 `0.20 m`、抓取后
+目标物体从 episode 初始化起连续随传送带运动；导航和预摆臂只门控 oracle 激活，
+不再门控物体生成。联合训练只接受 `whole_body_policy`。exporter 要求接近传送带至少 `0.20 m`、收臂后
 负向直退至少 `0.30 m`、负载导航至少 `0.10 m`，并要求 `carry/preplace/place_descend/open`
 阶段底盘动作严格为零。到达目标框后由低层 `root_pose_hold` 站立控制抵消机械臂反力，
 且只有物体已经进入蓝框后才允许执行 `open`；上层 VLA 不再输出导航动作。固定底盘只保留为

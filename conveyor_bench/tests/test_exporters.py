@@ -396,7 +396,13 @@ def add_joint_task_trace(episode: Path) -> None:
             row["action"]["values"][0] = 0.20
         if 11 <= tick <= 27:
             row["metadata"]["held_instance_id"] = "target"
-        if row["phase"] in {"carry", "preplace", "place_descend", "open"}:
+        if row["phase"] in {
+            "carry_retract",
+            "carry",
+            "preplace",
+            "place_descend",
+            "open",
+        }:
             row["metadata"]["mobile_stance_lock_active"] = True
     write_jsonl(episode / "steps.jsonl", rows)
 
@@ -439,7 +445,9 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     tmp_path,
 ) -> None:
     episode = make_episode(tmp_path, model_ticks=30)
-    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (episode / "manifest.json").read_text(encoding="utf-8")
+    )
     manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
     write_json(episode / "manifest.json", manifest)
     add_joint_task_trace(episode)
@@ -484,7 +492,9 @@ def test_al0_temporal_projection_rejects_missing_loaded_navigation(
     tmp_path,
 ) -> None:
     episode = make_episode(tmp_path, model_ticks=30)
-    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (episode / "manifest.json").read_text(encoding="utf-8")
+    )
     manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
     write_json(episode / "manifest.json", manifest)
 
@@ -507,6 +517,42 @@ def test_al0_temporal_projection_rejects_base_motion_during_placement(
     write_jsonl(episode / "steps.jsonl", rows)
 
     with pytest.raises(ExportError, match="base must remain locked"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
+
+
+def test_al0_temporal_projection_rejects_motion_before_retraction_finishes(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
+    rows = read_jsonl(episode / "steps.jsonl")
+    next(row for row in rows if row["phase"] == "carry_retract")["action"][
+        "values"
+    ][0] = -0.20
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(ExportError, match="until carry retraction completes"):
+        list(iter_conveyorvla_al0_temporal_records(episode))
+
+
+def test_al0_temporal_projection_requires_retraction_stance_lock(
+    tmp_path,
+) -> None:
+    episode = make_episode(tmp_path, model_ticks=30)
+    manifest = json.loads((episode / "manifest.json").read_text(encoding="utf-8"))
+    manifest["episode"]["task"]["metadata"] = {"active_object_count": 1}
+    write_json(episode / "manifest.json", manifest)
+    add_joint_task_trace(episode)
+    rows = read_jsonl(episode / "steps.jsonl")
+    next(row for row in rows if row["phase"] == "carry_retract")["metadata"][
+        "mobile_stance_lock_active"
+    ] = False
+    write_jsonl(episode / "steps.jsonl", rows)
+
+    with pytest.raises(ExportError, match="during carry retraction"):
         list(iter_conveyorvla_al0_temporal_records(episode))
 
 

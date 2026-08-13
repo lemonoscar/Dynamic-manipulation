@@ -20,7 +20,8 @@ V0 和已经被覆盖的 V2 场景/CLI 不在 live tree 中维护，可从 Git �
 文件路径可以整理，已发布数据身份不能随意重命名：
 
 - canonical raw 继续是 `conveyor-bench-v1`；
-- teacher profile `overhead_target_follow_pick_place_v3` 继续保留；
+- 历史 teacher profile `overhead_target_follow_pick_place_v3` 继续可读；当前要求初始化即
+  连续运输且收臂后再移动的数据使用 `overhead_target_follow_pick_place_v4`；
 - scene ID 中已有的 `_v3` 继续保留；
 - 当前联合训练使用 `temporal_v3`；历史 `temporal_v2/grasp_only` 派生文件保留但不再
   被联合训练入口接受；
