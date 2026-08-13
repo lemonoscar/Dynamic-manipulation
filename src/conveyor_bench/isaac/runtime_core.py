@@ -340,6 +340,7 @@ class _RuntimeOptions:
     )
     m0_policy_endpoint: str | None = None
     m0_state_statistics: Path | None = None
+    m0_policy_config: Path | None = None
     m0_policy_timeout_s: float = 30.0
     m0_policy_seed: int = 20260803
     m0_actions_per_replan: int = 2
@@ -581,6 +582,10 @@ class _RuntimeOptions:
             object.__setattr__(
                 self, "m0_state_statistics", Path(self.m0_state_statistics)
             )
+            if self.m0_policy_config is not None:
+                object.__setattr__(
+                    self, "m0_policy_config", Path(self.m0_policy_config)
+                )
         elif self.m0_mobile_approach_assist:
             raise ValueError(
                 "m0_mobile_approach_assist requires online AL0"
@@ -709,9 +714,17 @@ class _ConveyorRuntimeCore:
             from conveyor_bench.conveyorvla.online import M0OnlineClient
 
             assert self.options.m0_state_statistics is not None
+            policy_config = self.options.m0_policy_config
+            if policy_config is None:
+                candidate = (
+                    self.options.m0_state_statistics.parent
+                    / "conveyorvla_al0_config.json"
+                )
+                policy_config = candidate if candidate.is_file() else None
             self._m0_client = M0OnlineClient.from_files(
                 self.options.m0_policy_endpoint,
                 self.options.m0_state_statistics,
+                **({"config": policy_config} if policy_config is not None else {}),
                 timeout_s=self.options.m0_policy_timeout_s,
             )
             self._m0_health = dict(self._m0_client.health())

@@ -12,6 +12,9 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 
 
 CONFIG_SCHEMA_VERSION = "conveyor-bench-m0-mobile-train-config-1"
+TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION = (
+    "conveyor-vla-al0-temporal-training-config-1"
+)
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs/model.json"
 MODEL_FAMILY = "ConveyorVLA"
 MODEL_VARIANT = "AL0"
@@ -390,8 +393,11 @@ def sample_from_record(
 
 
 def _validate_config(config: Mapping[str, Any]) -> None:
-    if config.get("schema_version") != CONFIG_SCHEMA_VERSION:
-        raise M0MobileError(f"config schema must be {CONFIG_SCHEMA_VERSION!r}")
+    if config.get("schema_version") not in {
+        CONFIG_SCHEMA_VERSION,
+        TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION,
+    }:
+        raise M0MobileError("config schema is not a supported ConveyorVLA contract")
     identity = config.get("model_identity")
     if identity is not None:
         identity = _mapping(identity, "config.model_identity")

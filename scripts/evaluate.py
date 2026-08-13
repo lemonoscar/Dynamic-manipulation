@@ -22,6 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="SSH-forwarded localhost ConveyorVLA AL0 inference endpoint.",
     )
     parser.add_argument("--state-statistics", type=Path)
+    parser.add_argument(
+        "--policy-config",
+        type=Path,
+        help="Defaults to conveyorvla_al0_config.json beside state statistics.",
+    )
     parser.add_argument("--asset-root", type=Path)
     parser.add_argument("--policy-timeout", type=float, default=30.0)
     parser.add_argument("--policy-seed", type=int, default=20260803)
@@ -136,6 +141,11 @@ def main(argv: list[str] | None = None) -> int:
                 instruction_language=InstructionLanguage.BILINGUAL,
                 m0_policy_endpoint=args.endpoint,
                 m0_state_statistics=args.state_statistics.resolve(),
+                m0_policy_config=(
+                    None
+                    if args.policy_config is None
+                    else args.policy_config.resolve()
+                ),
                 m0_policy_timeout_s=args.policy_timeout,
                 m0_policy_seed=args.policy_seed,
                 m0_actions_per_replan=args.actions_per_replan,

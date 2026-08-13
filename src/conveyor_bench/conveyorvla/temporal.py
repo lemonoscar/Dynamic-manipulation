@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from dataclasses import dataclass
@@ -12,6 +13,9 @@ from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
 
 TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-3"
+TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION = (
+    "conveyor-vla-al0-temporal-training-config-1"
+)
 TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v3"
 TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v3"
 POLICY_TASK_SCOPE = "navigate_grasp_deliver"
@@ -141,6 +145,27 @@ def load_temporal_config(
         raise M0MobileError("temporal config must be a JSON object")
     _validate_temporal_config(value)
     return value
+
+
+def build_temporal_policy_config(
+    base: Mapping[str, Any],
+    temporal: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Overlay the temporal contract while retaining runtime-only base fields."""
+
+    config = copy.deepcopy(dict(base))
+    for key in ("data", "action_model", "normalization", "vision"):
+        base_section = config.get(key, {})
+        temporal_section = temporal.get(key)
+        if not isinstance(base_section, Mapping) or not isinstance(
+            temporal_section, Mapping
+        ):
+            raise M0MobileError(f"temporal config section {key!r} is invalid")
+        merged = copy.deepcopy(dict(base_section))
+        merged.update(copy.deepcopy(dict(temporal_section)))
+        config[key] = merged
+    config["schema_version"] = TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION
+    return config
 
 
 def temporal_sample_from_record(
@@ -483,6 +508,8 @@ __all__ = [
     "TEMPORAL_CONFIG_SCHEMA_VERSION",
     "TEMPORAL_PROFILE",
     "TEMPORAL_SCHEMA_VERSION",
+    "TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION",
+    "build_temporal_policy_config",
     "TemporalSample",
     "load_temporal_config",
     "reconstruct_tcp_world",

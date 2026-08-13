@@ -699,12 +699,29 @@ def _state_statistics(stats: Any, *, count: int) -> dict[str, Any]:
         raise M0MobileError("LeRobot state statistics must contain 28 values")
     if np.any(std < 0.0):
         raise M0MobileError("LeRobot state standard deviations must be non-negative")
+    layout = list(load_lerobot_v3_config()["features"]["state"]["names"])
+    layout_sha256 = hashlib.sha256(
+        json.dumps(layout, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    source_payload = json.dumps(
+        {"count": count, "mean": mean.tolist(), "std": std.tolist()},
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
     return {
-        "schema_version": "conveyor-vla-al0-state-statistics-1",
+        "schema_version": "conveyor-bench-m0-mobile-state-stats-v1",
+        "accepted_source_schema_versions": [TEMPORAL_SCHEMA_VERSION],
         "split": "train",
+        "state_key": "observation.state",
+        "state_dimension": STATE_DIM,
+        "state_layout": layout,
+        "state_layout_sha256": layout_sha256,
         "count": count,
         "mean": mean.tolist(),
         "std": std.tolist(),
+        "std_definition": "lerobot_v3_observation_state_std",
+        "source_files": ["LeRobotDataset.meta.stats"],
+        "source_set_sha256": hashlib.sha256(source_payload).hexdigest(),
     }
 
 

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import math
@@ -31,6 +30,7 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (  # noqa: E402
 )
 from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
     DEFAULT_TEMPORAL_CONFIG_PATH,
+    build_temporal_policy_config,
     load_temporal_config,
 )
 from conveyor_bench.conveyorvla.dit import (  # noqa: E402
@@ -87,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size-per-device", type=int)
     parser.add_argument("--gradient-accumulation-steps", type=int)
     parser.add_argument("--warmup-steps", type=int)
+    parser.add_argument("--save-interval-steps", type=int)
     parser.add_argument("--num-workers", type=int)
     parser.add_argument("--allow-fixed-base", action="store_true")
     speed_filter = parser.add_mutually_exclusive_group()
@@ -291,9 +292,10 @@ def _event(rank: int, event: str, **values) -> None:
 def _save_action_model(
     action_model: M0DiTActionHead,
     output: Path,
+    filename: str = "action_model_final.safetensors",
 ) -> str:
-    destination = output / "action_model_final.safetensors"
-    temporary = output / ".action_model_final.safetensors.tmp"
+    destination = output / filename
+    temporary = output / f".{filename}.tmp"
     tensors = {
         key: value.detach().cpu().contiguous()
         for key, value in action_model.state_dict().items()
@@ -335,11 +337,36 @@ def _publish_state_statistics(source: Path | Mapping[str, Any], output: Path) ->
 def _temporal_training_config(base: dict, temporal: dict) -> dict:
     """Reuse released artifacts/training settings with the temporal AL0 contract."""
 
-    config = copy.deepcopy(base)
-    for key in ("data", "action_model", "normalization", "vision"):
-        config[key] = copy.deepcopy(temporal[key])
-    config["schema_version"] = "conveyor-vla-al0-temporal-training-config-1"
-    return config
+    return build_temporal_policy_config(base, temporal)
+
+
+def _apply_dataset_temporal_history(
+    config: dict,
+    source: dict,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Preserve the image interval actually used by a LeRobot derivative."""
+
+    history_offsets = manifest.get("history_offsets_model_ticks")
+    history_span_s = manifest.get("history_span_s")
+    if history_offsets is None and history_span_s is None:
+        return
+    if (
+        not isinstance(history_offsets, list)
+        or len(history_offsets) != 2
+        or history_offsets[1] != 0
+        or not isinstance(history_offsets[0], int)
+        or history_offsets[0] >= 0
+        or isinstance(history_span_s, bool)
+        or not isinstance(history_span_s, (int, float))
+        or not math.isfinite(float(history_span_s))
+        or float(history_span_s) <= 0.0
+    ):
+        raise M0MobileError("LeRobot temporal history metadata is invalid")
+    config["data"]["history_offsets_model_ticks"] = history_offsets
+    config["data"]["history_span_s"] = float(history_span_s)
+    source["history_offsets_model_ticks"] = history_offsets
+    source["history_span_s"] = float(history_span_s)
 
 
 def _load_initial_action_checkpoint(
@@ -398,6 +425,11 @@ def main(argv: list[str] | None = None) -> int:
             "gradient_accumulation_steps",
         )
         warmup = _nonnegative(args.warmup_steps, training["warmup_steps"], "warmup_steps")
+        save_interval = _positive(
+            args.save_interval_steps,
+            training["save_interval_steps"],
+            "save_interval_steps",
+        )
         workers = _nonnegative(args.num_workers, training["dataloader_workers"], "num_workers")
         output = _reserve_output(args.output_dir, rank, world_size)
         random.seed(args.seed + rank)
@@ -406,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         torch.cuda.reset_peak_memory_stats(device)
 
         dataset, sources = _datasets(args, config)
+        if temporal_training:
+            _apply_dataset_temporal_history(config, sources[0], dataset.manifest)
         sampler = (
             DistributedSampler(
                 dataset,
@@ -440,10 +474,17 @@ def main(argv: list[str] | None = None) -> int:
             if temporal_training
             else ConveyorVLAAL0Policy
         )
+        policy_kwargs = {
+            "repeated_diffusion_steps": training["repeated_diffusion_steps"],
+        }
+        if temporal_training:
+            policy_kwargs["temporal_history_span_s"] = config["data"][
+                "history_span_s"
+            ]
         policy = policy_class(
             qwen,
             M0DiTActionHead(m0_dit_config(config)),
-            repeated_diffusion_steps=training["repeated_diffusion_steps"],
+            **policy_kwargs,
         )
         transfer = transfer_robocasa_policy_weights(
             policy, _checkpoint_path(config, root)
@@ -478,6 +519,7 @@ def main(argv: list[str] | None = None) -> int:
         accumulated_loss = 0.0
         final_loss = float("nan")
         final_gradient_norm = float("nan")
+        periodic_checkpoints = []
         while train_step < max_steps:
             if sampler is not None:
                 sampler.set_epoch(epoch)
@@ -528,6 +570,32 @@ def main(argv: list[str] | None = None) -> int:
                         gradient_norm=float(gradient_norm.item()),
                         learning_rates=[group["lr"] for group in optimizer.param_groups],
                     )
+                if train_step % save_interval == 0 and train_step < max_steps:
+                    if world_size > 1:
+                        dist.barrier()
+                    if rank == 0:
+                        filename = f"action_model_step_{train_step:06d}.safetensors"
+                        digest = _save_action_model(
+                            raw_action_model,
+                            output,
+                            filename,
+                        )
+                        periodic_checkpoints.append(
+                            {
+                                "step": train_step,
+                                "relative_path": filename,
+                                "sha256": digest,
+                            }
+                        )
+                        _event(
+                            rank,
+                            "checkpoint",
+                            step=train_step,
+                            relative_path=filename,
+                            sha256=digest,
+                        )
+                    if world_size > 1:
+                        dist.barrier()
                 if train_step >= max_steps:
                     break
             epoch += 1
@@ -543,6 +611,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             assert statistics_source is not None
             statistics_sha256 = _publish_state_statistics(statistics_source, output)
+            config_payload = (
+                json.dumps(config, indent=2, sort_keys=True).encode("utf-8")
+                + b"\n"
+            )
+            config_sha256 = hashlib.sha256(config_payload).hexdigest()
             report = {
                 "schema_version": "conveyor-bench-m0-mobile-training-report-1",
                 "model_identity": {
@@ -578,16 +651,15 @@ def main(argv: list[str] | None = None) -> int:
                 "state_statistics_relative_path": "state_statistics.json",
                 "action_model_sha256": action_sha256,
                 "initial_action_model_sha256": initial_action_sha256,
+                "periodic_checkpoints": periodic_checkpoints,
                 "config_relative_path": "conveyorvla_al0_config.json",
+                "config_sha256": config_sha256,
             }
             (output / "training_report.json").write_text(
                 json.dumps(report, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            (output / "conveyorvla_al0_config.json").write_text(
-                json.dumps(config, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
+            (output / "conveyorvla_al0_config.json").write_bytes(config_payload)
             _event(rank, "complete", report=report)
         if world_size > 1:
             dist.barrier()

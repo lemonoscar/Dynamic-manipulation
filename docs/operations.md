@@ -151,6 +151,27 @@ python scripts/convert_dataset.py \
 先使用 `--max-episodes 1` 做 smoke，再运行完整转换。转换后检查四个视频 feature 的
 首帧，并抽查首/中/末 episode。
 
+PCT Liangzhu 的 `liangzhu_0729_n200` 与 `liangzhu_0729_n250` 使用单独入口；raw
+目录保持只读：
+
+```bash
+python scripts/convert_pct_dataset.py \
+  --source-root DATASETS/liangzhu_0729_n200 \
+  --source-root DATASETS/liangzhu_0729_n250 \
+  --audit-only
+
+python scripts/convert_pct_dataset.py \
+  --source-root DATASETS/liangzhu_0729_n200 \
+  --source-root DATASETS/liangzhu_0729_n250 \
+  --output-root outputs/lerobot_pct_pilot \
+  --max-episodes-per-source 4
+```
+
+适配器只接收成功、执行来源可验证、双相机同步且采用 50 Hz 控制/5 Hz 图像时钟的
+episode。PCT 状态记录是稀疏控制结点，因此 25 Hz 监督由结点间位置线性插值、四元数
+最短弧归一化插值和控制命令零阶保持重建；转换 manifest 会明确记录这一事实。双帧
+历史为真实的 `[-5, 0]` model tick（0.20 秒），不能误写成原生采集的 0.08 秒。
+
 ## 8. 训练
 
 模型资产根需要包含 `configs/model.json` 登记的 Qwen3-VL 与基线检查点。训练默认冻结
@@ -163,6 +184,26 @@ CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
   --model-root /diff/wallx_workspace/dzb/models/base \
   --belt-speed 0.01
 ```
+
+PCT 全任务补充训练从已经完成 10k-step 抓取预训练的 AL0 动作头继续，而不是从随机
+边界层重新开始：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 scripts/train.py \
+  --lerobot-root DATASETS/conveyorvla-pct-full \
+  --output-dir RUNS/conveyorvla-pct-full \
+  --model-root /diff/wallx_workspace/dzb/models/base \
+  --initial-action-checkpoint \
+    /diff/wallx_workspace/dzb/models/conveyorvla-al0/action_model_final.safetensors \
+  --max-steps 10000 \
+  --save-interval-steps 1000 \
+  --batch-size-per-device 1 \
+  --gradient-accumulation-steps 8 \
+  --attention-implementation sdpa
+```
+
+该配置的有效 batch 为 16。每 1000 step 写一个原子 safetensors 中间点；正式完成仍
+以最终 checkpoint、训练报告、配置和状态统计四者哈希一致为准。
 
 健康启动至少要求：
 
@@ -198,6 +239,11 @@ CUDA_VISIBLE_DEVICES=3 python scripts/evaluate.py \
   --output-dir outputs/eval/al0 \
   --enable_cameras --headless
 ```
+
+时序训练产物旁的 `conveyorvla_al0_config.json` 会由 runtime 自动发现，用于 20-step
+动作头和 PCT 归一化；服务端按连续 `sequence_id` 缓存上一组 5 Hz head/wrist 图像，
+首个请求复制当前帧，随后严格使用 0.20 秒历史。在线协议执行前 16 行兼容动作前缀，
+训练目标仍保留完整 20×10 动作块。
 
 assist 参数只用于诊断，不得用于正式成功率或训练数据。
 

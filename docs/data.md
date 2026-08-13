@@ -109,6 +109,12 @@ python scripts/convert_dataset.py \
 小规模 smoke 使用 `--max-episodes 1`。输出目录必须是新的独立目录，转换器不会把
 数据上传到 Hugging Face，也不会依赖网络。
 
+PCT Liangzhu raw 使用 `scripts/convert_pct_dataset.py`。它保留 5 Hz 双相机原始时序，
+并从稀疏物理结点重建 25 Hz、20×10 的独立未来目标。四个 LeRobot feature 的
+`tminus2` 仅是现有 loader 的兼容字段名；PCT 派生集的权威 manifest 必须写明历史为
+`[-5, 0]`、跨度 0.20 秒，以及状态插值和命令零阶保持方法。该静态 box1→box2 任务
+属于 PCT 适配 pilot，不能伪装成传送带动态抓取配额。
+
 ## 6. 完整性检查
 
 每次转换至少验证：

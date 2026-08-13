@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from conveyor_bench.conveyorvla.lerobot_v3 import (
+    _state_statistics,
     VIDEO_FEATURE_KEYS,
     iter_query_records,
     lerobot_features,
@@ -15,6 +16,7 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
     load_lerobot_v3_config,
     write_lerobot_episodes,
 )
+from conveyor_bench.conveyorvla.online import load_state_statistics
 from conveyor_bench.conveyorvla.temporal import load_temporal_config
 from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
 
@@ -176,6 +178,25 @@ def test_decoded_lerobot_row_maps_to_temporal_policy_example() -> None:
     assert len(example["state"][0]) == 28
     assert len(example["action"]) == 20
     assert len(example["action"][0]) == 10
+
+
+def test_lerobot_statistics_are_directly_deployable(tmp_path: Path) -> None:
+    payload = _state_statistics(
+        {
+            "observation.state": {
+                "mean": np.zeros(28, dtype=np.float32),
+                "std": np.ones(28, dtype=np.float32),
+            }
+        },
+        count=7,
+    )
+    path = tmp_path / "state_statistics.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_state_statistics(path)
+
+    assert loaded["count"] == 7
+    assert loaded["state_dimension"] == 28
 
 
 def test_writer_saves_one_lerobot_episode_after_query_downsampling(tmp_path: Path) -> None:

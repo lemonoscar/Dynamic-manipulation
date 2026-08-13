@@ -11,6 +11,9 @@
 - 俯视、目标相对跟随、缓降、连续夹爪闭合、抬升和投放教师；
 - canonical raw、严格校验、质量审计、相机门禁和无损导出；
 - raw PNG 到 LeRobot v3 H.264/PyAV 的转换与训练入口；
+- PCT Liangzhu n200/n250 raw 审计与适配入口：成功轨迹可重建为 state28、未来
+  20×10 动作及 0.20 秒双帧时序；单 episode 已完成四路 H.264/PyAV 解码、真实
+  反向更新和 checkpoint 写出 smoke；
 - `navigate_grasp_deliver` 联合专家状态机：接近传送带、动态抓取、负载导航到分类箱、
   俯视投放；
 - temporal v3 联合训练入口：强制关键 phase 顺序以及 `0.20 m / 0.10 m` 两段实际

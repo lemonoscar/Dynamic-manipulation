@@ -25,10 +25,11 @@ from conveyor_bench.conveyorvla.policy import (
 class _Processor:
     def __init__(self):
         self.messages = None
+        self.kwargs = None
 
     def apply_chat_template(self, messages, **kwargs):
-        del kwargs
         self.messages = messages
+        self.kwargs = kwargs
         batch_size = len(messages)
         attention_mask = torch.ones(batch_size, 5, dtype=torch.long)
         for index in range(batch_size):
@@ -132,6 +133,7 @@ def test_temporal_policy_builds_two_ordered_camera_clips() -> None:
     policy = ConveyorVLAAL0TemporalPolicy(
         interface,
         M0DiTActionHead(config),
+        temporal_history_span_s=0.2,
     )
 
     loss = policy(_temporal_examples(1))["action_loss"]
@@ -146,6 +148,22 @@ def test_temporal_policy_builds_two_ordered_camera_clips() -> None:
         "text",
     ]
     assert len(content[1]["video"]) == len(content[3]["video"]) == 2
+    assert processor.kwargs["video_metadata"] == [
+        [
+            {
+                "total_num_frames": 2,
+                "fps": 5.0,
+                "duration": 0.4,
+                "frames_indices": [0, 1],
+            },
+            {
+                "total_num_frames": 2,
+                "fps": 5.0,
+                "duration": 0.4,
+                "frames_indices": [0, 1],
+            },
+        ]
+    ]
 
 
 def test_release_config_builds_go2_x5_dit_contract() -> None:

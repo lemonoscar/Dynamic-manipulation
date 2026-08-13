@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -119,5 +120,50 @@ def test_temporal_training_reuses_artifacts_with_20_step_contract() -> None:
 
     assert config["action_model"]["action_horizon"] == 20
     assert config["data"]["history_offsets_model_ticks"] == [-2, 0]
+    assert config["data"]["image_size"] == [224, 224]
+    assert config["data"]["action_dimension_mask"] == [
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+    ]
     assert config["vlm"]["relative_path"] == "Qwen3-VL-4B-Instruct"
     assert config["training"]["repeated_diffusion_steps"] == 4
+
+
+def test_saved_temporal_config_is_accepted_by_online_normalizer(tmp_path) -> None:
+    config = TRAIN._temporal_training_config(
+        load_m0_mobile_config(),
+        load_temporal_config(),
+    )
+    path = tmp_path / "conveyorvla_al0_config.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    loaded = load_m0_mobile_config(path)
+
+    assert loaded["action_model"]["action_horizon"] == 20
+    assert loaded["normalization"]["action"]["scale"][3] == pytest.approx(0.3)
+
+
+def test_dataset_temporal_history_overrides_saved_runtime_interval() -> None:
+    config = TRAIN._temporal_training_config(
+        load_m0_mobile_config(),
+        load_temporal_config(),
+    )
+    source = {}
+
+    TRAIN._apply_dataset_temporal_history(
+        config,
+        source,
+        {"history_offsets_model_ticks": [-5, 0], "history_span_s": 0.2},
+    )
+
+    assert config["data"]["history_offsets_model_ticks"] == [-5, 0]
+    assert config["data"]["history_span_s"] == pytest.approx(0.2)
+    assert source["history_offsets_model_ticks"] == [-5, 0]

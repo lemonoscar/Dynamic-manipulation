@@ -27,6 +27,7 @@ from conveyor_bench.conveyorvla.config import (  # noqa: E402
     resolve_model_root,
 )
 from conveyor_bench.conveyorvla.online import (  # noqa: E402
+    ACTION_HORIZON as ONLINE_ACTION_HORIZON,
     MAX_REQUEST_BYTES,
     M0InferRequest,
     M0OnlineError,
@@ -35,6 +36,11 @@ from conveyor_bench.conveyorvla.online import (  # noqa: E402
     load_state_statistics,
     make_infer_response,
     parse_infer_request,
+)
+from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
+    DEFAULT_TEMPORAL_CONFIG_PATH,
+    build_temporal_policy_config,
+    load_temporal_config,
 )
 
 
@@ -47,6 +53,7 @@ class M0PolicyService:
         image_size: tuple[int, int],
         torch: Any,
         model_identity: Mapping[str, Any],
+        temporal_history: bool = False,
     ) -> None:
         self.policy = policy
         self.normalizer = normalizer
@@ -54,6 +61,9 @@ class M0PolicyService:
         self.image_size = image_size
         self.torch = torch
         self.model_identity = dict(model_identity)
+        self.temporal_history = temporal_history
+        self._previous_images: list[Any] | None = None
+        self._previous_sequence: int | None = None
 
     def health(self) -> Mapping[str, Any]:
         return health_payload(self.model_identity)
@@ -69,24 +79,42 @@ class M0PolicyService:
         if self.torch.cuda.is_available():
             self.torch.cuda.manual_seed_all(request.seed)
             self.torch.cuda.synchronize()
-        normalized = self.policy.predict_normalized_actions(
-            [
-                {
-                    "image": images,
-                    "lang": request.instruction,
-                    "state": (self.normalizer.normalize_state(request.state28),),
-                    "action_mask": self.action_mask,
-                }
-            ]
-        )
+        example = {
+            "lang": request.instruction,
+            "state": (self.normalizer.normalize_state(request.state28),),
+            "action_mask": self.action_mask,
+        }
+        if self.temporal_history:
+            if request.sequence_id == 0:
+                previous = images
+            elif self._previous_sequence != request.sequence_id - 1:
+                raise M0OnlineError(
+                    "temporal requests must start at sequence 0 and remain contiguous"
+                )
+            else:
+                assert self._previous_images is not None
+                previous = self._previous_images
+            example["video"] = (
+                (previous[0], images[0]),
+                (previous[1], images[1]),
+            )
+        else:
+            example["image"] = images
+        normalized = self.policy.predict_normalized_actions([example])
+        if self.temporal_history:
+            normalized = normalized[:, :ONLINE_ACTION_HORIZON]
         if self.torch.cuda.is_available():
             self.torch.cuda.synchronize()
         latency_ms = (time.perf_counter() - started) * 1000.0
-        return make_infer_response(
+        response = make_infer_response(
             request,
             normalized.detach().float().cpu().tolist()[0],
             latency_ms,
         )
+        if self.temporal_history:
+            self._previous_images = images
+            self._previous_sequence = request.sequence_id
+        return response
 
 
 class M0RequestHandler(BaseHTTPRequestHandler):
@@ -160,6 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--model-root", type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser.add_argument(
+        "--temporal-config",
+        type=Path,
+        default=DEFAULT_TEMPORAL_CONFIG_PATH,
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--port", type=int, default=18080)
     parser.add_argument(
@@ -215,12 +248,33 @@ def _verify_training_artifacts(
         raise M0OnlineError("action checkpoint SHA-256 disagrees with training report")
     if report.get("state_statistics_sha256") != statistics_sha256:
         raise M0OnlineError("state statistics SHA-256 disagrees with training report")
+    config_relative = report.get("config_relative_path")
+    config_sha256 = report.get("config_sha256")
+    config_path = None
+    if config_relative is not None:
+        if not isinstance(config_relative, str) or not config_relative:
+            raise M0OnlineError("training report config path is invalid")
+        config_path = (report_path.parent / config_relative).resolve()
+        try:
+            config_path.relative_to(report_path.parent.resolve())
+        except ValueError as error:
+            raise M0OnlineError("training config escapes its artifact directory") from error
+        if not config_path.is_file():
+            raise M0OnlineError("training config does not exist")
+        if config_sha256 is not None and _sha256(config_path) != config_sha256:
+            raise M0OnlineError("training config SHA-256 disagrees with training report")
+    elif config_sha256 is not None:
+        raise M0OnlineError("training report config path is missing")
     return {
         "action_model_sha256": action_sha256,
         "state_statistics_sha256": statistics_sha256,
         "training_report_sha256": _sha256(report_path),
         "training_steps": report.get("max_steps"),
         "dataset_records": report.get("dataset_records"),
+        "data_format": report.get("data_format"),
+        "sources": report.get("sources"),
+        "config_path": None if config_path is None else str(config_path),
+        "config_sha256": config_sha256,
     }
 
 
@@ -231,14 +285,50 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
     from conveyor_bench.conveyorvla.dit import M0DiTActionHead
     from conveyor_bench.conveyorvla.policy import (
         ConveyorVLAAL0Policy,
+        ConveyorVLAAL0TemporalPolicy,
         Qwen3VLInterface,
         m0_dit_config,
         transfer_robocasa_policy_weights,
     )
 
-    config = load_m0_mobile_config(args.config)
     statistics_path = args.state_statistics.expanduser().resolve()
     statistics = load_state_statistics(statistics_path)
+    action_path = args.action_checkpoint.expanduser().resolve()
+    if not action_path.is_file():
+        raise M0OnlineError(f"action checkpoint does not exist: {action_path}")
+    training_report = (
+        args.training_report.expanduser().resolve()
+        if args.training_report is not None
+        else action_path.with_name("training_report.json")
+    )
+    artifact_report = _verify_training_artifacts(
+        action_path, statistics_path, training_report
+    )
+    temporal_history = artifact_report["data_format"] == "lerobot_v3"
+    config = load_m0_mobile_config(args.config)
+    if temporal_history:
+        saved_config = artifact_report.get("config_path")
+        config = (
+            load_m0_mobile_config(saved_config)
+            if saved_config is not None
+            else build_temporal_policy_config(
+                config,
+                load_temporal_config(args.temporal_config),
+            )
+        )
+        sources = artifact_report.get("sources")
+        if (
+            not isinstance(sources, list)
+            or len(sources) != 1
+            or not isinstance(sources[0], Mapping)
+            or sources[0].get("history_offsets_model_ticks") != [-5, 0]
+            or sources[0].get("history_span_s") != 0.2
+            or config["data"].get("history_offsets_model_ticks") != [-5, 0]
+            or config["data"].get("history_span_s") != 0.2
+        ):
+            raise M0OnlineError(
+                "temporal deployment requires the PCT [-5, 0] / 0.20 s history contract"
+            )
     normalizer = M0MobileNormalizer.from_config(config, statistics)
     root = resolve_model_root(config, args.model_root)
     device = torch.device(args.device)
@@ -251,23 +341,26 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
         dtype=torch.bfloat16,
         attention_implementation=args.attention_implementation,
     )
-    policy = ConveyorVLAAL0Policy(
+    policy_class = (
+        ConveyorVLAAL0TemporalPolicy
+        if temporal_history
+        else ConveyorVLAAL0Policy
+    )
+    policy_kwargs = {
+        "repeated_diffusion_steps": config["training"][
+            "repeated_diffusion_steps"
+        ],
+    }
+    if temporal_history:
+        policy_kwargs["temporal_history_span_s"] = config["data"][
+            "history_span_s"
+        ]
+    policy = policy_class(
         qwen,
         M0DiTActionHead(m0_dit_config(config)),
-        repeated_diffusion_steps=config["training"]["repeated_diffusion_steps"],
+        **policy_kwargs,
     )
     transfer = transfer_robocasa_policy_weights(policy, _checkpoint_path(config, root))
-    action_path = args.action_checkpoint.expanduser().resolve()
-    if not action_path.is_file():
-        raise M0OnlineError(f"action checkpoint does not exist: {action_path}")
-    training_report = (
-        args.training_report.expanduser().resolve()
-        if args.training_report is not None
-        else action_path.with_name("training_report.json")
-    )
-    artifact_report = _verify_training_artifacts(
-        action_path, statistics_path, training_report
-    )
     policy.action_model.load_state_dict(load_file(action_path, device="cpu"), strict=True)
     policy.freeze_qwen()
     policy.qwen_vl_interface.to(device)
@@ -284,6 +377,7 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
         "reinitialized_tensors": len(transfer.reinitialized_keys),
         "fine_tuned_action_tensors": len(policy.action_model.state_dict()),
         "device": str(device),
+        "temporal_history": temporal_history,
         **artifact_report,
     }
     service = M0PolicyService(
@@ -302,6 +396,7 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
                 "dataset_records",
             )
         },
+        temporal_history=temporal_history,
     )
     return service, report
 

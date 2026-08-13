@@ -215,6 +215,56 @@ def test_localhost_server_and_client_round_trip() -> None:
     assert result.physical_actions[0][9] == 1.0
 
 
+def test_temporal_service_buffers_contiguous_requests_and_returns_online_prefix() -> None:
+    torch = pytest.importorskip("torch")
+
+    class FakePolicy:
+        def __init__(self) -> None:
+            self.examples = []
+
+        def predict_normalized_actions(self, examples):
+            self.examples.extend(examples)
+            return torch.zeros((1, 20, 10), dtype=torch.float32)
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return False
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+        @staticmethod
+        def manual_seed(seed):
+            return None
+
+    policy = FakePolicy()
+    service = SERVER.M0PolicyService(
+        policy,
+        _normalizer(),
+        (True, False, True, True, True, True, True, True, True, True),
+        (8, 6),
+        FakeTorch(),
+        MODEL_IDENTITY,
+        temporal_history=True,
+    )
+    first_payload = _payload()
+    first_payload["sequence_id"] = 0
+    first = service.infer(parse_infer_request(first_payload))
+    second_payload = _payload()
+    second_payload["sequence_id"] = 1
+    second = service.infer(parse_infer_request(second_payload))
+
+    assert len(first["normalized_actions"]) == 16
+    assert len(second["normalized_actions"]) == 16
+    assert tuple(len(clip) for clip in policy.examples[0]["video"]) == (2, 2)
+    assert tuple(len(clip) for clip in policy.examples[1]["video"]) == (2, 2)
+    skipped_payload = _payload()
+    skipped_payload["sequence_id"] = 3
+    with pytest.raises(M0OnlineError, match="contiguous"):
+        service.infer(parse_infer_request(skipped_payload))
+
+
 def test_client_rejects_non_loopback_endpoint() -> None:
     with pytest.raises(M0OnlineError, match="127.0.0.1"):
         M0OnlineClient("http://0.0.0.0:18080")
@@ -236,9 +286,11 @@ def test_server_pins_action_and_state_artifacts_to_training_report(
 ) -> None:
     action = tmp_path / "action.safetensors"
     statistics = tmp_path / "state.json"
+    config = tmp_path / "conveyorvla_al0_config.json"
     report = tmp_path / "training_report.json"
     action.write_bytes(b"trained-action")
     statistics.write_bytes(b"trained-state")
+    config.write_bytes(b"trained-config")
     report.write_text(
         json.dumps(
             {
@@ -251,6 +303,8 @@ def test_server_pins_action_and_state_artifacts_to_training_report(
                 ).hexdigest(),
                 "max_steps": 10,
                 "dataset_records": 3,
+                "config_relative_path": config.name,
+                "config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
             }
         ),
         encoding="utf-8",
@@ -264,6 +318,11 @@ def test_server_pins_action_and_state_artifacts_to_training_report(
     assert verified["training_report_sha256"] == hashlib.sha256(
         report.read_bytes()
     ).hexdigest()
+    assert verified["config_path"] == str(config)
+    config.write_bytes(b"tampered-config")
+    with pytest.raises(M0OnlineError, match="config SHA-256"):
+        SERVER._verify_training_artifacts(action, statistics, report)
+    config.write_bytes(b"trained-config")
     action.write_bytes(b"tampered")
     with pytest.raises(M0OnlineError, match="action checkpoint SHA-256"):
         SERVER._verify_training_artifacts(action, statistics, report)

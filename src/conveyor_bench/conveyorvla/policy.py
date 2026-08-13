@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 from contextlib import nullcontext
 from dataclasses import dataclass
 from importlib.util import find_spec
@@ -116,11 +117,15 @@ class Qwen3VLInterface(nn.Module):
         self,
         videos: Sequence[Sequence[Sequence[Any]]],
         instructions: Sequence[str],
+        *,
+        history_span_s: float,
     ) -> Mapping[str, torch.Tensor]:
         """Build two ordered-frame clips: head first, then wrist."""
 
         if len(videos) != len(instructions) or not videos:
             raise ValueError("videos and instructions must be non-empty equal batches")
+        if not math.isfinite(history_span_s) or history_span_s <= 0.0:
+            raise ValueError("temporal history span must be positive and finite")
         messages = []
         for sample_clips, instruction in zip(videos, instructions, strict=True):
             if len(sample_clips) != 2 or any(len(clip) != 2 for clip in sample_clips):
@@ -148,6 +153,18 @@ class Qwen3VLInterface(nn.Module):
             padding=True,
             return_dict=True,
             return_tensors="pt",
+            video_metadata=[
+                [
+                    {
+                        "total_num_frames": 2,
+                        "fps": 1.0 / history_span_s,
+                        "duration": 2.0 * history_span_s,
+                        "frames_indices": [0, 1],
+                    }
+                    for _clip in sample_clips
+                ]
+                for sample_clips in videos
+            ],
         )
         device = next(self.model.parameters()).device
         return {
@@ -279,6 +296,20 @@ class ConveyorVLAAL0Policy(nn.Module):
 class ConveyorVLAAL0TemporalPolicy(ConveyorVLAAL0Policy):
     """AL0 DiT with Qwen ordered-frame clips and a 20-step action head."""
 
+    def __init__(
+        self,
+        *args: Any,
+        temporal_history_span_s: float = 0.08,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        if (
+            not math.isfinite(temporal_history_span_s)
+            or temporal_history_span_s <= 0.0
+        ):
+            raise ValueError("temporal history span must be positive and finite")
+        self.temporal_history_span_s = float(temporal_history_span_s)
+
     def _encode(
         self,
         examples: Sequence[Mapping[str, Any]],
@@ -288,6 +319,7 @@ class ConveyorVLAAL0TemporalPolicy(ConveyorVLAAL0Policy):
         inputs = self.qwen_vl_interface.build_temporal_inputs(
             [example["video"] for example in examples],
             [_instruction(example["lang"]) for example in examples],
+            history_span_s=self.temporal_history_span_s,
         )
         return self._encode_inputs(inputs)
 
