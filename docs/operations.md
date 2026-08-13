@@ -20,7 +20,7 @@ workspace-manifest/                  清理与保留清单
 ## 1. 环境预检
 
 ```bash
-conda activate env_isaaclab
+conda activate /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311
 python -m pip install -e .
 python scripts/check_environment.py
 ```
