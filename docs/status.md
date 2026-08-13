@@ -1,6 +1,6 @@
 # 当前状态与下一步
 
-更新时间：2026-08-12。
+更新时间：2026-08-13。
 
 ## 已完成
 
@@ -17,10 +17,10 @@
   导航位移门禁；
 - 一条固定底盘完整正例：约 14.02 秒、701 个 control step、三路 1050 张 PNG，
   抓取—投放成功并通过已有数据门禁；
-- 一条真实 `whole_body_policy` 联合正例：49.46 秒、2473 个 control step、三路各
-  1236 张 PNG。接近传送带和负载导航净位移分别为 `0.307 m / 0.302 m`，完整执行
-  导航、动态抓取、负载配送和俯视投放，严格校验、质量审计、相机门禁及四种 export
-  均通过，已标记 `training_eligible=true`。
+- 最新 `whole_body_policy` 联合正例 r23：24.46 秒、1223 个 50 Hz 样本、三路各
+  611 张 PNG。目标从 episode 初始化起连续运动，完整执行导航、跟踪抓取、垂直抬升、
+  锁底盘收臂、后退左转、负载导航和驻车放置；严格校验、质量审计、相机门禁及四种
+  export 均通过，已标记 `training_eligible=true`。
 
 ## 已知失败
 
@@ -42,9 +42,10 @@
 
 ## 当前限制
 
-联合链路已由 r11 的真实 Isaac episode 验证，不再是当前阻塞。该条在 49.28 秒释放，
-49.44 秒首次进入 `sort_bin_blue`，当时 `last_settled=false`，仍正确得到 `success=true`；
-随后 strict validator、quality audit、camera gate 和 temporal export 全部通过。
+联合链路已由 r23 的真实 Isaac episode 验证，不再是当前阻塞。该条在 24.40 秒释放，
+物体进入 `sort_bin_blue`；`last_settled=false` 仍按任务合同正确得到 `success=true`。
+外层目录曾留下 `exit_code=2`，但内层 collector 返回 0，episode 与全部导出均成功；
+若复用旧 launcher，需要修正这处退出码透传。
 
 当前物品池也未达到正式矩阵要求。sidecar 虽包含多个物品文件，只有 `cola` 完成了
 尺度、碰撞、质量、摩擦和抓取 affordance 的训练级 fixture；第二档速度和 GPU 2/3
@@ -53,7 +54,7 @@
 ## 下一步顺序
 
 1. 保持 fixed-base 教师作为机械臂消融基准；
-2. 把 r11 转换成 LeRobot v3，执行四视频解码和单 episode 训练 smoke；
+2. 把 r23 转换成 LeRobot v3，执行四视频解码和单 episode 训练 smoke；
 3. 为另外三个训练物品完成刚体 fixture 和逐物品 stationary/dynamic pilot；
 4. 冻结第二档传送带速度，并证明教师节拍和 VLA 查询频率匹配；
 5. 实现 8-cell 可恢复采集总账；
@@ -63,7 +64,7 @@
 ## 可声明与不可声明
 
 可以声明：固定底盘教师以及完整“导航—动态抓取—负载导航—入框”联合教师，均已有
-真实 Isaac 成功证据；r11 canonical 数据已满足当前训练资格。
+真实 Isaac 成功证据；r23 canonical 数据已满足当前训练资格。
 
 不可声明：四物品正式矩阵就绪、384 条已可安全启动、当前 VLA 闭环成功率有效。后续
 报告必须继续区分专家轨迹成功、数据完整性和学习策略闭环三项结果。

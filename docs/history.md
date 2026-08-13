@@ -10,8 +10,8 @@
 | V1 episode 协议、记录、校验 | `src/conveyor_bench/schema/` |
 | V2 顺序目标协调器 | `src/conveyor_bench/task_coordinator.py` |
 | V3 NuRec 与物品 sidecar | `src/conveyor_bench/sidecar/` |
-| V1 采集主循环 | `isaac/runtime_core.py` |
-| V3 当前场景入口 | `isaac/runtime.py`、`isaac/scene.py` |
+| V1 采集主循环 | `src/conveyor_bench/isaac/runtime_core.py` |
+| V3 当前场景入口 | `src/conveyor_bench/isaac/runtime.py`、`src/conveyor_bench/isaac/scene.py` |
 
 V0 和已经被覆盖的 V2 场景/CLI 不在 live tree 中维护，可从 Git 历史恢复。
 
@@ -45,8 +45,10 @@ V0 和已经被覆盖的 V2 场景/CLI 不在 live tree 中维护，可从 Git �
 需要复现实验时使用 Git：
 
 ```bash
-git log --all -- conveyor_bench
-git show COMMIT:conveyor_bench/PATH
+git log --all -- .
+git show COMMIT:PATH
+# 2026-08-13 扁平化之前的提交使用：
+git show OLD_COMMIT:conveyor_bench/PATH
 git worktree add /tmp/conveyorbench-old COMMIT
 ```
 

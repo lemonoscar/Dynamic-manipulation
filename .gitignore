@@ -49,9 +49,12 @@ kit/logs/
 
 # Generated benchmark datasets, recordings, exports, and reports
 outputs/
+# Legacy local outputs left by the pre-flattening layout
 conveyor_bench/outputs/
 
-# SSH-delivered V3 NuRec/object sidecar assets (never publish to Git)
+# SSH-delivered NuRec/object sidecar assets (never publish to Git)
+.local_assets/
+assets_sidecar/
 conveyor_bench/.local_assets/
 conveyor_bench/assets_sidecar/
 

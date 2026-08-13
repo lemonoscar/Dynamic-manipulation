@@ -1,7 +1,21 @@
 # 采集、训练与测评操作
 
-本文命令默认从 `Dynamic/conveyor_bench` 执行。远端工作根为
+本文命令默认从仓库根目录执行。远端工作根为
 `/diff/wallx_workspace/dzb`，本项目实验只允许使用物理 GPU 2/3。
+
+远端只保留以下运行布局：
+
+```text
+ConveyorVLA/                         代码仓库
+assets/conveyorvla-v3/              SSH 交付的 3DGS 与物品资产
+datasets/conveyorvla-al0-grasp-v1/  392 条 LeRobot v3 基线数据
+models/base/                         Qwen3-VL、ABot-M0 与配置登记的 VGGT
+models/conveyorvla-al0/              已训练动作头、配置和统计量
+results/joint-smoke-r23/             最新完整移动教师成功证据
+dynamic-isaaclab-5.1-20260804/       不可搬移的 Isaac 运行环境
+.conda-envs/conveyorvla-al0-lerobot044/  LeRobot 0.4.4 环境
+workspace-manifest/                  清理与保留清单
+```
 
 ## 1. 环境预检
 
@@ -24,7 +38,7 @@ python -m pytest -p no:cacheprovider
 资产通过 SSH 放到服务器，不提交 Git。当前经过哈希校验的目录：
 
 ```bash
-export CONVEYOR_BENCH_ASSET_ROOT=/diff/wallx_workspace/dzb/conveyorvla-v3-assets-20260811
+export CONVEYOR_BENCH_ASSET_ROOT=/diff/wallx_workspace/dzb/assets/conveyorvla-v3
 python scripts/validate_assets.py \
   --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
   --allowed-root /diff/wallx_workspace/dzb
@@ -146,7 +160,7 @@ Qwen3-VL，适配 DiT 动作模型。
 CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
   --lerobot-root outputs/lerobot_pilot \
   --output-dir outputs/checkpoints/al0_pilot \
-  --model-root /diff/wallx_workspace/dzb/models/conveyorvla-al0 \
+  --model-root /diff/wallx_workspace/dzb/models/base \
   --belt-speed 0.01
 ```
 
@@ -167,7 +181,7 @@ CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
 CUDA_VISIBLE_DEVICES=2 python scripts/serve.py \
   --action-checkpoint CHECKPOINT.safetensors \
   --state-statistics state_statistics.json \
-  --model-root /diff/wallx_workspace/dzb/models/conveyorvla-al0 \
+  --model-root /diff/wallx_workspace/dzb/models/base \
   --device cuda:0 \
   --port 18080
 ```

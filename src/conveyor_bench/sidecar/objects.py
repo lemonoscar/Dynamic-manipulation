@@ -46,7 +46,7 @@ COLA_OBJECT = ObjectAsset.from_dict(
         "split": "seen",
         "real_twin_id": "mesa-can-0364ab96f338493c972248102b462aa4",
         "license": "ssh-sidecar-asset-metadata",
-        "provenance": "conveyorvla-v3-assets-20260811/objects/cola",
+        "provenance": "assets/conveyorvla-v3/objects/cola",
     }
 )
 

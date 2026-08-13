@@ -1,41 +1,88 @@
-# Dynamic Manipulation
+# ConveyorVLA AL0
 
-Dynamic Manipulation 面向 Go2-X5 移动操作机器人，研究在横向传送带上完成导航、
-动态跟踪抓取和放置的视觉语言动作策略。当前策略称为 **ConveyorVLA AL0**，
-仿真与数据平台位于 [`conveyor_bench/`](conveyor_bench/)。
+ConveyorVLA AL0 是面向 Go2-X5 移动操作机器人的动态抓取基准与 VLA 训练框架。
+当前任务在 Liangzhu NuRec/3DGS 静态背景中，用 Isaac Sim 驱动机器人、深绿色
+传送带、刚体零件和投放盒，完成：
 
-仓库只维护一套现行实现。过去的 V0/V1/V2/V3 是迭代历史，不再以并列源码存在：
+```text
+导航到传送带 → 跟踪运动目标 → 抓取并抬升 → 收臂 → 后退左转
+→ 导航到蓝框 → 驻车放置 → 松爪后再移动
+```
 
-- 旧实现由 Git commit/tag 保存；
-- 已有 episode 继续使用不可变的 `conveyor-bench-v1` 数据协议；
-- LeRobot 的 `v3.0` 表示数据格式，不表示第三套 benchmark；
-- 当前运行时统一使用 Liangzhu NuRec 背景、Isaac 动态前景和 PCT 对齐的 Go2-X5。
+仓库只维护一套现行实现。V1/V2/V3 仅表示历史协议或 LeRobot 数据版本，不是并列
+源码；旧实现由 Git 历史保存。
 
-## 当前状态
+## 目录
 
-- 固定底盘、单可乐罐、`0.01 m/s` 动态抓取—投放教师正例已通过；
-- 相机、场景、sidecar 资产和 raw → LeRobot v3 转换链路已经接入；
-- 完整移动专家已接入“初始化连续运输—跟踪抓取—垂直抬升—锁底盘收臂—直退—
-  左转见蓝框—驻车放置”的联合状态与数据门禁；
-- 当前正式代码只启用 `cola`，四零件 × 两速度 × 48 条的 384 条矩阵仍是后续目标。
+```text
+assets/                 可公开的小型机器人、工位和策略资产
+configs/                benchmark、数据、模型和时序合同
+docs/                   架构、数据、操作、状态与历史说明
+scripts/                采集、校验、转换、训练和测评入口
+src/conveyor_bench/      当前唯一实现
+tests/                   不启动 Isaac 的逻辑与静态接线测试
+```
 
-## 快速入口
+大体积 3DGS/物品资产、数据集、模型和运行环境通过 SSH sidecar 管理，不进入 Git，
+也不允许运行时联网下载。
+
+## 快速检查
 
 ```bash
-cd conveyor_bench
 conda activate env_isaaclab
 python -m pip install -e .
 python scripts/check_environment.py
+
+PYTHONDONTWRITEBYTECODE=1 \
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+python -m pytest -p no:cacheprovider
 ```
 
-完整说明：
+校验远端资产：
 
-- [项目与命令](conveyor_bench/README.md)
-- [任务和场景规范](conveyor_bench/docs/benchmark.md)
-- [代码与模型架构](conveyor_bench/docs/architecture.md)
-- [数据格式](conveyor_bench/docs/data.md)
-- [采集、训练和测评操作](conveyor_bench/docs/operations.md)
-- [状态与已知问题](conveyor_bench/docs/status.md)
-- [版本迁移说明](conveyor_bench/docs/history.md)
+```bash
+export CONVEYOR_BENCH_ASSET_ROOT=/diff/wallx_workspace/dzb/assets/conveyorvla-v3
+python scripts/validate_assets.py \
+  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
+  --allowed-root /diff/wallx_workspace/dzb
+```
 
-大体积 NuRec 与物品资产通过 SSH sidecar 交付，不进入 Git，也不允许运行时联网下载。
+采集一条 whole-body smoke episode：
+
+```bash
+python scripts/collect.py \
+  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
+  --output-root outputs/smoke \
+  --physical-gpu 2 \
+  --robot-mode whole_body_policy \
+  --episodes 1 \
+  --seed 1101 \
+  --belt-speed 0.01 \
+  --require-all-success
+```
+
+使用 `--dry-run` 可以检查路径、命令和 GPU 约束而不启动 Isaac。raw episode 只有在
+任务成功，并通过 validator、quality audit、camera gate 和无损 export 后，才允许
+转换为 LeRobot v3 训练数据。
+
+## 当前边界
+
+- PCT 对齐的 Go2-X5、head/wrist 标定和第三视角已经接入；
+- 目标从环境初始化开始连续运动；完整移动教师已通过单条成功 smoke；
+- 抓取后必须先垂直抬升并锁底盘收回标准携带位，之后才允许底盘运动；
+- 当前只完成 `cola` 的训练刚体合同，四零件 × 两速度 × 48 条的 384 条矩阵尚未
+  启动；
+- 教师轨迹成功不能表述为 VLA 闭环成功。
+
+## 文档
+
+- [Benchmark 规范](docs/benchmark.md)
+- [模型与代码架构](docs/architecture.md)
+- [数据格式与质量门禁](docs/data.md)
+- [采集、训练与测评操作](docs/operations.md)
+- [当前状态与下一步](docs/status.md)
+- [版本迁移与兼容策略](docs/history.md)
+- [最近工作交接](HANDOFF.md)
+
+`assets/policies/go2_x5_pct_dog_only/policy.pt` 的再分发许可证尚未确认；公开发布前
+必须取得授权或替换为许可证明确的权重。
