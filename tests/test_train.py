@@ -167,3 +167,29 @@ def test_dataset_temporal_history_overrides_saved_runtime_interval() -> None:
     assert config["data"]["history_offsets_model_ticks"] == [-5, 0]
     assert config["data"]["history_span_s"] == pytest.approx(0.2)
     assert source["history_offsets_model_ticks"] == [-5, 0]
+
+
+def test_explicit_action_scale_is_saved_in_temporal_config() -> None:
+    config = TRAIN._temporal_training_config(
+        load_m0_mobile_config(),
+        load_temporal_config(),
+    )
+    scale = [0.5, 1.0, 0.55, 0.3, 0.3, 0.2, 0.5, 1.5, 0.5, 1.0]
+
+    TRAIN._apply_action_scale(config, scale)
+
+    assert config["normalization"]["action"]["scale"] == scale
+
+
+@pytest.mark.parametrize(
+    "scale",
+    ([1.0] * 9 + [0.0], [1.0] * 9 + [float("nan")]),
+)
+def test_explicit_action_scale_rejects_nonpositive_or_nonfinite(scale) -> None:
+    config = TRAIN._temporal_training_config(
+        load_m0_mobile_config(),
+        load_temporal_config(),
+    )
+
+    with pytest.raises(M0MobileError, match="positive finite"):
+        TRAIN._apply_action_scale(config, scale)

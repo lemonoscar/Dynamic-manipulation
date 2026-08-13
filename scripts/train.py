@@ -29,6 +29,7 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (  # noqa: E402
     ConveyorVLAAL0LeRobotDataset,
 )
 from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
+    ACTION_DIM,
     DEFAULT_TEMPORAL_CONFIG_PATH,
     build_temporal_policy_config,
     load_temporal_config,
@@ -89,6 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-steps", type=int)
     parser.add_argument("--save-interval-steps", type=int)
     parser.add_argument("--num-workers", type=int)
+    parser.add_argument(
+        "--action-scale",
+        nargs=ACTION_DIM,
+        type=float,
+        metavar="SCALE",
+        help="Override the 10 positive physical action-normalization scales.",
+    )
     parser.add_argument("--allow-fixed-base", action="store_true")
     speed_filter = parser.add_mutually_exclusive_group()
     speed_filter.add_argument("--all-belt-speeds", action="store_true")
@@ -369,6 +377,18 @@ def _apply_dataset_temporal_history(
     source["history_span_s"] = float(history_span_s)
 
 
+def _apply_action_scale(config: dict, values: list[float] | None) -> None:
+    """Record an explicit dataset-specific physical action scale."""
+
+    if values is None:
+        return
+    if len(values) != ACTION_DIM or any(
+        not math.isfinite(value) or value <= 0.0 for value in values
+    ):
+        raise M0MobileError(f"--action-scale requires {ACTION_DIM} positive finite values")
+    config["normalization"]["action"]["scale"] = [float(value) for value in values]
+
+
 def _load_initial_action_checkpoint(
     action_model: M0DiTActionHead,
     source: Path,
@@ -412,6 +432,9 @@ def main(argv: list[str] | None = None) -> int:
             if temporal_training
             else base_config
         )
+        if args.action_scale is not None and not temporal_training:
+            raise M0MobileError("--action-scale is only supported with --lerobot-root")
+        _apply_action_scale(config, args.action_scale)
         training = config["training"]
         max_steps = _positive(args.max_steps, training["max_train_steps"], "max_steps")
         batch_size = _positive(

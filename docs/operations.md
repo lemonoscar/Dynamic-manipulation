@@ -199,11 +199,15 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 scripts/train.
   --save-interval-steps 1000 \
   --batch-size-per-device 1 \
   --gradient-accumulation-steps 8 \
+  --action-scale 0.5 1.0 0.55 0.3 0.3 0.2 0.5 1.5 0.5 1.0 \
   --attention-implementation sdpa
 ```
 
 该配置的有效 batch 为 16。每 1000 step 写一个原子 safetensors 中间点；正式完成仍
-以最终 checkpoint、训练报告、配置和状态统计四者哈希一致为准。
+以最终 checkpoint、训练报告、配置和状态统计四者哈希一致为准。上述 PCT 专用物理
+尺度覆盖源数据中的 0.45 m/s 前进、0.50 rad/s 偏航及 0.8 秒窗口内的腕部姿态范围，
+避免沿用较慢传送带配置时把完整任务的导航和远期姿态监督截断；训练产物会原样保存
+这些尺度供在线反归一化使用。
 
 健康启动至少要求：
 
