@@ -522,12 +522,13 @@ Pass 1 / Pass 2 / DiT latency
 ```text
 CUDA_VISIBLE_DEVICES=2,3
 2 processes
-BF16 + FlashAttention2 + gradient checkpointing + ZeRO-3
+BF16 + SDPA + gradient checkpointing + ZeRO-3 + CPU optimizer offload
 per-device micro batch = 1
 gradient accumulation = 8
+DataLoader workers = 0（避免全参模型初始化后 fork 触发 COW 内存复制）
 ```
 
-先运行 10-step 保存/恢复 smoke，再运行 100-step 健康测试。
+先运行 1-step 全链路保存 smoke；通过后启动正式训练，并持续观察首个优化步与资源水位。
 
 通过条件：两卡均有稳定利用率；无 OOM、NaN、collective hang；checkpoint/resume 正常；训练 loss 和梯度均为有限值。
 

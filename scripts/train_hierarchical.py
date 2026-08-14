@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-steps", type=int, default=200)
     parser.add_argument("--save-interval-steps", type=int, default=500)
     parser.add_argument("--log-interval-steps", type=int, default=10)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--subtask-loss-weight", type=float, default=1.0)
     parser.add_argument("--action-loss-weight", type=float, default=1.0)
     parser.add_argument("--vlm-learning-rate", type=float, default=2e-6)

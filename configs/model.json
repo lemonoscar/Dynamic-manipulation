@@ -250,7 +250,7 @@
       "navigation_model",
       "manipulation_model"
     ],
-    "repeated_diffusion_steps": 4,
+    "repeated_diffusion_steps": 1,
     "precision": "bfloat16",
     "gradient_checkpointing": true,
     "optimizer": {
@@ -272,7 +272,7 @@
     "max_gradient_norm": 1.0,
     "save_interval_steps": 500,
     "log_interval_steps": 10,
-    "dataloader_workers": 4,
+    "dataloader_workers": 0,
     "smoke_max_steps": 100,
     "smoke_batch_size_per_device": 1
   }
