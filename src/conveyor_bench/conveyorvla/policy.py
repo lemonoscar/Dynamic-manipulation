@@ -18,6 +18,8 @@ from conveyor_bench.conveyorvla.dit import (
     GO2_X5_REINITIALIZED_ACTION_KEYS,
     M0DiTActionHead,
     M0DiTConfig,
+    copy_parameter_tensors,
+    parameter_state_shapes,
 )
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.subtasks import (
@@ -723,9 +725,9 @@ def transfer_qwen_checkpoint_weights(
         for key, value in source.items()
         if key.startswith(prefix)
     }
-    target = interface.state_dict()
-    unexpected = set(qwen_source) - set(target)
-    missing = set(target) - set(qwen_source)
+    target_shapes = parameter_state_shapes(interface)
+    unexpected = set(qwen_source) - set(target_shapes)
+    missing = set(target_shapes) - set(qwen_source)
     if unexpected or missing:
         raise RuntimeError(
             f"Qwen checkpoint structure mismatch: unexpected={sorted(unexpected)}, "
@@ -734,14 +736,14 @@ def transfer_qwen_checkpoint_weights(
     bad_shapes = [
         key
         for key, value in qwen_source.items()
-        if not isinstance(value, torch.Tensor) or value.shape != target[key].shape
+        if not isinstance(value, torch.Tensor) or value.shape != target_shapes[key]
     ]
     if bad_shapes:
         raise RuntimeError(
             "Qwen checkpoint tensor shapes do not match: "
             + ", ".join(sorted(bad_shapes))
         )
-    interface.load_state_dict(qwen_source, strict=True)
+    copy_parameter_tensors(interface, qwen_source)
     return QwenCheckpointReport(loaded_tensors=len(qwen_source))
 
 

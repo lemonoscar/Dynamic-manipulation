@@ -561,9 +561,9 @@ def transfer_conveyorvla_action_trunk(
         key.removeprefix("action_model."): value
         for key, value in checkpoint.items()
     }
-    target = model.state_dict()
-    unexpected = set(source) - set(target)
-    missing = set(target) - set(source)
+    target_shapes = parameter_state_shapes(model)
+    unexpected = set(source) - set(target_shapes)
+    missing = set(target_shapes) - set(source)
     if unexpected or missing:
         raise RuntimeError(
             f"ConveyorVLA action structure mismatch: unexpected={sorted(unexpected)}, "
@@ -571,30 +571,79 @@ def transfer_conveyorvla_action_trunk(
         )
     compatible: dict[str, torch.Tensor] = {}
     reinitialized: set[str] = set()
-    for key, target_value in target.items():
+    for key, target_shape in target_shapes.items():
         source_value = source[key]
         if not isinstance(source_value, torch.Tensor):
             raise RuntimeError(f"checkpoint value is not a tensor: {key}")
-        if source_value.shape == target_value.shape:
+        if source_value.shape == target_shape:
             compatible[key] = source_value
         elif key in DOMAIN_ACTION_REINITIALIZED_KEYS:
             reinitialized.add(key)
         else:
             raise RuntimeError(
                 f"unapproved domain-head shape mismatch for {key}: "
-                f"source={tuple(source_value.shape)} target={tuple(target_value.shape)}"
+                f"source={tuple(source_value.shape)} target={tuple(target_shape)}"
             )
     if reinitialized != DOMAIN_ACTION_REINITIALIZED_KEYS:
         raise RuntimeError(
             "domain action transfer must reinitialize exactly the action I/O tensors"
         )
-    result = model.load_state_dict(compatible, strict=False)
-    if set(result.missing_keys) != reinitialized or result.unexpected_keys:
-        raise RuntimeError("domain action transfer result violates the migration contract")
+    copy_parameter_tensors(model, compatible)
     return ActionTransferReport(
         loaded_keys=tuple(sorted(compatible)),
         reinitialized_keys=tuple(sorted(reinitialized)),
     )
+
+
+def parameter_state_shapes(module: nn.Module) -> dict[str, torch.Size]:
+    """Return logical parameter shapes before or after ZeRO-3 partitioning."""
+
+    parameters = dict(module.named_parameters(remove_duplicate=False))
+    state_keys = set(module.state_dict())
+    if state_keys != set(parameters):
+        missing = state_keys - set(parameters)
+        extra = set(parameters) - state_keys
+        raise RuntimeError(
+            f"checkpoint contract requires parameter-only state: buffers={sorted(missing)}, "
+            f"extra_parameters={sorted(extra)}"
+        )
+    return {
+        key: torch.Size(getattr(parameter, "ds_shape", parameter.shape))
+        for key, parameter in parameters.items()
+    }
+
+
+def copy_parameter_tensors(
+    module: nn.Module,
+    tensors: Mapping[str, torch.Tensor],
+) -> None:
+    """Copy exact tensors into ordinary or ZeRO-3 partitioned parameters."""
+
+    parameters = dict(module.named_parameters(remove_duplicate=False))
+    if not set(tensors) <= set(parameters):
+        raise RuntimeError("checkpoint contains a tensor that is not a model parameter")
+    partitioned = any(hasattr(parameters[key], "ds_id") for key in tensors)
+    if partitioned:
+        try:
+            import deepspeed
+            import torch.distributed as distributed
+        except ImportError as error:
+            raise RuntimeError("ZeRO-3 checkpoint loading requires DeepSpeed") from error
+        if not distributed.is_initialized():
+            raise RuntimeError("ZeRO-3 checkpoint loading requires distributed init")
+        rank = distributed.get_rank()
+        for key, source in tensors.items():
+            parameter = parameters[key]
+            with deepspeed.zero.GatheredParameters([parameter], modifier_rank=0):
+                if rank == 0:
+                    parameter.data.copy_(
+                        source.to(device=parameter.device, dtype=parameter.dtype)
+                    )
+        return
+    with torch.no_grad():
+        for key, source in tensors.items():
+            parameter = parameters[key]
+            parameter.copy_(source.to(device=parameter.device, dtype=parameter.dtype))
 
 
 def _state_token(state: torch.Tensor) -> torch.Tensor:
@@ -637,6 +686,8 @@ __all__ = [
     "ActionTransferReport",
     "M0DiTActionHead",
     "M0DiTConfig",
+    "copy_parameter_tensors",
+    "parameter_state_shapes",
     "transfer_robocasa_action_weights",
     "transfer_conveyorvla_action_trunk",
 ]
