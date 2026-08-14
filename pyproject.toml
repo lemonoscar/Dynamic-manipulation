@@ -16,6 +16,9 @@ conveyorvla = [
   "transformers>=4.57",
   "safetensors>=0.6",
   "Pillow>=10",
+  "accelerate>=1.14,<2",
+  "deepspeed>=0.16.9,<0.17",
+  "ninja>=1.11",
 ]
 lerobot = [
   "lerobot==0.4.4",
