@@ -20,6 +20,12 @@ from conveyor_bench.conveyorvla.dit import (
     M0DiTConfig,
 )
 from conveyor_bench.conveyorvla.config import M0MobileError
+from conveyor_bench.conveyorvla.subtasks import (
+    ActionDomain,
+    SUBTASK_SPECIAL_TOKENS,
+    SubtaskDecision,
+    parse_subtask_solution,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +33,11 @@ class PolicyCheckpointReport:
     loaded_qwen_tensors: int
     loaded_action_tensors: int
     reinitialized_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class QwenCheckpointReport:
+    loaded_tensors: int
 
 
 class Qwen3VLInterface(nn.Module):
@@ -78,7 +89,23 @@ class Qwen3VLInterface(nn.Module):
             )
         if model.get_input_embeddings().num_embeddings != checkpoint_vocab_size:
             raise M0MobileError("Qwen embedding resize did not reach checkpoint size")
-        return cls(model, processor)
+        added = processor.tokenizer.add_special_tokens(
+            {"additional_special_tokens": list(SUBTASK_SPECIAL_TOKENS)},
+            replace_additional_special_tokens=False,
+        )
+        if len(processor.tokenizer) > model.get_input_embeddings().num_embeddings:
+            model.resize_token_embeddings(len(processor.tokenizer), mean_resizing=False)
+        token_ids = [
+            processor.tokenizer.convert_tokens_to_ids(token)
+            for token in SUBTASK_SPECIAL_TOKENS
+        ]
+        if len(set(token_ids)) != len(token_ids) or any(
+            token_id is None or token_id < 0 for token_id in token_ids
+        ):
+            raise M0MobileError("Qwen tokenizer did not register unique subtask tokens")
+        interface = cls(model, processor)
+        interface.registered_subtask_tokens = added
+        return interface
 
     def build_inputs(
         self,
@@ -119,15 +146,20 @@ class Qwen3VLInterface(nn.Module):
         instructions: Sequence[str],
         *,
         history_span_s: float,
+        solutions: Sequence[str] | None = None,
     ) -> Mapping[str, torch.Tensor]:
-        """Build two ordered-frame clips: head first, then wrist."""
+        """Build two ordered clips and optionally supervise only the assistant span."""
 
         if len(videos) != len(instructions) or not videos:
             raise ValueError("videos and instructions must be non-empty equal batches")
         if not math.isfinite(history_span_s) or history_span_s <= 0.0:
             raise ValueError("temporal history span must be positive and finite")
+        if solutions is not None and len(solutions) != len(videos):
+            raise ValueError("solutions and videos must have equal batch sizes")
         messages = []
-        for sample_clips, instruction in zip(videos, instructions, strict=True):
+        for index, (sample_clips, instruction) in enumerate(
+            zip(videos, instructions, strict=True)
+        ):
             if len(sample_clips) != 2 or any(len(clip) != 2 for clip in sample_clips):
                 raise ValueError(
                     "AL0 temporal input expects two frames for head and wrist"
@@ -145,11 +177,21 @@ class Qwen3VLInterface(nn.Module):
                 },
                 {"type": "text", "text": _instruction(instruction)},
             ]
-            messages.append([{"role": "user", "content": content}])
+            sample_messages = [{"role": "user", "content": content}]
+            if solutions is not None:
+                sample_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": _instruction(solutions[index])}
+                        ],
+                    }
+                )
+            messages.append(sample_messages)
         inputs = self.processor.apply_chat_template(
             messages,
             tokenize=True,
-            add_generation_prompt=True,
+            add_generation_prompt=solutions is None,
             padding=True,
             return_dict=True,
             return_tensors="pt",
@@ -166,11 +208,89 @@ class Qwen3VLInterface(nn.Module):
                 for sample_clips in videos
             ],
         )
+        if solutions is not None:
+            inputs["labels"] = self._assistant_labels(inputs["input_ids"])
         device = next(self.model.parameters()).device
         return {
             key: value.to(device) if isinstance(value, torch.Tensor) else value
             for key, value in inputs.items()
         }
+
+    def _assistant_labels(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Mask every token except the final assistant answer in each sequence."""
+
+        tokenizer = self.processor.tokenizer
+        marker = torch.as_tensor(
+            tokenizer(
+                "<|im_start|>assistant\n",
+                add_special_tokens=False,
+            ).input_ids,
+            device=input_ids.device,
+            dtype=input_ids.dtype,
+        )
+        if marker.numel() == 0:
+            raise RuntimeError("Qwen assistant marker tokenization is empty")
+        im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+        labels = torch.full_like(input_ids, -100)
+        for row_index, row in enumerate(input_ids):
+            starts = [
+                index + marker.numel()
+                for index in range(row.numel() - marker.numel() + 1)
+                if torch.equal(row[index : index + marker.numel()], marker)
+            ]
+            if not starts:
+                raise RuntimeError("Qwen input is missing the assistant answer marker")
+            start = starts[-1]
+            end = start
+            while end < row.numel() and int(row[end]) != im_end_id:
+                end += 1
+            if end <= start:
+                raise RuntimeError("Qwen assistant answer span is empty")
+            labels[row_index, start:end] = row[start:end]
+        return labels
+
+    def enable_full_finetuning(self) -> None:
+        """Make the entire visual-language backbone trainable with checkpointing."""
+
+        self.requires_grad_(True)
+        self.model.config.use_cache = False
+        if hasattr(self.model, "gradient_checkpointing_enable"):
+            self.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+        if hasattr(self.model, "enable_input_require_grads"):
+            self.model.enable_input_require_grads()
+
+    @torch.inference_mode()
+    def generate_temporal_subtasks(
+        self,
+        videos: Sequence[Sequence[Sequence[Any]]],
+        instructions: Sequence[str],
+        *,
+        history_span_s: float,
+        max_new_tokens: int = 48,
+    ) -> tuple[SubtaskDecision, ...]:
+        """Run Pass 1 with greedy decoding and fail closed on non-canonical text."""
+
+        inputs = dict(
+            self.build_temporal_inputs(
+                videos,
+                instructions,
+                history_span_s=history_span_s,
+            )
+        )
+        prompt_width = int(inputs["input_ids"].shape[1])
+        generated = self.model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            use_cache=True,
+        )
+        answers = self.processor.tokenizer.batch_decode(
+            generated[:, prompt_width:],
+            skip_special_tokens=False,
+        )
+        return tuple(parse_subtask_solution(answer) for answer in answers)
 
     def forward(self, **inputs: torch.Tensor) -> Any:
         return self.model(**inputs)
@@ -324,6 +444,174 @@ class ConveyorVLAAL0TemporalPolicy(ConveyorVLAAL0Policy):
         return self._encode_inputs(inputs)
 
 
+class ConveyorVLAAL0TwoPassPolicy(nn.Module):
+    """One fully trainable Qwen with language routing into two unchanged DiTs."""
+
+    def __init__(
+        self,
+        qwen_vl_interface: Qwen3VLInterface,
+        navigation_model: M0DiTActionHead,
+        manipulation_model: M0DiTActionHead,
+        *,
+        temporal_history_span_s: float,
+        repeated_diffusion_steps: int = 1,
+    ) -> None:
+        super().__init__()
+        if not math.isfinite(temporal_history_span_s) or temporal_history_span_s <= 0:
+            raise ValueError("temporal history span must be positive and finite")
+        if repeated_diffusion_steps <= 0:
+            raise ValueError("repeated diffusion steps must be positive")
+        self.qwen_vl_interface = qwen_vl_interface
+        self.navigation_model = navigation_model
+        self.manipulation_model = manipulation_model
+        self.temporal_history_span_s = float(temporal_history_span_s)
+        self.repeated_diffusion_steps = int(repeated_diffusion_steps)
+
+    def enable_full_finetuning(self) -> None:
+        """Enable gradients for the complete VLM and both action experts."""
+
+        self.qwen_vl_interface.enable_full_finetuning()
+        self.navigation_model.requires_grad_(True)
+        self.manipulation_model.requires_grad_(True)
+
+    def forward(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        *,
+        objective: str,
+    ) -> Mapping[str, torch.Tensor | int]:
+        """Expose separate passes so their activation graphs need not coexist."""
+
+        if objective == "subtask":
+            return self._subtask_loss(examples)
+        if objective == "action":
+            return self._action_loss(examples)
+        raise ValueError("objective must be subtask or action")
+
+    def _subtask_loss(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> Mapping[str, torch.Tensor | int]:
+        inputs = self._temporal_inputs(examples, include_solutions=True)
+        outputs = self.qwen_vl_interface(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=False,
+            use_cache=False,
+            return_dict=True,
+        )
+        loss = outputs.loss
+        if loss is None:
+            raise RuntimeError("Qwen did not return supervised subtask loss")
+        supervised_tokens = int((inputs["labels"] != -100).sum().item())
+        return {"subtask_loss": loss, "supervised_tokens": supervised_tokens}
+
+    def _action_loss(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> Mapping[str, torch.Tensor | int]:
+        inputs = dict(self._temporal_inputs(examples, include_solutions=True))
+        inputs.pop("labels")
+        outputs = self.qwen_vl_interface(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=True,
+            use_cache=False,
+            logits_to_keep=1,
+            return_dict=True,
+        )
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            raise RuntimeError("Qwen processor did not return an attention mask")
+        hidden = outputs.hidden_states[-1]
+        losses: list[tuple[int, torch.Tensor]] = []
+        result: dict[str, torch.Tensor | int] = {}
+        for domain, name, model in (
+            (ActionDomain.NAVIGATION, "navigation", self.navigation_model),
+            (ActionDomain.MANIPULATION, "manipulation", self.manipulation_model),
+        ):
+            indices = [
+                index
+                for index, example in enumerate(examples)
+                if int(example["action_domain_id"]) == int(domain)
+            ]
+            result[f"{name}_samples"] = len(indices)
+            if not indices:
+                continue
+            index_tensor = torch.as_tensor(indices, device=hidden.device)
+            device = next(model.parameters()).device
+            dtype = next(model.parameters()).dtype
+            selected_hidden = hidden.index_select(0, index_tensor).to(
+                device=device, dtype=dtype
+            )
+            selected_attention = attention_mask.index_select(0, index_tensor).to(device)
+            actions = torch.as_tensor(
+                [examples[index]["action"] for index in indices],
+                device=device,
+                dtype=dtype,
+            )
+            state = torch.as_tensor(
+                [examples[index]["state"] for index in indices],
+                device=device,
+                dtype=dtype,
+            )
+            action_mask = torch.as_tensor(
+                [examples[index]["action_mask"] for index in indices],
+                device=device,
+                dtype=torch.bool,
+            )
+            repeats = self.repeated_diffusion_steps
+            with _action_autocast(device, dtype):
+                loss = model(
+                    selected_hidden.repeat(repeats, 1, 1),
+                    actions.repeat(repeats, 1, 1),
+                    state.repeat(repeats, 1, 1),
+                    encoder_attention_mask=selected_attention.repeat(repeats, 1),
+                    action_dimension_mask=action_mask.repeat(repeats, 1),
+                )
+            losses.append((len(indices), loss))
+            result[f"{name}_loss"] = loss
+        if not losses:
+            raise RuntimeError("two-pass batch has no recognized action domain")
+        result["action_loss"] = sum(count * loss for count, loss in losses) / sum(
+            count for count, _loss in losses
+        )
+        return result
+
+    def _temporal_inputs(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        *,
+        include_solutions: bool,
+    ) -> Mapping[str, torch.Tensor]:
+        if not examples:
+            raise ValueError("examples must be non-empty")
+        solutions = (
+            [_instruction(example["solution"]) for example in examples]
+            if include_solutions
+            else None
+        )
+        return self.qwen_vl_interface.build_temporal_inputs(
+            [example["video"] for example in examples],
+            [_instruction(example["lang"]) for example in examples],
+            history_span_s=self.temporal_history_span_s,
+            solutions=solutions,
+        )
+
+    @torch.inference_mode()
+    def predict_subtasks(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> tuple[SubtaskDecision, ...]:
+        """Run the actual first pass used by the online dispatcher."""
+
+        return self.qwen_vl_interface.generate_temporal_subtasks(
+            [example["video"] for example in examples],
+            [_instruction(example["lang"]) for example in examples],
+            history_span_s=self.temporal_history_span_s,
+        )
+
+
 def m0_dit_config(config: Mapping[str, Any]) -> M0DiTConfig:
     action = _mapping(config.get("action_model"), "action_model")
     return M0DiTConfig(
@@ -411,6 +699,52 @@ def transfer_robocasa_policy_weights(
     )
 
 
+def transfer_qwen_checkpoint_weights(
+    interface: Qwen3VLInterface,
+    checkpoint: str | Path | Mapping[str, torch.Tensor],
+) -> QwenCheckpointReport:
+    """Load only the released Qwen branch and reject partial or reshaped tensors."""
+
+    source = (
+        torch.load(
+            Path(checkpoint),
+            map_location="cpu",
+            mmap=True,
+            weights_only=True,
+        )
+        if isinstance(checkpoint, (str, Path))
+        else checkpoint
+    )
+    if not isinstance(source, Mapping):
+        raise RuntimeError("upstream checkpoint must contain a tensor mapping")
+    prefix = "qwen_vl_interface."
+    qwen_source = {
+        key.removeprefix(prefix): value
+        for key, value in source.items()
+        if key.startswith(prefix)
+    }
+    target = interface.state_dict()
+    unexpected = set(qwen_source) - set(target)
+    missing = set(target) - set(qwen_source)
+    if unexpected or missing:
+        raise RuntimeError(
+            f"Qwen checkpoint structure mismatch: unexpected={sorted(unexpected)}, "
+            f"missing={sorted(missing)}"
+        )
+    bad_shapes = [
+        key
+        for key, value in qwen_source.items()
+        if not isinstance(value, torch.Tensor) or value.shape != target[key].shape
+    ]
+    if bad_shapes:
+        raise RuntimeError(
+            "Qwen checkpoint tensor shapes do not match: "
+            + ", ".join(sorted(bad_shapes))
+        )
+    interface.load_state_dict(qwen_source, strict=True)
+    return QwenCheckpointReport(loaded_tensors=len(qwen_source))
+
+
 def _rgb_image(value: Any) -> Any:
     if not isinstance(value, (str, Path)):
         return value.convert("RGB") if hasattr(value, "convert") else value
@@ -459,9 +793,12 @@ M0MobilePolicy = ConveyorVLAAL0Policy
 __all__ = [
     "ConveyorVLAAL0Policy",
     "ConveyorVLAAL0TemporalPolicy",
+    "ConveyorVLAAL0TwoPassPolicy",
     "M0MobilePolicy",
     "PolicyCheckpointReport",
+    "QwenCheckpointReport",
     "Qwen3VLInterface",
     "m0_dit_config",
     "transfer_robocasa_policy_weights",
+    "transfer_qwen_checkpoint_weights",
 ]

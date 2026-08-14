@@ -241,20 +241,22 @@
     }
   },
   "training": {
-    "initial_stage": "action_model_only",
-    "launcher": "torchrun",
-    "processes_per_node": 4,
-    "freeze_modules": [
-      "qwen_vl_interface"
-    ],
+    "initial_stage": "seen_two_pass_full_finetune",
+    "launcher": "accelerate_deepspeed_zero3",
+    "processes_per_node": 2,
+    "freeze_modules": [],
     "train_modules": [
-      "action_model"
+      "qwen_vl_interface",
+      "navigation_model",
+      "manipulation_model"
     ],
     "repeated_diffusion_steps": 4,
     "precision": "bfloat16",
     "gradient_checkpointing": true,
     "optimizer": {
       "name": "AdamW",
+      "vlm_learning_rate": 0.000002,
+      "lm_learning_rate": 0.00001,
       "action_core_learning_rate": 0.00002,
       "boundary_learning_rate": 0.0001,
       "betas": [

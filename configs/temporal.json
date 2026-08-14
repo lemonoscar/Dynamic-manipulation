@@ -62,7 +62,7 @@
   "vision": {
     "encoder": "Qwen3-VL-4B-Instruct",
     "temporal_fusion": "two_ordered_frames_per_policy_camera",
-    "freeze_qwen": true,
+    "freeze_qwen": false,
     "fallback_adapter": "add_only_if_counterfactual_motion_probe_fails"
   },
   "action_model": {

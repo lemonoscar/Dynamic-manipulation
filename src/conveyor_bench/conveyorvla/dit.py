@@ -25,6 +25,13 @@ GO2_X5_REINITIALIZED_ACTION_KEYS = frozenset(
         "action_decoder.layer2.bias",
     }
 )
+DOMAIN_ACTION_REINITIALIZED_KEYS = frozenset(
+    {
+        "action_encoder.layer1.weight",
+        "action_decoder.layer2.weight",
+        "action_decoder.layer2.bias",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -544,6 +551,52 @@ def transfer_robocasa_action_weights(
     )
 
 
+def transfer_conveyorvla_action_trunk(
+    model: M0DiTActionHead,
+    checkpoint: Mapping[str, torch.Tensor],
+) -> ActionTransferReport:
+    """Reuse a trained 10-D AL0 trunk while resetting only domain I/O shapes."""
+
+    source = {
+        key.removeprefix("action_model."): value
+        for key, value in checkpoint.items()
+    }
+    target = model.state_dict()
+    unexpected = set(source) - set(target)
+    missing = set(target) - set(source)
+    if unexpected or missing:
+        raise RuntimeError(
+            f"ConveyorVLA action structure mismatch: unexpected={sorted(unexpected)}, "
+            f"missing={sorted(missing)}"
+        )
+    compatible: dict[str, torch.Tensor] = {}
+    reinitialized: set[str] = set()
+    for key, target_value in target.items():
+        source_value = source[key]
+        if not isinstance(source_value, torch.Tensor):
+            raise RuntimeError(f"checkpoint value is not a tensor: {key}")
+        if source_value.shape == target_value.shape:
+            compatible[key] = source_value
+        elif key in DOMAIN_ACTION_REINITIALIZED_KEYS:
+            reinitialized.add(key)
+        else:
+            raise RuntimeError(
+                f"unapproved domain-head shape mismatch for {key}: "
+                f"source={tuple(source_value.shape)} target={tuple(target_value.shape)}"
+            )
+    if reinitialized != DOMAIN_ACTION_REINITIALIZED_KEYS:
+        raise RuntimeError(
+            "domain action transfer must reinitialize exactly the action I/O tensors"
+        )
+    result = model.load_state_dict(compatible, strict=False)
+    if set(result.missing_keys) != reinitialized or result.unexpected_keys:
+        raise RuntimeError("domain action transfer result violates the migration contract")
+    return ActionTransferReport(
+        loaded_keys=tuple(sorted(compatible)),
+        reinitialized_keys=tuple(sorted(reinitialized)),
+    )
+
+
 def _state_token(state: torch.Tensor) -> torch.Tensor:
     return state.unsqueeze(1) if state.ndim == 2 else state
 
@@ -579,9 +632,11 @@ def _attention_mask(
 
 
 __all__ = [
+    "DOMAIN_ACTION_REINITIALIZED_KEYS",
     "GO2_X5_REINITIALIZED_ACTION_KEYS",
     "ActionTransferReport",
     "M0DiTActionHead",
     "M0DiTConfig",
     "transfer_robocasa_action_weights",
+    "transfer_conveyorvla_action_trunk",
 ]

@@ -28,6 +28,12 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
     load_lerobot_v3_config,
 )
 from conveyor_bench.conveyorvla.online import build_live_state28
+from conveyor_bench.conveyorvla.subtasks import (
+    FULL_INSTRUCTION,
+    action_domain,
+    phase_from_pct,
+    phase_instruction,
+)
 from conveyor_bench.conveyorvla.temporal import (
     ACTION_DIMENSION_MASK,
     CAMERA_IDS,
@@ -178,6 +184,17 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
         if target_steps[-1] > control_steps[-1]:
             continue
 
+        raw_phase = str(source_sample["pipeline_state"])
+        phase = phase_from_pct(raw_phase)
+        phase_pure = _phase_pure_window(
+            samples,
+            sample_index,
+            target_steps[-1],
+            controls,
+            control_steps,
+            raw_phase,
+        )
+
         source = _observation_at(controls, control_steps, source_step)
         source_root_xyz, source_root_wxyz, source_tcp_xyz, source_tcp_wxyz = (
             _root_and_tcp_base(source)
@@ -242,7 +259,14 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             "sample_id": f"{episode_id}:control-step-{source_step}",
             "instruction": instruction,
             "policy_task_scope": POLICY_TASK_SCOPE,
-            "phase": source_sample.get("pipeline_state"),
+            "phase": raw_phase,
+            "phase_id": int(phase),
+            "phase_name": phase.name,
+            "action_domain_id": int(action_domain(phase)),
+            "action_domain_name": action_domain(phase).name,
+            "full_instruction": FULL_INSTRUCTION,
+            "phase_instruction": phase_instruction(phase),
+            "phase_pure_action_horizon": phase_pure,
             "observation_model_tick": model_tick,
             "observation_control_tick": source_step,
             "camera_clips": camera_clips,
@@ -265,6 +289,40 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             "action_dimension_mask": ACTION_DIMENSION_MASK,
             "object_state_is_model_input": False,
         }
+
+
+def _phase_pure_window(
+    samples: Sequence[Mapping[str, Any]],
+    sample_index: int,
+    target_step: int,
+    controls: Mapping[int, Mapping[str, Any]],
+    control_steps: Sequence[int],
+    raw_phase: str,
+) -> bool:
+    """Require history and every recorded future control to retain one phase."""
+
+    if sample_index <= 0 or samples[sample_index - 1].get("pipeline_state") != raw_phase:
+        return False
+    future_samples = []
+    for sample in samples[sample_index:]:
+        step = _integer(sample.get("simulation_step"), "simulation_step")
+        if step > target_step:
+            break
+        future_samples.append(sample)
+    if (
+        not future_samples
+        or _integer(future_samples[-1].get("simulation_step"), "simulation_step")
+        != target_step
+        or any(sample.get("pipeline_state") != raw_phase for sample in future_samples)
+    ):
+        return False
+    lower = bisect_right(control_steps, _integer(samples[sample_index].get("simulation_step"), "simulation_step"))
+    upper = bisect_right(control_steps, target_step)
+    future_control_steps = control_steps[lower:upper]
+    return bool(future_control_steps) and all(
+        controls[step].get("pipeline_state") == raw_phase
+        for step in future_control_steps
+    )
 
 
 def materialize_pct_lerobot_v3(

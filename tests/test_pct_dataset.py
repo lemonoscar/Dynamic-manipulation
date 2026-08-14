@@ -129,6 +129,9 @@ def test_pct_episode_builds_state_and_future_actions(tmp_path: Path) -> None:
     assert first["model_action10_chunk"][0][0:3] == (0.05, 0.0, 0.0)
     assert first["model_action10_chunk"][0][-1] == 1.0
     assert first["source_visual_history_span_s"] == 0.2
+    assert first["phase_name"] == "NAV_TO_SOURCE"
+    assert first["action_domain_name"] == "NAVIGATION"
+    assert first["phase_pure_action_horizon"] is False
     assert first["camera_clips"][0]["frames"][0]["relative_path"].endswith(
         "camera0_00000.jpg"
     )

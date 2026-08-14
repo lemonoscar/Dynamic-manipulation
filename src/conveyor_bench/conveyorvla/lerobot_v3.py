@@ -220,7 +220,7 @@ def lerobot_frame_from_record(
         sample.camera_paths[1][1],
     )
     frame = {
-        key: _rgb_array(
+        key: preprocess_policy_rgb(
             load_image(path),
             key,
             _video_shape(config, key),
@@ -568,12 +568,16 @@ def _video_shape(config: Mapping[str, Any], key: str) -> tuple[int, int, int]:
     raise M0MobileError(f"unknown video feature: {key}")
 
 
-def _rgb_array(
+def preprocess_policy_rgb(
     value: Any,
     key: str,
     shape: tuple[int, int, int],
     preprocessing: Mapping[str, Any],
 ) -> np.ndarray:
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
     array = np.asarray(value)
     if array.dtype != np.uint8:
         raise M0MobileError(
@@ -748,5 +752,6 @@ __all__ = [
     "lerobot_model_example",
     "load_lerobot_v3_config",
     "materialize_lerobot_v3",
+    "preprocess_policy_rgb",
     "write_lerobot_episodes",
 ]
