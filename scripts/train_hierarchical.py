@@ -445,13 +445,21 @@ def _event(
         stream.flush()
 
 
-def _distributed_mean(accelerator: Accelerator, value: torch.Tensor) -> float:
-    gathered = accelerator.gather(value.detach().float().reshape(1))
+def _distributed_mean(
+    accelerator: Accelerator, value: torch.Tensor | float
+) -> float:
+    tensor = (
+        value.detach().float()
+        if isinstance(value, torch.Tensor)
+        else torch.tensor(value, dtype=torch.float32, device=accelerator.device)
+    )
+    gathered = accelerator.gather(tensor.reshape(1))
     return float(gathered.mean().cpu())
 
 
-def _finite(value: torch.Tensor, name: str) -> None:
-    if not bool(torch.isfinite(value.detach()).all()):
+def _finite(value: torch.Tensor | float, name: str) -> None:
+    tensor = value.detach() if isinstance(value, torch.Tensor) else torch.tensor(value)
+    if not bool(torch.isfinite(tensor).all()):
         raise M0MobileError(f"{name} is not finite")
 
 
