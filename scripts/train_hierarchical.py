@@ -173,7 +173,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         accelerator.wait_for_everyone()
         model, optimizer, train_loader, scheduler = accelerator.prepare(
-            model, optimizer, train_loader, scheduler
+            model,
+            optimizer,
+            train_loader,
+            scheduler,
+            device_placement=[True, True, False, True],
         )
         global_step = 0
         if args.resume_from is not None:
@@ -240,6 +244,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except Exception as error:
         if accelerator.is_main_process and output_reserved:
+            state_path = args.output_dir.expanduser().resolve() / "run_state.json"
+            try:
+                previous = json.loads(state_path.read_text(encoding="utf-8"))
+                failed_step = int(previous.get("global_step", 0))
+            except (OSError, ValueError, json.JSONDecodeError):
+                failed_step = 0
+            _write_json_atomic(
+                state_path,
+                {
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-state-1",
+                    "status": "failed",
+                    "global_step": failed_step,
+                    "error": str(error),
+                },
+            )
             _event(accelerator, args.output_dir.expanduser().resolve(), "failed", error=str(error))
         raise
 
@@ -341,7 +360,10 @@ def _optimizer(
             "name": name,
             "learning_rate": learning_rate,
             "parameter_tensors": len(parameters),
-            "parameters": sum(parameter.numel() for parameter in parameters),
+            "parameters": sum(
+                int(getattr(parameter, "ds_numel", parameter.numel()))
+                for parameter in parameters
+            ),
         }
         for name, parameters, learning_rate in groups
     ]
