@@ -184,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         model.train()
         optimizer.zero_grad(set_to_none=True)
         last_metrics: dict[str, float] = {}
+        last_checkpoint_step = global_step
         while global_step < args.max_steps:
             for examples in train_loader:
                 with accelerator.accumulate(model):
@@ -230,9 +231,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 if global_step % args.save_interval_steps == 0:
                     _save_checkpoint(accelerator, output, global_step)
+                    last_checkpoint_step = global_step
                 if global_step >= args.max_steps:
                     break
-        _save_checkpoint(accelerator, output, global_step)
+        if last_checkpoint_step != global_step:
+            _save_checkpoint(accelerator, output, global_step)
         _set_run_status(accelerator, output, "complete", global_step, last_metrics)
         return 0
     except Exception as error:
