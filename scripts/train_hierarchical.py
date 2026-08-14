@@ -173,11 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         accelerator.wait_for_everyone()
         model, optimizer, train_loader, scheduler = accelerator.prepare(
-            model,
-            optimizer,
-            train_loader,
-            scheduler,
-            device_placement=[True, True, False, True],
+            model, optimizer, train_loader, scheduler
         )
         global_step = 0
         if args.resume_from is not None:

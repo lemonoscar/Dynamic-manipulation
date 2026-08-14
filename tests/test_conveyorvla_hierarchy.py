@@ -199,3 +199,9 @@ def test_two_pass_joint_losses_reach_qwen_and_both_dits() -> None:
     assert qwen.feature.grad is not None
     assert any(parameter.grad is not None for parameter in navigation.parameters())
     assert any(parameter.grad is not None for parameter in manipulation.parameters())
+
+    policy.zero_grad(set_to_none=True)
+    navigation_only = policy(examples[:1], objective="action")["action_loss"]
+    assert isinstance(navigation_only, torch.Tensor)
+    navigation_only.backward()
+    assert any(parameter.grad is not None for parameter in manipulation.parameters())

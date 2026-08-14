@@ -538,9 +538,8 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                 if int(example["action_domain_id"]) == int(domain)
             ]
             result[f"{name}_samples"] = len(indices)
-            if not indices:
-                continue
-            index_tensor = torch.as_tensor(indices, device=hidden.device)
+            selected_indices = indices or [0]
+            index_tensor = torch.as_tensor(selected_indices, device=hidden.device)
             device = next(model.parameters()).device
             dtype = next(model.parameters()).dtype
             selected_hidden = hidden.index_select(0, index_tensor).to(
@@ -548,17 +547,30 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
             )
             selected_attention = attention_mask.index_select(0, index_tensor).to(device)
             actions = torch.as_tensor(
-                [examples[index]["action"] for index in indices],
+                (
+                    [examples[index]["action"] for index in selected_indices]
+                    if indices
+                    else [
+                        [
+                            [0.0] * model.config.action_dim
+                            for _step in range(model.config.action_horizon)
+                        ]
+                    ]
+                ),
                 device=device,
                 dtype=dtype,
             )
             state = torch.as_tensor(
-                [examples[index]["state"] for index in indices],
+                [examples[index]["state"] for index in selected_indices],
                 device=device,
                 dtype=dtype,
             )
             action_mask = torch.as_tensor(
-                [examples[index]["action_mask"] for index in indices],
+                (
+                    [examples[index]["action_mask"] for index in selected_indices]
+                    if indices
+                    else [[True] * model.config.action_dim]
+                ),
                 device=device,
                 dtype=torch.bool,
             )
@@ -571,13 +583,14 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                     encoder_attention_mask=selected_attention.repeat(repeats, 1),
                     action_dimension_mask=action_mask.repeat(repeats, 1),
                 )
+            if not indices:
+                loss = loss * 0.0
             losses.append((len(indices), loss))
             result[f"{name}_loss"] = loss
-        if not losses:
+        sample_count = sum(count for count, _loss in losses)
+        if sample_count == 0:
             raise RuntimeError("two-pass batch has no recognized action domain")
-        result["action_loss"] = sum(count * loss for count, loss in losses) / sum(
-            count for count, _loss in losses
-        )
+        result["action_loss"] = sum(count * loss for count, loss in losses) / sample_count
         return result
 
     def _temporal_inputs(
@@ -748,6 +761,8 @@ def transfer_qwen_checkpoint_weights(
 
 
 def _rgb_image(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
     if not isinstance(value, (str, Path)):
         return value.convert("RGB") if hasattr(value, "convert") else value
     try:
