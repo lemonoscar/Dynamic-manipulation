@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
-from accelerate.utils import set_seed  # noqa: E402
+from accelerate.utils import gather_object, set_seed  # noqa: E402
 from torch.utils.data import DataLoader, Subset  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import (  # noqa: E402
@@ -28,7 +28,11 @@ from conveyor_bench.conveyorvla.config import (  # noqa: E402
 from conveyor_bench.conveyorvla.hierarchical_data import (  # noqa: E402
     ConveyorVLAAL0HierarchicalDataset,
 )
-from conveyor_bench.conveyorvla.subtasks import PHASE_ORDER, Phase  # noqa: E402
+from conveyor_bench.conveyorvla.subtasks import (  # noqa: E402
+    PHASE_ORDER,
+    Phase,
+    parse_subtask_solution,
+)
 from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
     DEFAULT_TEMPORAL_CONFIG_PATH,
     build_temporal_policy_config,
@@ -106,7 +110,11 @@ def main(argv: list[str] | None = None) -> int:
     model, optimizer, loader, scheduler = accelerator.prepare(
         model, optimizer, loader, scheduler
     )
-    accelerator.load_state(checkpoint)
+    accelerator.load_state(
+        checkpoint,
+        load_optimizer_states=False,
+        load_lr_scheduler_states=False,
+    )
     model.eval()
 
     phase_count = len(PHASE_ORDER)
@@ -118,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         device=accelerator.device,
         dtype=torch.int64,
     )
+    generation_examples: list[dict[str, str]] = []
     started = time.monotonic()
     unwrapped = accelerator.unwrap_model(model)
     with torch.inference_mode():
@@ -129,17 +138,33 @@ def main(argv: list[str] | None = None) -> int:
             counts[phase_index] += 1
             subtask_sums[phase_index] += subtask.detach().double()
             action_sums[phase_index] += action.detach().double()
+            generated = unwrapped.qwen_vl_interface.generate_temporal_subtask_texts(
+                [examples[0]["video"]],
+                [examples[0]["lang"]],
+                history_span_s=unwrapped.temporal_history_span_s,
+            )[0]
             try:
-                predicted = unwrapped.predict_subtasks(examples)[0].phase
+                predicted = parse_subtask_solution(generated).phase
                 predicted_index = PHASE_ORDER.index(predicted)
-            except ValueError:
+                error_text = ""
+            except ValueError as error:
                 predicted_index = phase_count
+                error_text = str(error)
+            if len(generation_examples) < phase_count:
+                generation_examples.append(
+                    {
+                        "expected": expected.name,
+                        "generated": generated,
+                        "parse_error": error_text,
+                    }
+                )
             confusion[phase_index, predicted_index] += 1
 
     counts = accelerator.reduce(counts, reduction="sum")
     subtask_sums = accelerator.reduce(subtask_sums, reduction="sum")
     action_sums = accelerator.reduce(action_sums, reduction="sum")
     confusion = accelerator.reduce(confusion, reduction="sum")
+    generation_examples = gather_object(generation_examples)
     if accelerator.is_main_process:
         phase_metrics = {}
         for index, phase in enumerate(PHASE_ORDER):
@@ -167,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
             "generation_invalid_rate": invalid / total,
             "confusion_columns": [phase.name for phase in PHASE_ORDER] + ["INVALID"],
             "confusion": confusion.cpu().tolist(),
+            "generation_examples": generation_examples,
             "phase_metrics": phase_metrics,
             "world_size": accelerator.num_processes,
             "elapsed_seconds": time.monotonic() - started,

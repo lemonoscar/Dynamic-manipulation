@@ -264,15 +264,15 @@ class Qwen3VLInterface(nn.Module):
             self.model.enable_input_require_grads()
 
     @torch.inference_mode()
-    def generate_temporal_subtasks(
+    def generate_temporal_subtask_texts(
         self,
         videos: Sequence[Sequence[Sequence[Any]]],
         instructions: Sequence[str],
         *,
         history_span_s: float,
         max_new_tokens: int = 48,
-    ) -> tuple[SubtaskDecision, ...]:
-        """Run Pass 1 with greedy decoding and fail closed on non-canonical text."""
+    ) -> tuple[str, ...]:
+        """Run Pass 1 with greedy decoding and return the unparsed answers."""
 
         inputs = dict(
             self.build_temporal_inputs(
@@ -288,9 +288,29 @@ class Qwen3VLInterface(nn.Module):
             do_sample=False,
             use_cache=True,
         )
-        answers = self.processor.tokenizer.batch_decode(
-            generated[:, prompt_width:],
-            skip_special_tokens=False,
+        return tuple(
+            self.processor.tokenizer.batch_decode(
+                generated[:, prompt_width:],
+                skip_special_tokens=False,
+            )
+        )
+
+    @torch.inference_mode()
+    def generate_temporal_subtasks(
+        self,
+        videos: Sequence[Sequence[Sequence[Any]]],
+        instructions: Sequence[str],
+        *,
+        history_span_s: float,
+        max_new_tokens: int = 48,
+    ) -> tuple[SubtaskDecision, ...]:
+        """Run Pass 1 with greedy decoding and fail closed on non-canonical text."""
+
+        answers = self.generate_temporal_subtask_texts(
+            videos,
+            instructions,
+            history_span_s=history_span_s,
+            max_new_tokens=max_new_tokens,
         )
         return tuple(parse_subtask_solution(answer) for answer in answers)
 

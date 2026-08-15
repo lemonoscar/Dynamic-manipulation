@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision="bf16",
+        step_scheduler_with_optimizer=False,
     )
     output_reserved = False
     try:
@@ -180,6 +181,12 @@ def main(argv: list[str] | None = None) -> int:
             resume = args.resume_from.expanduser().resolve()
             accelerator.load_state(resume)
             global_step = _checkpoint_step(resume)
+            _event(
+                accelerator,
+                output,
+                "scheduler_resume_alignment",
+                **_align_scheduler_after_resume(scheduler, optimizer, global_step),
+            )
         _set_run_status(accelerator, output, "running", global_step)
         model.train()
         optimizer.zero_grad(set_to_none=True)
@@ -209,7 +216,8 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         _finite(gradient_norm, "gradient norm")
                     optimizer.step()
-                    scheduler.step()
+                    if accelerator.sync_gradients:
+                        scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
 
                 if not accelerator.sync_gradients:
@@ -374,6 +382,52 @@ def _schedule(max_steps: int, warmup_steps: int):
         return 0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
 
     return scale
+
+
+def _align_scheduler_after_resume(
+    scheduler: Any,
+    optimizer: torch.optim.Optimizer,
+    global_step: int,
+) -> dict[str, Any]:
+    """Align a loaded scheduler with optimizer steps from trainer_state.json."""
+
+    inner = getattr(scheduler, "scheduler", scheduler)
+    loaded_step = int(inner.last_epoch)
+    if loaded_step == global_step:
+        return {
+            "repaired": False,
+            "loaded_scheduler_step": loaded_step,
+            "global_step": global_step,
+            "learning_rates": [group["lr"] for group in optimizer.param_groups],
+        }
+    if len(inner.base_lrs) != len(inner.lr_lambdas):
+        raise M0MobileError("scheduler base learning rates and lambdas do not match")
+    learning_rates = [
+        float(base_lr * learning_rate_lambda(global_step))
+        for base_lr, learning_rate_lambda in zip(
+            inner.base_lrs, inner.lr_lambdas, strict=True
+        )
+    ]
+    targets = (inner.optimizer, optimizer)
+    seen_param_groups: set[int] = set()
+    for target in targets:
+        groups = target.param_groups
+        if id(groups) in seen_param_groups:
+            continue
+        seen_param_groups.add(id(groups))
+        if len(groups) != len(learning_rates):
+            raise M0MobileError("scheduler and optimizer parameter groups do not match")
+        for group, learning_rate in zip(groups, learning_rates, strict=True):
+            group["lr"] = learning_rate
+    inner.last_epoch = global_step
+    inner._step_count = global_step + 1
+    inner._last_lr = learning_rates
+    return {
+        "repaired": True,
+        "loaded_scheduler_step": loaded_step,
+        "global_step": global_step,
+        "learning_rates": learning_rates,
+    }
 
 
 def _reserve_output(
