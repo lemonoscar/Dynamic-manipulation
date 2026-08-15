@@ -24,6 +24,7 @@ from conveyor_bench.conveyorvla.dit import (
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.subtasks import (
     ActionDomain,
+    SUBTASK_END_TOKEN,
     SUBTASK_SPECIAL_TOKENS,
     SubtaskDecision,
     parse_subtask_solution,
@@ -282,11 +283,17 @@ class Qwen3VLInterface(nn.Module):
             )
         )
         prompt_width = int(inputs["input_ids"].shape[1])
+        end_token_id = self.processor.tokenizer.convert_tokens_to_ids(
+            SUBTASK_END_TOKEN
+        )
+        if end_token_id is None or end_token_id < 0:
+            raise RuntimeError("Qwen tokenizer is missing the subtask end token")
         generated = self.model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
             use_cache=True,
+            eos_token_id=end_token_id,
         )
         return tuple(
             self.processor.tokenizer.batch_decode(
