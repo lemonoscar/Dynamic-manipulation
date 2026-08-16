@@ -567,7 +567,13 @@ def materialize_pct_lerobot_v3(
         return {**manifest, "dataset_root": str(output)}
     except Exception:
         if staging.exists():
-            shutil.rmtree(staging)
+            try:
+                shutil.rmtree(staging)
+            except OSError:
+                # Video encoders can still be releasing files after a failed
+                # save.  Cleanup must never replace the conversion error that
+                # explains why the immutable output was not published.
+                pass
         raise
 
 
