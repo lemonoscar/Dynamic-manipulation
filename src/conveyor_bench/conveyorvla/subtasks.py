@@ -29,15 +29,16 @@ PCT_PHASES = {
     "plan_nav_to_pick": Phase.NAV_TO_SOURCE,
     "exec_nav_to_pick": Phase.NAV_TO_SOURCE,
     # Planning observations are physical transition frames, not an online FSM.
-    # Label them with the next executable subtask so the 5 Hz training stream
-    # remains continuous across each expert switch.
-    "verify_pick_reachable": Phase.PICK,
+    # Planning rows use the next executable subtask.  Verification rows retain
+    # the expert whose physical result they are checking; the following 5 Hz
+    # row then provides the continuous language-routing switch.
+    "verify_pick_reachable": Phase.NAV_TO_SOURCE,
     "plan_pick": Phase.PICK,
     "exec_pick": Phase.PICK,
-    "verify_pick_success": Phase.NAV_TO_TARGET,
+    "verify_pick_success": Phase.PICK,
     "plan_nav_to_place": Phase.NAV_TO_TARGET,
     "exec_nav_to_place": Phase.NAV_TO_TARGET,
-    "verify_place_reachable": Phase.PLACE,
+    "verify_place_reachable": Phase.NAV_TO_TARGET,
     "plan_place": Phase.PLACE,
     "exec_place": Phase.PLACE,
 }

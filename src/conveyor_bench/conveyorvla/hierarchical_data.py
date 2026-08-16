@@ -61,7 +61,7 @@ class HierarchyAuditThresholds:
 
 DEFAULT_HIERARCHY_AUDIT_THRESHOLDS = HierarchyAuditThresholds()
 HIERARCHY_VIEW_SCHEMA_VERSION = (
-    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-5"
+    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-6"
 )
 HIERARCHY_SPLIT_SEED = "conveyor-vla-al0-liangzhu-seen-split-v2"
 BOUNDARY_WINDOW_S = 1.0

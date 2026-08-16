@@ -117,7 +117,7 @@ PCT Liangzhu raw 使用 `scripts/convert_pct_dataset.py`。它保留 5 Hz 双相
 
 Liangzhu seen 层不修改旧 base，而是生成包含 navigation/planning 与专家切换
 verifier transition observation 的 expanded base，并使用新 sidecar schema
-`conveyor-vla-al0-liangzhu-seen-dense-transition-view-5`。它保留全部 phase boundary row，
+`conveyor-vla-al0-liangzhu-seen-dense-transition-view-6`。它保留全部 phase boundary row，
 用 20 位 `action_valid_mask` 屏蔽跨 Navigation/Manipulation 专家的未来后缀，并提高两个
 导航终点前 2～4 秒和切换前后 1 秒的采样权重。sidecar 不包含
 `subtask_history`，split 继续按完整 `source_episode_id` 复用既有 seed。
