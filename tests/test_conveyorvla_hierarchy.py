@@ -32,10 +32,14 @@ from conveyor_bench.conveyorvla.subtasks import (
 
 
 def test_pct_phases_map_to_two_disjoint_action_domains() -> None:
+    assert phase_from_pct("plan_nav_to_pick") is Phase.NAV_TO_SOURCE
     assert phase_from_pct("exec_nav_to_pick") is Phase.NAV_TO_SOURCE
+    assert phase_from_pct("verify_pick_reachable") is Phase.PICK
     assert phase_from_pct("plan_pick") is Phase.PICK
+    assert phase_from_pct("verify_pick_success") is Phase.NAV_TO_TARGET
     assert phase_from_pct("exec_nav_to_place") is Phase.NAV_TO_TARGET
     assert phase_from_pct("plan_nav_to_place") is Phase.NAV_TO_TARGET
+    assert phase_from_pct("verify_place_reachable") is Phase.PLACE
     assert phase_from_pct("plan_place") is Phase.PLACE
     assert action_domain(Phase.NAV_TO_SOURCE) is ActionDomain.NAVIGATION
     assert action_domain(Phase.PICK) is ActionDomain.MANIPULATION

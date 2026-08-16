@@ -26,14 +26,18 @@ class ActionDomain(IntEnum):
 
 
 PCT_PHASES = {
+    "plan_nav_to_pick": Phase.NAV_TO_SOURCE,
     "exec_nav_to_pick": Phase.NAV_TO_SOURCE,
     # Planning observations are physical transition frames, not an online FSM.
     # Label them with the next executable subtask so the 5 Hz training stream
     # remains continuous across each expert switch.
+    "verify_pick_reachable": Phase.PICK,
     "plan_pick": Phase.PICK,
     "exec_pick": Phase.PICK,
+    "verify_pick_success": Phase.NAV_TO_TARGET,
     "plan_nav_to_place": Phase.NAV_TO_TARGET,
     "exec_nav_to_place": Phase.NAV_TO_TARGET,
+    "verify_place_reachable": Phase.PLACE,
     "plan_place": Phase.PLACE,
     "exec_place": Phase.PLACE,
 }

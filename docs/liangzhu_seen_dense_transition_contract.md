@@ -2,12 +2,13 @@
 
 本轮不续训旧 `seen-subtask-view-2`，也不继承 `step_007000` 的 optimizer/scheduler。
 旧 base LeRobot v3 保持只读；新的 expanded base 采用
-`conveyor-vla-al0-lerobot-v3-dense-transition-manifest-2`，sidecar schema 为
-`conveyor-vla-al0-liangzhu-seen-dense-transition-view-4`，split seed 继续使用
+`conveyor-vla-al0-lerobot-v3-dense-transition-manifest-3`，sidecar schema 为
+`conveyor-vla-al0-liangzhu-seen-dense-transition-view-5`，split seed 继续使用
 `conveyor-vla-al0-liangzhu-seen-split-v2`。
 
-expanded base 显式保留 `plan_pick`、`plan_nav_to_place`、`plan_place` 的物理观测，
-并分别映射到下一可执行子任务，使三个专家切换处的 query 仍保持 0.20 秒连续。
+expanded base 显式保留 navigation planning、`plan_pick`、`plan_nav_to_place`、
+`plan_place`，以及三个专家切换处的 reachable/success verifier 物理观测，并映射到
+下一可执行子任务，使三个专家切换处的 query 仍保持 0.20 秒连续。
 
 每个 row 保留 `source_episode_id`、`base_index`、phase/next phase、距边界时间、边界原因、
 20 位 `action_valid_mask` 和导航 reference mode。所有 expanded-base query row 都保留；导航远端帧
