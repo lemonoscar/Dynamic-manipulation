@@ -106,3 +106,66 @@ def test_history_training_never_inserts_ground_truth_when_schedule_is_zero() -> 
     )
     assert phase_instruction(Phase.PICK) not in corrupted[0]["lang"]
     assert corrupted_metrics["corrupted"] == 1
+
+
+def test_zero3_component_norms_use_partitioned_gradient_buffers() -> None:
+    zero_optimizer = SimpleNamespace(
+        averaged_gradients={
+            0: [torch.tensor([3.0, 4.0])],
+            1: [torch.tensor([12.0])],
+            2: [torch.tensor([5.0])],
+        },
+        sub_group_to_group_id={0: 0, 1: 1, 2: 2},
+        param_groups=[
+            {"name": "vlm_core"},
+            {"name": "navigation_dit_core"},
+            {"name": "manipulation_dit_core"},
+        ],
+        loss_scale=2.0,
+    )
+
+    norms = TRAIN._component_gradient_norms(
+        SimpleNamespace(
+            device=torch.device("cpu"),
+            reduce=lambda value, reduction: value,
+        ),
+        SimpleNamespace(optimizer=zero_optimizer),
+    )
+
+    assert float(norms["vlm_gradient_norm"]) == pytest.approx(2.5)
+    assert float(norms["navigation_gradient_norm"]) == pytest.approx(6.0)
+    assert float(norms["manipulation_gradient_norm"]) == pytest.approx(2.5)
+
+
+def test_deepspeed_backward_defers_the_gradient_boundary() -> None:
+    class Engine:
+        def __init__(self):
+            self.boundaries = []
+            self.losses = []
+
+        def set_gradient_accumulation_boundary(self, *, is_boundary):
+            self.boundaries.append(is_boundary)
+
+        def backward(self, loss):
+            self.losses.append(loss)
+
+    engine = Engine()
+    accelerator = SimpleNamespace(backward=lambda _loss: pytest.fail("wrong path"))
+    first = torch.tensor(1.0)
+    second = torch.tensor(2.0)
+
+    TRAIN._backward_loss(
+        accelerator,
+        engine,
+        first,
+        gradient_boundary=False,
+    )
+    TRAIN._backward_loss(
+        accelerator,
+        engine,
+        second,
+        gradient_boundary=True,
+    )
+
+    assert engine.boundaries == [False, True]
+    assert engine.losses == [first, second]

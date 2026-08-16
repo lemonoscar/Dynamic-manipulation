@@ -243,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         _set_run_status(accelerator, output, "running", global_step)
         model.train()
+        deepspeed_engine = _deepspeed_engine(accelerator)
         optimizer.zero_grad(set_to_none=True)
         last_metrics: dict[str, float] = {}
         last_checkpoint_step = global_step
@@ -266,7 +267,12 @@ def main(argv: list[str] | None = None) -> int:
                     if not isinstance(subtask_loss, torch.Tensor):
                         raise M0MobileError("subtask loss is not a tensor")
                     _finite(subtask_loss, "subtask loss")
-                    accelerator.backward(args.subtask_loss_weight * subtask_loss)
+                    _backward_loss(
+                        accelerator,
+                        deepspeed_engine,
+                        args.subtask_loss_weight * subtask_loss,
+                        gradient_boundary=False,
+                    )
 
                     action = model(
                         examples,
@@ -282,7 +288,12 @@ def main(argv: list[str] | None = None) -> int:
                     if not isinstance(action_loss, torch.Tensor):
                         raise M0MobileError("action loss is not a tensor")
                     _finite(action_loss, "action loss")
-                    accelerator.backward(args.action_loss_weight * action_loss)
+                    _backward_loss(
+                        accelerator,
+                        deepspeed_engine,
+                        args.action_loss_weight * action_loss,
+                        gradient_boundary=accelerator.sync_gradients,
+                    )
 
                     gradient_norm = torch.tensor(float("nan"), device=action_loss.device)
                     component_gradient_norms = {
@@ -303,11 +314,19 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         for name, value in component_gradient_norms.items():
                             _finite(value, name.replace("_", " "))
-                        gradient_norm = accelerator.clip_grad_norm_(
-                            model.parameters(), args.max_gradient_norm
-                        )
+                        if deepspeed_engine is None:
+                            gradient_norm = accelerator.clip_grad_norm_(
+                                model.parameters(), args.max_gradient_norm
+                            )
+                        else:
+                            gradient_norm = torch.stack(
+                                tuple(component_gradient_norms.values())
+                            ).square().sum().sqrt()
                         _finite(gradient_norm, "gradient norm")
-                    optimizer.step()
+                    if deepspeed_engine is None:
+                        optimizer.step()
+                    elif accelerator.sync_gradients:
+                        deepspeed_engine.step()
                     if accelerator.sync_gradients:
                         scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
@@ -583,6 +602,50 @@ def _component_gradient_norms(
         "navigation_gradient_norm": ("navigation_",),
         "manipulation_gradient_norm": ("manipulation_",),
     }
+    zero_optimizer = getattr(optimizer, "optimizer", None)
+    if all(
+        hasattr(zero_optimizer, attribute)
+        for attribute in (
+            "averaged_gradients",
+            "sub_group_to_group_id",
+            "param_groups",
+        )
+    ):
+        squared = {
+            name: torch.zeros((), device=accelerator.device, dtype=torch.float32)
+            for name in groups
+        }
+        matched = set()
+        for subgroup_id, gradients in zero_optimizer.averaged_gradients.items():
+            group_id = zero_optimizer.sub_group_to_group_id[subgroup_id]
+            group_name = str(zero_optimizer.param_groups[group_id].get("name", ""))
+            result_name = next(
+                (
+                    name
+                    for name, prefixes in groups.items()
+                    if group_name.startswith(prefixes)
+                ),
+                None,
+            )
+            if result_name is None:
+                raise M0MobileError(
+                    f"unknown ZeRO optimizer parameter group: {group_name!r}"
+                )
+            matched.add(result_name)
+            if gradients is not None:
+                for gradient in gradients:
+                    if gradient is not None:
+                        squared[result_name] += gradient.detach().float().square().sum()
+        if matched != set(groups):
+            raise M0MobileError("ZeRO gradients do not cover VLM and both DiTs")
+        loss_scale = float(getattr(zero_optimizer, "loss_scale", 1.0))
+        if not math.isfinite(loss_scale) or loss_scale <= 0.0:
+            raise M0MobileError("ZeRO loss scale must be positive and finite")
+        return {
+            name: accelerator.reduce(value, reduction="sum").sqrt() / loss_scale
+            for name, value in squared.items()
+        }
+
     result = {}
     for result_name, prefixes in groups.items():
         squared = torch.zeros((), device=accelerator.device, dtype=torch.float32)
@@ -594,6 +657,29 @@ def _component_gradient_norms(
                     squared += parameter.grad.detach().float().square().sum()
         result[result_name] = accelerator.reduce(squared, reduction="sum").sqrt()
     return result
+
+
+def _deepspeed_engine(accelerator: Accelerator) -> Any | None:
+    wrapper = getattr(accelerator, "deepspeed_engine_wrapped", None)
+    return getattr(wrapper, "engine", None)
+
+
+def _backward_loss(
+    accelerator: Accelerator,
+    deepspeed_engine: Any | None,
+    loss: torch.Tensor,
+    *,
+    gradient_boundary: bool,
+) -> None:
+    """Backpropagate twice but let DeepSpeed step only after both graphs."""
+
+    if deepspeed_engine is None:
+        accelerator.backward(loss)
+        return
+    deepspeed_engine.set_gradient_accumulation_boundary(
+        is_boundary=gradient_boundary
+    )
+    deepspeed_engine.backward(loss)
 
 
 def _schedule(max_steps: int, warmup_steps: int):

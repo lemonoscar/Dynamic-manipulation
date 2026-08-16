@@ -54,6 +54,30 @@ class _Qwen(torch.nn.Module):
         return SimpleNamespace(hidden_states=(hidden,))
 
 
+class _GeneratingQwen(_Qwen):
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__(hidden_size)
+        self.generate_training_modes = []
+
+    def generate(self, input_ids, **_kwargs):
+        self.generate_training_modes.append(self.training)
+        suffix = torch.full(
+            (input_ids.shape[0], 1),
+            99,
+            device=input_ids.device,
+            dtype=input_ids.dtype,
+        )
+        return torch.cat((input_ids, suffix), dim=1)
+
+
+class _GenerationTokenizer:
+    def convert_tokens_to_ids(self, _token):
+        return 99
+
+    def batch_decode(self, values, **_kwargs):
+        return [f"decoded-{int(row[0])}" for row in values]
+
+
 def _tiny_config() -> M0DiTConfig:
     return M0DiTConfig(
         action_dim=3,
@@ -164,6 +188,33 @@ def test_temporal_policy_builds_two_ordered_camera_clips() -> None:
             },
         ]
     ]
+
+
+def test_temporal_generation_temporarily_disables_training_mode(monkeypatch) -> None:
+    model = _GeneratingQwen(24)
+    interface = Qwen3VLInterface(
+        model,
+        SimpleNamespace(tokenizer=_GenerationTokenizer()),
+    )
+    monkeypatch.setattr(
+        interface,
+        "build_temporal_inputs",
+        lambda *_args, **_kwargs: {
+            "input_ids": torch.ones((1, 5), dtype=torch.long),
+            "attention_mask": torch.ones((1, 5), dtype=torch.long),
+        },
+    )
+    model.train()
+
+    generated = interface.generate_temporal_subtask_texts(
+        [((object(), object()), (object(), object()))],
+        ["route the current subtask"],
+        history_span_s=0.2,
+    )
+
+    assert generated == ("decoded-99",)
+    assert model.generate_training_modes == [False]
+    assert model.training is True
 
 
 def test_release_config_builds_go2_x5_dit_contract() -> None:

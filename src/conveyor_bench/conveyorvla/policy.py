@@ -296,15 +296,20 @@ class Qwen3VLInterface(nn.Module):
         )
         if end_token_id is None or end_token_id < 0:
             raise RuntimeError("Qwen tokenizer is missing the subtask end token")
-        generated = self.model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            use_cache=True,
-            eos_token_id=end_token_id,
-            synced_gpus=torch.distributed.is_available()
-            and torch.distributed.is_initialized(),
-        )
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            generated = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                use_cache=True,
+                eos_token_id=end_token_id,
+                synced_gpus=torch.distributed.is_available()
+                and torch.distributed.is_initialized(),
+            )
+        finally:
+            self.model.train(was_training)
         return tuple(
             self.processor.tokenizer.batch_decode(
                 generated[:, prompt_width:],
