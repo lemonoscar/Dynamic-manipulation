@@ -27,8 +27,14 @@ class ActionDomain(IntEnum):
 
 PCT_PHASES = {
     "exec_nav_to_pick": Phase.NAV_TO_SOURCE,
+    # Planning observations are physical transition frames, not an online FSM.
+    # Label them with the next executable subtask so the 5 Hz training stream
+    # remains continuous across each expert switch.
+    "plan_pick": Phase.PICK,
     "exec_pick": Phase.PICK,
+    "plan_nav_to_place": Phase.NAV_TO_TARGET,
     "exec_nav_to_place": Phase.NAV_TO_TARGET,
+    "plan_place": Phase.PLACE,
     "exec_place": Phase.PLACE,
 }
 PHASE_ORDER = (
@@ -99,7 +105,7 @@ NAVIGATION_ARM_MAX_STEP_RAD = (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
 
 
 def phase_from_pct(value: object) -> Phase:
-    """Map a raw PCT execution state without guessing unknown labels."""
+    """Map an explicitly enumerated raw PCT execution/transition state."""
 
     try:
         return PCT_PHASES[str(value)]

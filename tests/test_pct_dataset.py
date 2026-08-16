@@ -158,13 +158,13 @@ def test_transition_metadata_keeps_boundary_row_and_masks_expert_suffix() -> Non
     samples = [
         {"simulation_step": 0, "pipeline_state": "exec_nav_to_pick"},
         {"simulation_step": 10, "pipeline_state": "exec_nav_to_pick"},
-        {"simulation_step": 20, "pipeline_state": "exec_pick"},
+        {"simulation_step": 20, "pipeline_state": "plan_pick"},
         {"simulation_step": 30, "pipeline_state": "exec_pick"},
     ]
     controls = {
         1: {"pipeline_state": "exec_nav_to_pick"},
         11: {"pipeline_state": "exec_nav_to_pick"},
-        21: {"pipeline_state": "exec_pick"},
+        21: {"pipeline_state": "plan_pick"},
         31: {"pipeline_state": "exec_pick"},
     }
 

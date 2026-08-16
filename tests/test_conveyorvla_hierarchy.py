@@ -33,11 +33,14 @@ from conveyor_bench.conveyorvla.subtasks import (
 
 def test_pct_phases_map_to_two_disjoint_action_domains() -> None:
     assert phase_from_pct("exec_nav_to_pick") is Phase.NAV_TO_SOURCE
+    assert phase_from_pct("plan_pick") is Phase.PICK
     assert phase_from_pct("exec_nav_to_place") is Phase.NAV_TO_TARGET
+    assert phase_from_pct("plan_nav_to_place") is Phase.NAV_TO_TARGET
+    assert phase_from_pct("plan_place") is Phase.PLACE
     assert action_domain(Phase.NAV_TO_SOURCE) is ActionDomain.NAVIGATION
     assert action_domain(Phase.PICK) is ActionDomain.MANIPULATION
     with pytest.raises(ValueError, match="unsupported PCT"):
-        phase_from_pct("plan_pick")
+        phase_from_pct("plan_unknown")
 
 
 def test_canonical_subtask_answer_is_visible_parseable_and_determines_dit() -> None:

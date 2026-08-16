@@ -56,9 +56,7 @@ PCT_VISUAL_HISTORY_SPAN_S = 0.2
 PCT_VISUAL_HISTORY_MODEL_TICKS = (-5, 0)
 PCT_CONTROL_STEPS_PER_MODEL_TICK = CONTROL_HZ // MODEL_HZ
 PCT_QUERY_CONTROL_STEPS = CONTROL_HZ // 5
-PCT_EXECUTION_STATES = frozenset(
-    {"exec_nav_to_pick", "exec_pick", "exec_nav_to_place", "exec_place"}
-)
+PCT_TRAINING_STATES = frozenset(PCT_PHASES)
 PCT_REQUIRED_JOINTS = tuple(f"arm_joint{index}" for index in range(1, 9))
 
 
@@ -175,7 +173,7 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
         history_step = _integer(history_sample.get("simulation_step"), "simulation_step")
         if source_step - history_step != PCT_QUERY_CONTROL_STEPS:
             continue
-        if source_sample.get("pipeline_state") not in PCT_EXECUTION_STATES:
+        if source_sample.get("pipeline_state") not in PCT_TRAINING_STATES:
             continue
         if not control_steps[0] <= source_step <= control_steps[-1]:
             continue
@@ -194,7 +192,7 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             target_steps[-1],
             controls,
             control_steps,
-            raw_phase,
+            phase,
         )
         transition = _transition_metadata(
             samples,
@@ -271,6 +269,7 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             "instruction": instruction,
             "policy_task_scope": POLICY_TASK_SCOPE,
             "phase": raw_phase,
+            "source_pipeline_state": raw_phase,
             "phase_id": int(phase),
             "phase_name": phase.name,
             "action_domain_id": int(action_domain(phase)),
@@ -405,11 +404,15 @@ def _phase_pure_window(
     target_step: int,
     controls: Mapping[int, Mapping[str, Any]],
     control_steps: Sequence[int],
-    raw_phase: str,
+    phase: Phase,
 ) -> bool:
-    """Require history and every recorded future control to retain one phase."""
+    """Require history and future controls to retain one semantic subtask."""
 
-    if sample_index <= 0 or samples[sample_index - 1].get("pipeline_state") != raw_phase:
+    if (
+        sample_index <= 0
+        or PCT_PHASES.get(str(samples[sample_index - 1].get("pipeline_state", "")))
+        is not phase
+    ):
         return False
     future_samples = []
     for sample in samples[sample_index:]:
@@ -421,14 +424,17 @@ def _phase_pure_window(
         not future_samples
         or _integer(future_samples[-1].get("simulation_step"), "simulation_step")
         != target_step
-        or any(sample.get("pipeline_state") != raw_phase for sample in future_samples)
+        or any(
+            PCT_PHASES.get(str(sample.get("pipeline_state", ""))) is not phase
+            for sample in future_samples
+        )
     ):
         return False
     lower = bisect_right(control_steps, _integer(samples[sample_index].get("simulation_step"), "simulation_step"))
     upper = bisect_right(control_steps, target_step)
     future_control_steps = control_steps[lower:upper]
     return bool(future_control_steps) and all(
-        controls[step].get("pipeline_state") == raw_phase
+        PCT_PHASES.get(str(controls[step].get("pipeline_state", ""))) is phase
         for step in future_control_steps
     )
 
@@ -515,14 +521,20 @@ def materialize_pct_lerobot_v3(
             if tuple(first[key].shape) != (3, 224, 224):
                 raise M0MobileError(f"decoded PCT video shape mismatch: {key}")
         manifest = {
-            "schema_version": "conveyor-vla-al0-lerobot-v3-manifest-1",
+            "schema_version": (
+                "conveyor-vla-al0-lerobot-v3-dense-transition-manifest-2"
+            ),
             "dataset_version": "v3.0",
             "repo_id": repo_id,
             "robot_type": config["format"]["robot_type"],
             "lerobot_package_version": installed_version,
             "config_sha256": _sha256(config_source),
             "source_format": "pct_full_physics_raw",
-            "source_adapter": "conveyorvla_pct_temporal_v1",
+            "source_adapter": "conveyorvla_pct_dense_transition_v2",
+            "source_phase_aliases": {
+                raw: phase.name for raw, phase in sorted(PCT_PHASES.items())
+            },
+            "transition_observations_included": True,
             "source_collections": sorted(
                 {
                     str(report["source_episode_id"]).split(":", 1)[0]

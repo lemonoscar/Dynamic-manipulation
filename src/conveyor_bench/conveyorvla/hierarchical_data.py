@@ -61,7 +61,7 @@ class HierarchyAuditThresholds:
 
 DEFAULT_HIERARCHY_AUDIT_THRESHOLDS = HierarchyAuditThresholds()
 HIERARCHY_VIEW_SCHEMA_VERSION = (
-    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-3"
+    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-4"
 )
 HIERARCHY_SPLIT_SEED = "conveyor-vla-al0-liangzhu-seen-split-v2"
 BOUNDARY_WINDOW_S = 1.0
@@ -239,6 +239,17 @@ def materialize_pct_hierarchy_view(
         raise M0MobileError(
             "Liangzhu base manifest must use [-5, 0] / 0.20 s visual history"
         )
+    expected_aliases = {
+        raw: phase.name for raw, phase in sorted(PCT_PHASES.items())
+    }
+    if (
+        base_manifest.get("transition_observations_included") is not True
+        or base_manifest.get("source_phase_aliases") != expected_aliases
+    ):
+        raise M0MobileError(
+            "dense-transition view requires an expanded base with explicit "
+            "planning-state aliases"
+        )
     base_episodes = _sequence(base_manifest.get("episodes"), "base episodes")
     if int(base_manifest.get("episode_count", -1)) != len(base_episodes):
         raise M0MobileError("base LeRobot episode manifest is inconsistent")
@@ -403,6 +414,10 @@ def materialize_pct_hierarchy_view(
             "base_dataset_relative_path": os.path.relpath(base_root, output),
             "base_repo_id": base_manifest["repo_id"],
             "base_manifest_sha256": _sha256(base_manifest_path),
+            "base_transition_observations_included": bool(
+                base_manifest.get("transition_observations_included")
+            ),
+            "source_phase_aliases": base_manifest.get("source_phase_aliases"),
             "annotations_relative_path": "annotations.jsonl",
             "annotations_sha256": _sha256(annotations_path),
             "full_instruction": FULL_INSTRUCTION,
