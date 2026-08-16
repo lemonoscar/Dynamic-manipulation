@@ -327,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
                         optimizer.step()
                     elif accelerator.sync_gradients:
                         deepspeed_engine.step()
+                        _clear_deepspeed_partitioned_gradients(deepspeed_engine)
                     if accelerator.sync_gradients:
                         scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
@@ -680,6 +681,17 @@ def _backward_loss(
         is_boundary=gradient_boundary
     )
     deepspeed_engine.backward(loss)
+
+
+def _clear_deepspeed_partitioned_gradients(deepspeed_engine: Any) -> None:
+    """Clear ZeRO-3's persistent flat buffer after one completed update."""
+
+    zero_optimizer = getattr(deepspeed_engine, "optimizer", None)
+    buffer = getattr(zero_optimizer, "grad_partitions_flat_buffer", None)
+    if not isinstance(buffer, torch.Tensor):
+        raise M0MobileError("ZeRO-3 gradient partition buffer is unavailable")
+    buffer.zero_()
+    zero_optimizer.averaged_gradients = {}
 
 
 def _schedule(max_steps: int, warmup_steps: int):

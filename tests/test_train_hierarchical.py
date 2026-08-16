@@ -169,3 +169,18 @@ def test_deepspeed_backward_defers_the_gradient_boundary() -> None:
 
     assert engine.boundaries == [False, True]
     assert engine.losses == [first, second]
+
+
+def test_zero3_partition_buffer_is_cleared_after_step() -> None:
+    buffer = torch.ones(5)
+    zero_optimizer = SimpleNamespace(
+        grad_partitions_flat_buffer=buffer,
+        averaged_gradients={0: [buffer]},
+    )
+
+    TRAIN._clear_deepspeed_partitioned_gradients(
+        SimpleNamespace(optimizer=zero_optimizer)
+    )
+
+    assert torch.count_nonzero(buffer) == 0
+    assert zero_optimizer.averaged_gradients == {}
