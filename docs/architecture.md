@@ -64,19 +64,22 @@ root containment
 当前网络输入和输出：
 
 ```text
-语言指令
-head[t-2, t] + wrist[t-2, t]
+完整语言指令
+head[t-5, t] + wrist[t-5, t]
 当前 28 维机器人状态
           │
-冻结的 Qwen3-VL-4B-Instruct 视觉语言骨干
+Qwen3-VL 第一次生成当前 canonical subtask
+          │ 模型预测文本 + 原始观测
+Qwen3-VL 第二次完整 forward（全量微调）
           │ hidden size 2560
-DiT-B 动作模型
+按预测文本映射 Navigation DiT 或 Manipulation DiT
           │
-未来 20 × 10 动作块（25 Hz，0.8 s）
+未来 20 × 2 或 20 × 7 动作块（25 Hz，0.8 s）
 ```
 
-主要训练部分是 DiT 动作头及其任务适配参数。Qwen3-VL 默认冻结；只有明确的运动
-反事实探针证明双帧信息无法被利用时，才考虑增加轻量 temporal adapter。
+Qwen3-VL 主干、embedding/lm head 和两个 DiT 都参与训练。Dispatcher 只做语言到专家
+的映射，不保存外部任务顺序。主 prompt 不接收真实 completed-phase history；在线需要
+记忆时只允许上一时刻模型预测，训练 teacher forcing 在 dropout/corruption 下逐步衰减到 0。
 
 28 维状态包含底盘速度、角速度、重力投影、机械臂/夹爪关节等 proprioception。
 10 维动作包含底盘、TCP 和夹爪命令。overview、物体真值和教师 phase 都不能进入
@@ -86,12 +89,16 @@ DiT-B 动作模型
 
 动态抓取能力不是来自“把视频存成 MP4”，而来自三个合同：
 
-1. head/wrist 各提供 `[t-2, t]` 的有序短 clip；
+1. head/wrist 各提供 `[-5, 0]` model tick、跨度 0.20 秒的有序短 clip；
 2. 模型预测未来 20 个独立动作目标；
 3. 在线执行按 episode、generation、observation tick 和 target tick 合并动作。
 
 过期动作、旧 episode、旧 generation、倒序 observation 和不足两步的有效后缀全部
 fail-closed。控制器不允许仅按数组重叠位置拼块。
+
+Navigation DiT 只输出 `[vx,wz]`。动作组合器必须显式补全 joint-space reference：
+`NAV_TO_SOURCE=stow+open`，`NAV_TO_TARGET=carry+closed`，并从实测关节限速过渡；空动作或
+零 TCP delta 不能再表示导航阶段机械臂姿态。Manipulation DiT 激活时底盘速度硬置零。
 
 ## 6. 专家状态机
 

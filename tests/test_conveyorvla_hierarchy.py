@@ -17,14 +17,15 @@ from conveyor_bench.conveyorvla.policy import (
 )
 from conveyor_bench.conveyorvla.subtasks import (
     ActionDomain,
+    NAVIGATION_ARM_JOINT_REFERENCES,
     Phase,
     action_domain,
-    compose_gated_action10,
+    compose_manipulation_action10,
+    compose_navigation_action,
     parse_subtask_solution,
     phase_from_pct,
     phase_instruction,
     project_action10,
-    subtask_history,
     subtask_prompt,
     subtask_solution,
 )
@@ -49,35 +50,47 @@ def test_canonical_subtask_answer_is_visible_parseable_and_determines_dit() -> N
     )
     assert decision.phase is Phase.NAV_TO_TARGET
     assert decision.domain is ActionDomain.NAVIGATION
-    assert subtask_history(Phase.PLACE) == tuple(
-        phase_instruction(phase)
-        for phase in (Phase.NAV_TO_SOURCE, Phase.PICK, Phase.NAV_TO_TARGET)
+    empty_prompt = subtask_prompt("Move the Coke can.")
+    assert "Completed subtasks" not in empty_prompt
+    assert "Previous model prediction" not in empty_prompt
+    predicted_prompt = subtask_prompt(
+        "Move the Coke can.", phase_instruction(Phase.PICK)
     )
-    assert "Completed subtasks:" in subtask_prompt(
-        "Move the Coke can.", subtask_history(Phase.PICK)
-    )
+    assert "Previous model prediction (may be wrong)" in predicted_prompt
     with pytest.raises(ValueError, match="unsupported canonical"):
         parse_subtask_solution(
             "<|pred_action|><|subtask|>Maybe move somewhere.<|end_subtask|>"
         )
 
 
-def test_domain_projection_and_runtime_gate_cannot_move_inactive_actuators() -> None:
+def test_domain_projection_and_runtime_composer_cannot_move_inactive_actuators() -> None:
     action10 = tuple(float(index) for index in range(10))
 
     assert project_action10(action10, ActionDomain.NAVIGATION) == (0.0, 2.0)
     assert project_action10(action10, ActionDomain.MANIPULATION) == tuple(
         float(index) for index in range(3, 10)
     )
-    assert compose_gated_action10(
+    source = compose_navigation_action(
+        Phase.NAV_TO_SOURCE,
         (0.25, -0.4),
-        ActionDomain.NAVIGATION,
-        gripper_latch=0.7,
-    ) == (0.25, 0.0, -0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7)
-    assert compose_gated_action10(
-        (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.0),
-        ActionDomain.MANIPULATION,
-        gripper_latch=0.2,
+    )
+    target = compose_navigation_action(
+        Phase.NAV_TO_TARGET,
+        (0.1, 0.2),
+        measured_arm_joint_positions=(0.5,) * 6,
+    )
+    assert source.base_velocity == (0.25, 0.0, -0.4)
+    assert source.reference_mode == "stow_open"
+    assert source.arm_joint_positions == NAVIGATION_ARM_JOINT_REFERENCES[
+        Phase.NAV_TO_SOURCE
+    ]
+    assert source.gripper_open_fraction == 1.0
+    assert source.tcp_delta_used is False
+    assert target.reference_mode == "carry_closed"
+    assert target.gripper_open_fraction == 0.0
+    assert all(value < 0.5 for value in target.arm_joint_positions)
+    assert compose_manipulation_action10(
+        (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.0)
     ) == (0.0, 0.0, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1.0)
 
 
@@ -113,6 +126,9 @@ class _FakeQwen(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.feature = nn.Parameter(torch.randn(8))
+        self.generated = ()
+        self.build_calls = []
+        self.build_batch_sizes = []
 
     def build_temporal_inputs(
         self,
@@ -122,7 +138,9 @@ class _FakeQwen(nn.Module):
         history_span_s: float,
         solutions: object = None,
     ) -> dict[str, torch.Tensor]:
+        self.build_calls.append(solutions is not None)
         batch = len(videos)  # type: ignore[arg-type]
+        self.build_batch_sizes.append(batch)
         result = {
             "input_ids": torch.ones(batch, 5, dtype=torch.long),
             "attention_mask": torch.ones(batch, 5, dtype=torch.long),
@@ -142,6 +160,19 @@ class _FakeQwen(nn.Module):
 
     def enable_full_finetuning(self) -> None:
         self.requires_grad_(True)
+
+    def generate_temporal_subtask_texts(self, videos, instructions, **_kwargs):
+        if self.generated:
+            return self.generated
+        return tuple(subtask_solution(Phase.NAV_TO_SOURCE) for _ in videos)
+
+    def generate_temporal_subtasks(self, videos, instructions, **kwargs):
+        return tuple(
+            parse_subtask_solution(value)
+            for value in self.generate_temporal_subtask_texts(
+                videos, instructions, **kwargs
+            )
+        )
 
 
 def test_two_pass_joint_losses_reach_qwen_and_both_dits() -> None:
@@ -181,9 +212,16 @@ def test_two_pass_joint_losses_reach_qwen_and_both_dits() -> None:
                     else Phase.PICK
                 ),
                 "action_domain_id": int(domain),
+                "phase_id": int(
+                    Phase.NAV_TO_SOURCE
+                    if domain is ActionDomain.NAVIGATION
+                    else Phase.PICK
+                ),
                 "state": ((0.0,) * 4,),
                 "action": ((0.0,) * action_dim,) * 4,
                 "action_mask": (True,) * action_dim,
+                "action_valid_mask": (True, True, False, False),
+                "sample_id": f"sample-{int(domain)}",
             }
         )
 
@@ -204,4 +242,107 @@ def test_two_pass_joint_losses_reach_qwen_and_both_dits() -> None:
     navigation_only = policy(examples[:1], objective="action")["action_loss"]
     assert isinstance(navigation_only, torch.Tensor)
     navigation_only.backward()
-    assert any(parameter.grad is not None for parameter in manipulation.parameters())
+    assert not any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad)
+        for parameter in manipulation.parameters()
+    )
+
+
+def test_zero_teacher_forcing_uses_generated_route_and_skips_wrong_expert() -> None:
+    common = {
+        "state_dim": 4,
+        "action_horizon": 4,
+        "vlm_hidden_dim": 8,
+        "input_embedding_dim": 8,
+        "hidden_size": 8,
+        "num_attention_heads": 2,
+        "attention_head_dim": 4,
+        "num_layers": 2,
+        "max_seq_len": 16,
+        "num_target_vision_tokens": 2,
+    }
+    qwen = _FakeQwen()
+    qwen.generated = (
+        subtask_solution(Phase.NAV_TO_SOURCE),
+        subtask_solution(Phase.NAV_TO_SOURCE),
+    )
+    policy = ConveyorVLAAL0TwoPassPolicy(
+        qwen,  # type: ignore[arg-type]
+        M0DiTActionHead(M0DiTConfig(action_dim=2, **common)),
+        M0DiTActionHead(M0DiTConfig(action_dim=7, **common)),
+        temporal_history_span_s=0.2,
+    )
+    examples = [
+        {
+            "video": ((object(), object()), (object(), object())),
+            "lang": "Do the task.",
+            "solution": subtask_solution(phase),
+            "phase_id": int(phase),
+            "action_domain_id": int(action_domain(phase)),
+            "state": ((0.0,) * 4,),
+            "action": ((0.0,) * action_dim,) * 4,
+            "action_mask": (True,) * action_dim,
+            "action_valid_mask": (True, True, True, False),
+            "sample_id": phase.name,
+        }
+        for phase, action_dim in ((Phase.NAV_TO_SOURCE, 2), (Phase.PICK, 7))
+    ]
+
+    result = policy(
+        examples,
+        objective="action",
+        teacher_forcing_probability=0.0,
+        routing_seed=7,
+    )
+
+    assert result["teacher_forced_samples"] == 0
+    assert result["predicted_route_correct"] == 1
+    assert result["predicted_route_wrong"] == 1
+    assert result["navigation_samples"] == 1
+    assert result["manipulation_samples"] == 0
+    assert qwen.build_batch_sizes == [2]
+
+
+def test_online_two_pass_generation_runs_second_full_forward_and_dispatches() -> None:
+    common = {
+        "state_dim": 4,
+        "action_horizon": 4,
+        "vlm_hidden_dim": 8,
+        "input_embedding_dim": 8,
+        "hidden_size": 8,
+        "num_attention_heads": 2,
+        "attention_head_dim": 4,
+        "num_layers": 2,
+        "max_seq_len": 16,
+        "num_target_vision_tokens": 2,
+    }
+    qwen = _FakeQwen()
+    qwen.generated = (
+        subtask_solution(Phase.NAV_TO_SOURCE),
+        subtask_solution(Phase.PICK),
+    )
+    policy = ConveyorVLAAL0TwoPassPolicy(
+        qwen,  # type: ignore[arg-type]
+        M0DiTActionHead(M0DiTConfig(action_dim=2, **common)),
+        M0DiTActionHead(M0DiTConfig(action_dim=7, **common)),
+        temporal_history_span_s=0.2,
+    ).eval()
+    examples = [
+        {
+            "video": ((object(), object()), (object(), object())),
+            "lang": "Do the task.",
+            "solution": subtask_solution(phase),
+            "state": ((0.0,) * 4,),
+        }
+        for phase in (Phase.NAV_TO_SOURCE, Phase.PICK)
+    ]
+
+    predictions = policy.predict_routed_actions(examples)
+
+    assert [item.decision.phase for item in predictions] == [
+        Phase.NAV_TO_SOURCE,
+        Phase.PICK,
+    ]
+    assert len(predictions[0].normalized_actions[0]) == 2
+    assert len(predictions[1].normalized_actions[0]) == 7
+    assert qwen.build_calls == [True]

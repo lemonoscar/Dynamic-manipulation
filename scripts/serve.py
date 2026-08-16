@@ -54,6 +54,7 @@ class M0PolicyService:
         torch: Any,
         model_identity: Mapping[str, Any],
         temporal_history: bool = False,
+        temporal_history_span_s: float | None = None,
     ) -> None:
         self.policy = policy
         self.normalizer = normalizer
@@ -62,6 +63,20 @@ class M0PolicyService:
         self.torch = torch
         self.model_identity = dict(model_identity)
         self.temporal_history = temporal_history
+        self.temporal_history_span_s = temporal_history_span_s
+        if temporal_history and temporal_history_span_s != 0.20:
+            raise M0OnlineError(
+                "temporal cache requires the Liangzhu 0.20 s observation interval"
+            )
+        self.temporal_cache_contract = (
+            {
+                "history_offsets_model_ticks": [-5, 0],
+                "history_span_s": 0.20,
+                "cache": "previous_contiguous_5hz_request",
+            }
+            if temporal_history
+            else None
+        )
         self._previous_images: list[Any] | None = None
         self._previous_sequence: int | None = None
 
@@ -378,6 +393,15 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
         "fine_tuned_action_tensors": len(policy.action_model.state_dict()),
         "device": str(device),
         "temporal_history": temporal_history,
+        "temporal_cache_contract": (
+            {
+                "history_offsets_model_ticks": [-5, 0],
+                "history_span_s": 0.20,
+                "cache": "previous_contiguous_5hz_request",
+            }
+            if temporal_history
+            else None
+        ),
         **artifact_report,
     }
     service = M0PolicyService(
@@ -397,6 +421,11 @@ def load_service(args: argparse.Namespace) -> tuple[M0PolicyService, Mapping[str
             )
         },
         temporal_history=temporal_history,
+        temporal_history_span_s=(
+            float(config["data"]["history_span_s"])
+            if temporal_history
+            else None
+        ),
     )
     return service, report
 

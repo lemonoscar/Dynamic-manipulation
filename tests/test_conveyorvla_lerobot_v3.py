@@ -27,7 +27,7 @@ def _record(config: dict, tick: int) -> dict:
         clips.append(
             {
                 "camera_id": camera,
-                "history_offsets_model_ticks": [-2, 0],
+                "history_offsets_model_ticks": [-5, 0],
                 "frames": [
                     {
                         "camera_id": camera,
@@ -85,8 +85,8 @@ def test_lerobot_v3_config_freezes_multirate_training_schema() -> None:
         "query_fps": 5,
         "query_stride_model_ticks": 5,
         "query_anchor": "first_eligible_record",
-        "history_offsets_model_ticks": [-2, 0],
-        "history_span_s": 0.08,
+        "history_offsets_model_ticks": [-5, 0],
+        "history_span_s": 0.20,
         "action_rate_hz": 25,
         "action_horizon": 20,
         "action_horizon_s": 0.8,

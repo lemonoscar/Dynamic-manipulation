@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--initial-action-checkpoint", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--temporal-config", type=Path, default=DEFAULT_TEMPORAL_CONFIG_PATH)
-    parser.add_argument("--split", choices=("val", "test"), default="val")
+    parser.add_argument("--split", choices=("train", "val", "test"), default="val")
     parser.add_argument("--samples-per-phase", type=int, default=16)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--max-steps", type=int, default=10_000)
@@ -131,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     unwrapped = accelerator.unwrap_model(model)
     with torch.inference_mode():
         for examples in loader:
+            prompt = str(examples[0]["lang"])
+            if "Completed subtasks" in prompt or "Previous model prediction" in prompt:
+                raise ValueError(
+                    "empty-history evaluation received an externally supplied history prompt"
+                )
             expected = Phase(int(examples[0]["phase_id"]))
             phase_index = PHASE_ORDER.index(expected)
             subtask = model(examples, objective="subtask")["subtask_loss"]
@@ -179,8 +184,13 @@ def main(argv: list[str] | None = None) -> int:
         total = int(counts.sum().item())
         correct = int(sum(confusion[index, index].item() for index in range(phase_count)))
         invalid = int(confusion[:, phase_count].sum().item())
+        generation_distribution = {
+            phase.name: int(confusion[:, index].sum().item())
+            for index, phase in enumerate(PHASE_ORDER)
+        }
+        generation_distribution["INVALID"] = invalid
         report = {
-            "schema_version": "conveyor-vla-al0-hierarchical-eval-1",
+            "schema_version": "conveyor-vla-al0-hierarchical-eval-2",
             "checkpoint": str(checkpoint),
             "checkpoint_step": _checkpoint_step(checkpoint),
             "split": args.split,
@@ -190,6 +200,12 @@ def main(argv: list[str] | None = None) -> int:
             "action_loss": float(action_sums.sum().item() / total),
             "generation_accuracy": correct / total,
             "generation_invalid_rate": invalid / total,
+            "generation_distribution": generation_distribution,
+            "empty_history_all_nav_to_source": generation_distribution[
+                Phase.NAV_TO_SOURCE.name
+            ]
+            == total,
+            "prompt_history_contract": "empty; no oracle or previous prediction supplied",
             "confusion_columns": [phase.name for phase in PHASE_ORDER] + ["INVALID"],
             "confusion": confusion.cpu().tolist(),
             "generation_examples": generation_examples,

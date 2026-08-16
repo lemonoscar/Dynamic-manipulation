@@ -10,11 +10,17 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from conveyor_bench.conveyorvla.config import M0MobileError, M0MobileNormalizer
+from conveyor_bench.conveyorvla.subtasks import (
+    NAVIGATION_ARM_JOINT_REFERENCES,
+    NAVIGATION_GRIPPER_REFERENCES,
+    NAVIGATION_REFERENCE_MODES,
+    Phase,
+)
 
 
-TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-3"
+TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-4"
 TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION = (
-    "conveyor-vla-al0-temporal-training-config-1"
+    "conveyor-vla-al0-temporal-training-config-2"
 )
 TEMPORAL_SCHEMA_VERSION = "conveyor-vla-al0-temporal-v3"
 TEMPORAL_PROFILE = "conveyorvla_al0_temporal_v3"
@@ -26,7 +32,8 @@ DEFAULT_TEMPORAL_CONFIG_PATH = (
     / "temporal.json"
 )
 CAMERA_IDS = ("head_rgb", "wrist_rgb")
-HISTORY_OFFSETS_MODEL_TICKS = (-2, 0)
+HISTORY_OFFSETS_MODEL_TICKS = (-5, 0)
+HISTORY_SPAN_S = 0.20
 STATE_DIM = 28
 ACTION_DIM = 10
 ACTION_HORIZON = 20
@@ -203,7 +210,7 @@ def temporal_sample_from_record(
             )
         )
         if offsets != HISTORY_OFFSETS_MODEL_TICKS:
-            raise M0MobileError("camera clip history offsets are not [-2, 0]")
+            raise M0MobileError("camera clip history offsets are not [-5, 0]")
         frames = _sequence(clip.get("frames"), "camera clip frames")
         if len(frames) != 2:
             raise M0MobileError("each camera clip must contain exactly two frames")
@@ -357,10 +364,35 @@ def _validate_temporal_config(config: Mapping[str, Any]) -> None:
     for key, value in expected.items():
         if data.get(key) != value:
             raise M0MobileError(f"temporal config data.{key} must be {value!r}")
+    if not math.isclose(
+        float(data.get("history_span_s", -1.0)),
+        HISTORY_SPAN_S,
+        rel_tol=0.0,
+        abs_tol=1.0e-9,
+    ):
+        raise M0MobileError("temporal config data.history_span_s must be 0.20")
     if data.get("object_state_is_model_input") is not False:
         raise M0MobileError("object state must not be a temporal model input")
     if data.get("overview_camera_is_model_input") is not False:
         raise M0MobileError("overview camera must not be a temporal model input")
+    expected_composer = {
+        "navigation_dit_output": ["vx", "wz"],
+        "arm_reference_space": "joint_space",
+        "tcp_delta_used": False,
+        "rate_limited_transition": True,
+        "phases": {
+            phase.name: {
+                "mode": NAVIGATION_REFERENCE_MODES[phase],
+                "arm_joint_reference": list(NAVIGATION_ARM_JOINT_REFERENCES[phase]),
+                "gripper_open_fraction": NAVIGATION_GRIPPER_REFERENCES[phase],
+            }
+            for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET)
+        },
+    }
+    if data.get("navigation_action_composer") != expected_composer:
+        raise M0MobileError(
+            "temporal config navigation_action_composer is not the stow/carry contract"
+        )
     streaming = _mapping(config.get("streaming"), "config.streaming")
     if streaming.get("require_episode_generation_id") is not True:
         raise M0MobileError("streaming must require an episode generation ID")
@@ -497,6 +529,7 @@ __all__ = [
     "DEFAULT_TEMPORAL_CONFIG_PATH",
     "GRIPPER_ACTION_SOURCE",
     "HISTORY_OFFSETS_MODEL_TICKS",
+    "HISTORY_SPAN_S",
     "JOINT_TASK_APPROACH_MIN_DISPLACEMENT_M",
     "JOINT_TASK_CARRY_MIN_DISPLACEMENT_M",
     "JOINT_TASK_RETRACT_MAX_DISPLACEMENT_M",

@@ -1,5 +1,5 @@
 {
-  "schema_version": "conveyor-vla-al0-temporal-config-3",
+  "schema_version": "conveyor-vla-al0-temporal-config-4",
   "model_identity": {
     "family": "ConveyorVLA",
     "variant": "AL0",
@@ -13,10 +13,10 @@
       "wrist_rgb"
     ],
     "history_offsets_model_ticks": [
-      -2,
+      -5,
       0
     ],
-    "history_span_s": 0.08,
+    "history_span_s": 0.20,
     "state_dim": 28,
     "action_dim": 10,
     "action_horizon": 20,
@@ -57,7 +57,39 @@
     "maximum_pre_backoff_base_displacement_m": 0.005,
     "placement_base_lock": "zero_until_episode_complete",
     "placement_stance_controller": "low_level_root_pose_hold",
-    "maximum_placement_base_displacement_m": 0.05
+    "maximum_placement_base_displacement_m": 0.05,
+    "navigation_action_composer": {
+      "navigation_dit_output": ["vx", "wz"],
+      "arm_reference_space": "joint_space",
+      "tcp_delta_used": false,
+      "rate_limited_transition": true,
+      "phases": {
+        "NAV_TO_SOURCE": {
+          "mode": "stow_open",
+          "arm_joint_reference": [
+            -0.000012146218068664894,
+            0.00008995759708341211,
+            -0.00003996067607658915,
+            -0.001061238581314683,
+            0.0000362528589903377,
+            -0.000001931453425640939
+          ],
+          "gripper_open_fraction": 1.0
+        },
+        "NAV_TO_TARGET": {
+          "mode": "carry_closed",
+          "arm_joint_reference": [
+            0.00007132788596209139,
+            0.000671310699544847,
+            -0.000004186293608654523,
+            -0.002301583532243967,
+            -0.0000611629438935779,
+            -0.000012048939424857963
+          ],
+          "gripper_open_fraction": 0.0
+        }
+      }
+    }
   },
   "vision": {
     "encoder": "Qwen3-VL-4B-Instruct",

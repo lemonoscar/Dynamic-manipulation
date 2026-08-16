@@ -23,6 +23,7 @@ from conveyor_bench.conveyorvla.online import (
     M0OnlineClient,
     M0OnlineError,
     build_live_state28,
+    decode_rgb_jpeg,
     encode_rgb_jpeg,
     guard_pregrasp_tcp_target,
     health_payload,
@@ -169,17 +170,22 @@ def test_pregrasp_workspace_guard_only_clamps_audited_drift_directions() -> None
 
 
 class _FakeService:
+    def __init__(self) -> None:
+        self.requests = []
+
     def health(self):
         payload = health_payload(MODEL_IDENTITY)
         payload["model"] = MODEL_IDENTITY
         return payload
 
     def infer(self, request):
+        self.requests.append(request)
         return make_infer_response(request, [[2.0] * 10] * 16, 12.5)
 
 
 def test_localhost_server_and_client_round_trip() -> None:
-    server = SERVER.create_server(0, _FakeService())
+    service = _FakeService()
+    server = SERVER.create_server(0, service)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -192,8 +198,8 @@ def test_localhost_server_and_client_round_trip() -> None:
         assert client.health()["status"] == "ready"
         assert client.health()["model"] == CANONICAL_MODEL_IDENTITY
         result = client.infer(
-            np.zeros((6, 8, 4), dtype=np.uint8),
-            _jpeg(),
+            np.zeros((480, 640, 3), dtype=np.uint8),
+            pytest.importorskip("PIL.Image").new("RGB", (224, 224)),
             "pick the moving red block",
             [0.0] * 28,
             sequence_id=9,
@@ -213,6 +219,10 @@ def test_localhost_server_and_client_round_trip() -> None:
     assert result.normalized_actions[0][1] == 0.0
     assert result.physical_actions[0][0] == pytest.approx(0.3)
     assert result.physical_actions[0][9] == 1.0
+    assert [decode_rgb_jpeg(image).size for image in service.requests[0].jpeg_images] == [
+        (224, 224),
+        (224, 224),
+    ]
 
 
 def test_temporal_service_buffers_contiguous_requests_and_returns_online_prefix() -> None:
@@ -247,7 +257,13 @@ def test_temporal_service_buffers_contiguous_requests_and_returns_online_prefix(
         FakeTorch(),
         MODEL_IDENTITY,
         temporal_history=True,
+        temporal_history_span_s=0.20,
     )
+    assert service.temporal_cache_contract == {
+        "history_offsets_model_ticks": [-5, 0],
+        "history_span_s": 0.20,
+        "cache": "previous_contiguous_5hz_request",
+    }
     first_payload = _payload()
     first_payload["sequence_id"] = 0
     first = service.infer(parse_infer_request(first_payload))

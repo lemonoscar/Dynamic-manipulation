@@ -356,6 +356,7 @@ class M0DiTActionHead(nn.Module):
         *,
         encoder_attention_mask: torch.Tensor | None = None,
         action_dimension_mask: torch.Tensor | None = None,
+        action_valid_mask: torch.Tensor | None = None,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
     ) -> torch.Tensor:
@@ -364,13 +365,41 @@ class M0DiTActionHead(nn.Module):
         mask = _action_dimension_mask(
             action_dimension_mask, batch_size, self.config.action_dim, actions.device
         )
+        valid = _action_valid_mask(
+            action_valid_mask,
+            batch_size,
+            self.config.action_horizon,
+            actions.device,
+        )
+        element_mask = None
+        if mask is not None or valid is not None:
+            dimensions = (
+                mask
+                if mask is not None
+                else torch.ones(
+                    (batch_size, self.config.action_dim),
+                    device=actions.device,
+                    dtype=torch.bool,
+                )
+            )
+            timesteps = (
+                valid
+                if valid is not None
+                else torch.ones(
+                    (batch_size, self.config.action_horizon),
+                    device=actions.device,
+                    dtype=torch.bool,
+                )
+            )
+            element_mask = timesteps[:, :, None] & dimensions[:, None, :]
+            if not bool(element_mask.any()):
+                raise ValueError("action masks must enable at least one target")
         noise = torch.randn_like(actions) if noise is None else noise.to(actions)
         if noise.shape != actions.shape:
             raise ValueError("noise must have the same shape as actions")
-        if mask is not None:
-            expanded_mask = mask[:, None, :]
-            actions = actions * expanded_mask
-            noise = noise * expanded_mask
+        if element_mask is not None:
+            actions = actions * element_mask
+            noise = noise * element_mask
         if time is None:
             sample = self.beta_dist.sample((batch_size,)).to(actions)
             time = (self.config.noise_s - sample) / self.config.noise_s
@@ -391,10 +420,9 @@ class M0DiTActionHead(nn.Module):
         target_velocity = (actions - noisy_actions) / denominator
         predicted_velocity = (predicted_actions - noisy_actions) / denominator
         squared_error = (predicted_velocity - target_velocity).square()
-        if mask is None:
+        if element_mask is None:
             return squared_error.mean()
-        expanded_mask = mask[:, None, :].expand_as(squared_error)
-        return (squared_error * expanded_mask).sum() / expanded_mask.sum()
+        return (squared_error * element_mask).sum() / element_mask.sum()
 
     @torch.no_grad()
     def sample(
@@ -665,6 +693,24 @@ def _action_dimension_mask(
         raise ValueError("action_dimension_mask has the wrong shape")
     if not torch.all(mask.any(dim=1)):
         raise ValueError("each action mask must enable at least one dimension")
+    return mask
+
+
+def _action_valid_mask(
+    mask: torch.Tensor | None,
+    batch_size: int,
+    action_horizon: int,
+    device: torch.device,
+) -> torch.Tensor | None:
+    if mask is None:
+        return None
+    mask = mask.to(device=device, dtype=torch.bool)
+    if mask.ndim == 1:
+        mask = mask.unsqueeze(0).expand(batch_size, -1)
+    if mask.shape != (batch_size, action_horizon):
+        raise ValueError("action_valid_mask has the wrong shape")
+    if bool((~mask[:, :-1] & mask[:, 1:]).any()):
+        raise ValueError("action_valid_mask must contain a true prefix only")
     return mask
 
 

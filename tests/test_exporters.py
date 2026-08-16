@@ -455,7 +455,7 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     records = list(iter_conveyorvla_al0_temporal_records(episode))
     first = records[0]
 
-    assert len(records) == 8
+    assert len(records) == 5
     assert first["profile"] == "conveyorvla_al0_temporal_v3"
     assert first["policy_task_scope"] == "navigate_grasp_deliver"
     assert first["joint_task_evidence"]["approach_conveyor"][
@@ -467,17 +467,17 @@ def test_al0_temporal_projection_has_history_and_random_access_targets(
     assert first["joint_task_evidence"]["carry_to_sort_bin"][
         "planar_displacement_m"
     ] == pytest.approx(0.12)
-    assert first["observation_model_tick"] == 2
-    assert first["observation_control_tick"] == 5
-    assert first["history_model_ticks"] == (0, 2)
-    assert first["history_sim_times_s"][1] - first["history_sim_times_s"][0] == pytest.approx(0.08)
+    assert first["observation_model_tick"] == 5
+    assert first["observation_control_tick"] == 11
+    assert first["history_model_ticks"] == (0, 5)
+    assert first["history_sim_times_s"][1] - first["history_sim_times_s"][0] == pytest.approx(0.20)
     assert [clip["camera_id"] for clip in first["camera_clips"]] == [
         "head_rgb",
         "wrist_rgb",
     ]
     assert all(len(clip["frames"]) == 2 for clip in first["camera_clips"])
     assert len(first["model_action10_chunk"]) == 20
-    assert first["model_action10_chunk"][0][:3] == pytest.approx((0.2, 0.0, 0.0))
+    assert first["model_action10_chunk"][0][:3] == pytest.approx((0.0, 0.0, 0.0))
     assert first["model_action10_chunk"][0][3] == pytest.approx(0.01)
     assert first["model_action10_chunk"][5][3] == pytest.approx(0.06)
     assert first["model_action10_chunk"][0][9] == pytest.approx(0.0)

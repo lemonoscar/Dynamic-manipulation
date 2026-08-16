@@ -26,6 +26,10 @@ from conveyor_bench.conveyorvla.config import (
     M0MobileNormalizer,
     load_m0_mobile_config,
 )
+from conveyor_bench.conveyorvla.lerobot_v3 import (
+    load_lerobot_v3_config,
+    preprocess_policy_rgb,
+)
 from conveyor_bench.schema.exporters import M0_MOBILE_STATE_LAYOUT
 
 
@@ -421,6 +425,9 @@ class M0OnlineClient:
                 config, {"mean": [0.0] * STATE_DIM, "std": [1.0] * STATE_DIM}
             )
         self.normalizer = normalizer
+        preprocessing = load_lerobot_v3_config()["image_preprocessing"]
+        self.image_preprocessing = preprocessing
+        self.image_shape = tuple(preprocessing["output_shape_hwc"])
         self.timeout_s = timeout
         self.jpeg_quality = jpeg_quality
 
@@ -496,7 +503,15 @@ class M0OnlineClient:
                     "camera_id": camera_id,
                     "encoding": "jpeg",
                     "data_base64": base64.b64encode(
-                        encode_rgb_jpeg(image, quality=self.jpeg_quality)
+                        encode_rgb_jpeg(
+                            preprocess_policy_rgb(
+                                image,
+                                camera_id,
+                                self.image_shape,
+                                self.image_preprocessing,
+                            ),
+                            quality=self.jpeg_quality,
+                        )
                     ).decode("ascii"),
                 }
                 for camera_id, image in zip(CAMERA_IDS, (head_rgb, wrist_rgb), strict=True)

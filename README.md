@@ -84,6 +84,7 @@ python scripts/collect.py \
 - [采集、训练与测评操作](docs/operations.md)
 - [当前状态与下一步](docs/status.md)
 - [版本迁移与兼容策略](docs/history.md)
+- [Liangzhu seen dense-transition 合同](docs/liangzhu_seen_dense_transition_contract.md)
 - [最近工作交接](HANDOFF.md)
 
 `assets/policies/go2_x5_pct_dog_only/policy.pt` 的再分发许可证尚未确认；公开发布前

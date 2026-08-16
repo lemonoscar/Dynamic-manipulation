@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from conveyor_bench.conveyorvla.subtasks import phase_instruction, Phase
+
 
 torch = pytest.importorskip("torch")
 pytest.importorskip("accelerate")
@@ -59,3 +61,48 @@ def test_resume_keeps_already_aligned_scheduler_unchanged() -> None:
 
     assert report["repaired"] is False
     assert scheduler.last_epoch == 3_000
+
+
+def test_teacher_forcing_schedule_reaches_zero_before_training_end() -> None:
+    assert TRAIN._teacher_forcing_probability(0, 2, 6) == 1.0
+    assert TRAIN._teacher_forcing_probability(2, 2, 6) == 1.0
+    assert TRAIN._teacher_forcing_probability(4, 2, 6) == pytest.approx(0.5)
+    assert TRAIN._teacher_forcing_probability(6, 2, 6) == 0.0
+
+
+def test_history_training_never_inserts_ground_truth_when_schedule_is_zero() -> None:
+    example = {
+        "sample_id": "episode:10",
+        "previous_subtask_text": phase_instruction(Phase.PICK),
+        "lang": "old prompt",
+    }
+
+    empty, empty_metrics = TRAIN._prepare_training_examples(
+        [example],
+        0.0,
+        seed=1,
+        dropout_probability=0.0,
+        corruption_probability=0.0,
+    )
+    teacher, teacher_metrics = TRAIN._prepare_training_examples(
+        [example],
+        1.0,
+        seed=1,
+        dropout_probability=0.0,
+        corruption_probability=0.0,
+    )
+
+    assert "Previous model prediction" not in empty[0]["lang"]
+    assert empty_metrics["omitted_by_schedule"] == 1
+    assert phase_instruction(Phase.PICK) in teacher[0]["lang"]
+    assert teacher_metrics["teacher_forced"] == 1
+
+    corrupted, corrupted_metrics = TRAIN._prepare_training_examples(
+        [example],
+        1.0,
+        seed=1,
+        dropout_probability=0.0,
+        corruption_probability=1.0,
+    )
+    assert phase_instruction(Phase.PICK) not in corrupted[0]["lang"]
+    assert corrupted_metrics["corrupted"] == 1

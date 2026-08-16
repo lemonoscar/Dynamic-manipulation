@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 
 CONFIG_SCHEMA_VERSION = "conveyor-bench-m0-mobile-train-config-1"
 TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION = (
-    "conveyor-vla-al0-temporal-training-config-1"
+    "conveyor-vla-al0-temporal-training-config-2"
 )
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs/model.json"
 MODEL_FAMILY = "ConveyorVLA"

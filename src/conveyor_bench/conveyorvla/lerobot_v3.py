@@ -24,6 +24,7 @@ from .temporal import (
     CONTROL_HZ,
     GRIPPER_ACTION_SOURCE,
     HISTORY_OFFSETS_MODEL_TICKS,
+    HISTORY_SPAN_S,
     MODEL_HZ,
     POLICY_TASK_SCOPE,
     STATE_DIM,
@@ -33,7 +34,7 @@ from .temporal import (
 )
 
 
-LEROBOT_V3_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-lerobot-v3-config-2"
+LEROBOT_V3_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-lerobot-v3-config-3"
 DEFAULT_LEROBOT_V3_CONFIG_PATH = (
     Path(__file__).resolve().parents[3]
     / "configs"
@@ -453,8 +454,13 @@ def _validate_config(config: Mapping[str, Any]) -> None:
     for key, expected in expected_sampling.items():
         if sampling.get(key) != expected:
             raise M0MobileError(f"sampling.{key} must be {expected!r}")
-    if not math.isclose(float(sampling.get("history_span_s", -1.0)), 0.08):
-        raise M0MobileError("sampling.history_span_s must be 0.08")
+    if not math.isclose(
+        float(sampling.get("history_span_s", -1.0)),
+        HISTORY_SPAN_S,
+        rel_tol=0.0,
+        abs_tol=1.0e-9,
+    ):
+        raise M0MobileError("sampling.history_span_s must be 0.20")
     if not math.isclose(float(sampling.get("action_horizon_s", -1.0)), 0.8):
         raise M0MobileError("sampling.action_horizon_s must be 0.8")
     features = _mapping(config.get("features"), "features")

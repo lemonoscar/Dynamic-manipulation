@@ -60,3 +60,6 @@ conveyor_bench/assets_sidecar/
 
 # Local project-planning document (do not publish)
 /毕业设计计划.pdf
+
+# Strictly local agent/server handoff material; never publish.
+/handoff_private/

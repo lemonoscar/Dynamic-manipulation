@@ -30,6 +30,8 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
 from conveyor_bench.conveyorvla.online import build_live_state28
 from conveyor_bench.conveyorvla.subtasks import (
     FULL_INSTRUCTION,
+    PCT_PHASES,
+    Phase,
     action_domain,
     phase_from_pct,
     phase_instruction,
@@ -194,6 +196,15 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             control_steps,
             raw_phase,
         )
+        transition = _transition_metadata(
+            samples,
+            sample_index,
+            source_step,
+            target_steps,
+            controls,
+            control_steps,
+            phase,
+        )
 
         source = _observation_at(controls, control_steps, source_step)
         source_root_xyz, source_root_wxyz, source_tcp_xyz, source_tcp_wxyz = (
@@ -267,6 +278,7 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             "full_instruction": FULL_INSTRUCTION,
             "phase_instruction": phase_instruction(phase),
             "phase_pure_action_horizon": phase_pure,
+            **transition,
             "observation_model_tick": model_tick,
             "observation_control_tick": source_step,
             "camera_clips": camera_clips,
@@ -289,6 +301,102 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
             "action_dimension_mask": ACTION_DIMENSION_MASK,
             "object_state_is_model_input": False,
         }
+
+
+def _transition_metadata(
+    samples: Sequence[Mapping[str, Any]],
+    sample_index: int,
+    source_step: int,
+    target_steps: Sequence[int],
+    controls: Mapping[int, Mapping[str, Any]],
+    control_steps: Sequence[int],
+    phase: Phase,
+) -> dict[str, Any]:
+    """Describe the nearest phase boundary and the current-expert action prefix."""
+
+    current = phase_from_pct(samples[sample_index].get("pipeline_state"))
+    if current is not phase:
+        raise M0MobileError("PCT phase metadata changed while building a record")
+    previous_phase = None
+    phase_start_step = source_step
+    for sample in reversed(samples[:sample_index]):
+        candidate = PCT_PHASES.get(str(sample.get("pipeline_state", "")))
+        if candidate is current:
+            phase_start_step = _integer(sample.get("simulation_step"), "simulation_step")
+        elif candidate is not None:
+            previous_phase = candidate
+            break
+
+    next_phase = None
+    boundary_step = None
+    for sample in samples[sample_index + 1 :]:
+        candidate = PCT_PHASES.get(str(sample.get("pipeline_state", "")))
+        if candidate is not None and candidate is not current:
+            next_phase = candidate
+            boundary_step = _integer(sample.get("simulation_step"), "simulation_step")
+            break
+    if boundary_step is None:
+        boundary_step = _integer(samples[-1].get("simulation_step"), "simulation_step")
+
+    seconds_since_previous = (source_step - phase_start_step) / CONTROL_HZ
+    seconds_to_next = max(0.0, (boundary_step - source_step) / CONTROL_HZ)
+    upcoming = next_phase is not None and seconds_to_next <= seconds_since_previous
+    seconds_to_boundary = -seconds_to_next if upcoming else seconds_since_previous
+    previous_transition = (
+        None
+        if previous_phase is None
+        else f"{previous_phase.name}->{current.name}"
+    )
+    next_name = next_phase.name if next_phase is not None else Phase.DONE.name
+    next_transition = f"{current.name}->{next_name}"
+    boundary_transition = next_transition if upcoming else previous_transition
+    boundary_window = bool(
+        (next_phase is not None and seconds_to_next <= 1.0)
+        or (previous_phase is not None and seconds_since_previous <= 1.0)
+    )
+
+    source_domain = action_domain(current)
+    valid_mask: list[bool] = []
+    crossed_domain = False
+    interval_start = source_step
+    for target_step in target_steps:
+        lower = bisect_right(control_steps, interval_start)
+        upper = bisect_right(control_steps, target_step)
+        interval = control_steps[lower:upper]
+        if not interval:
+            index = bisect_right(control_steps, target_step) - 1
+            interval = () if index < 0 else (control_steps[index],)
+        for step in interval:
+            candidate = PCT_PHASES.get(str(controls[step].get("pipeline_state", "")))
+            if candidate is None or action_domain(candidate) is not source_domain:
+                crossed_domain = True
+                break
+        valid_mask.append(not crossed_domain)
+        interval_start = target_step
+
+    reasons = {
+        "NAV_TO_SOURCE->PICK": "base_stopped_source_in_reach",
+        "PICK->NAV_TO_TARGET": "grasp_lifted_carry_ready",
+        "NAV_TO_TARGET->PLACE": "base_stopped_target_in_reach",
+        "PLACE->DONE": "released_in_target",
+    }
+    return {
+        "previous_subtask_label": (
+            None if previous_phase is None else previous_phase.name
+        ),
+        "next_subtask_label": next_name,
+        "seconds_to_boundary": seconds_to_boundary,
+        "seconds_to_next_boundary_s": seconds_to_next,
+        "seconds_since_previous_boundary_s": seconds_since_previous,
+        "is_boundary_window": boundary_window,
+        "boundary_transition": boundary_transition,
+        "transition_reason": (
+            reasons.get(boundary_transition, "phase_interior")
+            if boundary_window
+            else "phase_interior"
+        ),
+        "action_valid_mask": valid_mask,
+    }
 
 
 def _phase_pure_window(

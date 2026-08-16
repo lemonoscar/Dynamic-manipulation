@@ -1,4 +1,8 @@
-# ConveyorVLA AL0：StarVLA 式双前向 Subtask 与 Seen 任务训练计划
+# ConveyorVLA AL0：StarVLA 式双前向 Subtask 与 Seen 任务训练计划（历史）
+
+> 本文保留旧方案背景，不再是 Liangzhu seen 的训练合同。现行合同见
+> `docs/liangzhu_seen_dense_transition_contract.md`；真实 `subtask_history`、
+> phase-pure 边界删除和 0.08 秒视觉元数据均已废止。
 
 > 状态：实施中
 > 更新时间：2026-08-15
@@ -303,7 +307,7 @@ Pass 2：使用 predicted assistant prefix 取得 hidden states并调用对应 D
 - 四个已知 subtask；
 - n200/n250 中通过物理和数据完整性门禁的 episode。
 
-它不等于“当前画面中一定能看见目标”。目标暂时离开视野时，模型仍可利用完整指令、时序视觉和 subtask history 判断当前任务。
+它不等于“当前画面中一定能看见目标”。目标暂时离开视野时，模型只可利用完整指令、时序视觉和上一时刻模型自身预测判断当前任务。
 
 ### 7.2 原始数据保持不变
 
@@ -321,9 +325,9 @@ phase_id
 phase_name
 subtask_text
 assistant_solution
-subtask_history
+previous_subtask_label  # 仅用于带 dropout/corruption 且衰减到 0 的训练 teacher forcing
 action_domain
-phase_pure_action_horizon
+action_valid_mask
 ```
 
 其中：

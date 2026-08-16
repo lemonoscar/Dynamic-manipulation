@@ -11,6 +11,7 @@ import math
 import os
 import random
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -22,7 +23,7 @@ import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
 from accelerate.utils import set_seed  # noqa: E402
 from safetensors.torch import load_file  # noqa: E402
-from torch.utils.data import DataLoader, WeightedRandomSampler  # noqa: E402
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import (  # noqa: E402
     DEFAULT_CONFIG_PATH,
@@ -45,8 +46,12 @@ from conveyor_bench.conveyorvla.policy import (  # noqa: E402
     transfer_qwen_checkpoint_weights,
 )
 from conveyor_bench.conveyorvla.subtasks import (  # noqa: E402
+    FULL_INSTRUCTION,
     MANIPULATION_ACTION_DIM,
     NAVIGATION_ACTION_DIM,
+    PHASE_ORDER,
+    phase_instruction,
+    subtask_prompt,
 )
 from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
     DEFAULT_TEMPORAL_CONFIG_PATH,
@@ -72,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-interval-steps", type=int, default=500)
     parser.add_argument("--log-interval-steps", type=int, default=10)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--limit-train-rows-per-phase", type=int, default=0)
     parser.add_argument("--subtask-loss-weight", type=float, default=1.0)
     parser.add_argument("--action-loss-weight", type=float, default=1.0)
     parser.add_argument("--vlm-learning-rate", type=float, default=2e-6)
@@ -81,6 +87,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-8)
     parser.add_argument("--max-gradient-norm", type=float, default=1.0)
     parser.add_argument("--repeated-diffusion-steps", type=int, default=1)
+    parser.add_argument("--teacher-forcing-full-steps", type=int, default=100)
+    parser.add_argument("--teacher-forcing-end-step", type=int, default=4_000)
+    parser.add_argument("--history-dropout-probability", type=float, default=0.50)
+    parser.add_argument("--history-corruption-probability", type=float, default=0.25)
     parser.add_argument(
         "--attention-implementation",
         choices=("sdpa", "flash_attention_2", "eager"),
@@ -117,20 +127,35 @@ def main(argv: list[str] | None = None) -> int:
             split="train",
             component="joint",
         )
+        train_indices = _limited_phase_indices(
+            train_dataset,
+            args.limit_train_rows_per_phase,
+        )
+        loader_dataset = (
+            train_dataset
+            if train_indices is None
+            else Subset(train_dataset, train_indices)
+        )
+        loader_weights = (
+            train_dataset.sample_weights
+            if train_indices is None
+            else tuple(train_dataset.sample_weights[index] for index in train_indices)
+        )
         sampler = WeightedRandomSampler(
-            torch.as_tensor(train_dataset.sample_weights, dtype=torch.double),
-            num_samples=len(train_dataset),
+            torch.as_tensor(loader_weights, dtype=torch.double),
+            num_samples=len(loader_dataset),
             replacement=True,
             generator=torch.Generator().manual_seed(args.seed),
         )
         train_loader = DataLoader(
-            train_dataset,
+            loader_dataset,
             batch_size=args.batch_size,
             sampler=sampler,
             num_workers=args.num_workers,
             collate_fn=list,
             persistent_workers=args.num_workers > 0,
             pin_memory=True,
+            drop_last=True,
         )
         optimizer, parameter_report = _optimizer(model, args)
         scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -142,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_json_atomic(
                 output / "resolved_run.json",
                 {
-                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-1",
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-2",
                     "status": "initializing",
                     "hierarchy_root": str(args.hierarchy_root.expanduser().resolve()),
                     "hierarchy_manifest_sha256": _sha256(
@@ -155,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
                         args.initial_action_checkpoint.expanduser().resolve()
                     ),
                     "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                    "code_snapshot": os.environ.get("CONVEYORVLA_CODE_SNAPSHOT"),
+                    "hostname": os.uname().nodename,
                     "world_size": accelerator.num_processes,
                     "mixed_precision": accelerator.mixed_precision,
                     "max_steps": args.max_steps,
@@ -165,10 +192,33 @@ def main(argv: list[str] | None = None) -> int:
                         * args.gradient_accumulation_steps
                         * accelerator.num_processes
                     ),
-                    "train_rows": len(train_dataset),
-                    "train_phase_counts": train_dataset.phase_counts,
+                    "train_rows": len(loader_dataset),
+                    "train_phase_counts": (
+                        train_dataset.phase_counts
+                        if train_indices is None
+                        else {
+                            phase.name: args.limit_train_rows_per_phase
+                            for phase in PHASE_ORDER
+                        }
+                    ),
+                    "training_subset": train_indices is not None,
                     "parameter_groups": parameter_report,
                     "transfer": transfer_report,
+                    "initialization_contract": {
+                        "vlm": "clean_local_qwen3_vl_plus_released_abot_weights",
+                        "action": "released_abot_action_weight_transfer",
+                        "legacy_step_007000_used": False,
+                        "optimizer_resume": args.resume_from is not None,
+                    },
+                    "history_training_contract": {
+                        "ground_truth_subtask_history_in_main_prompt": False,
+                        "teacher_forcing_full_steps": args.teacher_forcing_full_steps,
+                        "teacher_forcing_end_step": args.teacher_forcing_end_step,
+                        "history_dropout_probability": args.history_dropout_probability,
+                        "history_corruption_probability": (
+                            args.history_corruption_probability
+                        ),
+                    },
                     "arguments": vars(args),
                 },
             )
@@ -194,6 +244,18 @@ def main(argv: list[str] | None = None) -> int:
         last_checkpoint_step = global_step
         while global_step < args.max_steps:
             for examples in train_loader:
+                teacher_forcing_probability = _teacher_forcing_probability(
+                    global_step,
+                    args.teacher_forcing_full_steps,
+                    args.teacher_forcing_end_step,
+                )
+                examples, history_metrics = _prepare_training_examples(
+                    examples,
+                    teacher_forcing_probability,
+                    seed=args.seed + global_step * 1_000_003 + accelerator.process_index,
+                    dropout_probability=args.history_dropout_probability,
+                    corruption_probability=args.history_corruption_probability,
+                )
                 with accelerator.accumulate(model):
                     subtask = model(examples, objective="subtask")
                     subtask_loss = subtask["subtask_loss"]
@@ -202,7 +264,16 @@ def main(argv: list[str] | None = None) -> int:
                     _finite(subtask_loss, "subtask loss")
                     accelerator.backward(args.subtask_loss_weight * subtask_loss)
 
-                    action = model(examples, objective="action")
+                    action = model(
+                        examples,
+                        objective="action",
+                        teacher_forcing_probability=teacher_forcing_probability,
+                        routing_seed=(
+                            args.seed
+                            + global_step * 1_000_003
+                            + accelerator.process_index
+                        ),
+                    )
                     action_loss = action["action_loss"]
                     if not isinstance(action_loss, torch.Tensor):
                         raise M0MobileError("action loss is not a tensor")
@@ -210,7 +281,24 @@ def main(argv: list[str] | None = None) -> int:
                     accelerator.backward(args.action_loss_weight * action_loss)
 
                     gradient_norm = torch.tensor(float("nan"), device=action_loss.device)
+                    component_gradient_norms = {
+                        "vlm_gradient_norm": torch.tensor(
+                            float("nan"), device=action_loss.device
+                        ),
+                        "navigation_gradient_norm": torch.tensor(
+                            float("nan"), device=action_loss.device
+                        ),
+                        "manipulation_gradient_norm": torch.tensor(
+                            float("nan"), device=action_loss.device
+                        ),
+                    }
                     if accelerator.sync_gradients:
+                        component_gradient_norms = _component_gradient_norms(
+                            accelerator,
+                            optimizer,
+                        )
+                        for name, value in component_gradient_norms.items():
+                            _finite(value, name.replace("_", " "))
                         gradient_norm = accelerator.clip_grad_norm_(
                             model.parameters(), args.max_gradient_norm
                         )
@@ -226,7 +314,18 @@ def main(argv: list[str] | None = None) -> int:
                 last_metrics = {
                     "subtask_loss": _distributed_mean(accelerator, subtask_loss),
                     "action_loss": _distributed_mean(accelerator, action_loss),
+                    "navigation_loss": _distributed_mean(
+                        accelerator, action["navigation_loss"]
+                    ),
+                    "manipulation_loss": _distributed_mean(
+                        accelerator, action["manipulation_loss"]
+                    ),
                     "gradient_norm": _distributed_mean(accelerator, gradient_norm),
+                    **{
+                        name: float(value.detach().cpu())
+                        for name, value in component_gradient_norms.items()
+                    },
+                    "teacher_forcing_probability": teacher_forcing_probability,
                 }
                 if global_step == 1 or global_step % args.log_interval_steps == 0:
                     _event(
@@ -235,6 +334,18 @@ def main(argv: list[str] | None = None) -> int:
                         "train_step",
                         step=global_step,
                         **last_metrics,
+                        history_training=history_metrics,
+                        routing={
+                            key: int(action[key])
+                            for key in (
+                                "teacher_forced_samples",
+                                "predicted_route_correct",
+                                "predicted_route_wrong",
+                                "predicted_route_invalid",
+                                "navigation_samples",
+                                "manipulation_samples",
+                            )
+                        },
                         learning_rates=[group["lr"] for group in optimizer.param_groups],
                     )
                 if global_step % args.save_interval_steps == 0:
@@ -257,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_json_atomic(
                 state_path,
                 {
-                    "schema_version": "conveyor-vla-al0-seen-two-pass-state-1",
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-state-2",
                     "status": "failed",
                     "global_step": failed_step,
                     "error": str(error),
@@ -374,6 +485,110 @@ def _optimizer(
     return optimizer, report
 
 
+def _teacher_forcing_probability(step: int, full_steps: int, end_step: int) -> float:
+    if step < full_steps:
+        return 1.0
+    if step >= end_step:
+        return 0.0
+    return 1.0 - (step - full_steps) / (end_step - full_steps)
+
+
+def _limited_phase_indices(
+    dataset: ConveyorVLAAL0HierarchicalDataset,
+    rows_per_phase: int,
+) -> list[int] | None:
+    if rows_per_phase == 0:
+        return None
+    result = []
+    for phase in PHASE_ORDER:
+        candidates = [
+            index
+            for index, annotation in enumerate(dataset.annotations)
+            if int(annotation["phase_id"]) == int(phase)
+        ]
+        boundary = [
+            index
+            for index in candidates
+            if dataset.annotations[index]["is_boundary_window"]
+            and any(dataset.annotations[index]["action_valid_mask"])
+        ]
+        boundary_set = set(boundary)
+        selected = (boundary + [index for index in candidates if index not in boundary_set])[
+            :rows_per_phase
+        ]
+        if len(selected) != rows_per_phase:
+            raise M0MobileError(f"not enough {phase.name} rows for the training subset")
+        result.extend(selected)
+    return result
+
+
+def _prepare_training_examples(
+    examples: Iterable[Mapping[str, Any]],
+    teacher_forcing_probability: float,
+    *,
+    seed: int,
+    dropout_probability: float,
+    corruption_probability: float,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Inject only a single training-time previous label, then decay it away."""
+
+    prepared: list[dict[str, Any]] = []
+    metrics = {
+        "available": 0,
+        "teacher_forced": 0,
+        "dropped": 0,
+        "corrupted": 0,
+        "omitted_by_schedule": 0,
+    }
+    for offset, source in enumerate(examples):
+        example = dict(source)
+        previous = example.get("previous_subtask_text")
+        memory = None
+        if previous is not None:
+            metrics["available"] += 1
+            rng = random.Random(f"{seed}:{offset}:{example.get('sample_id')}")
+            if rng.random() >= teacher_forcing_probability:
+                metrics["omitted_by_schedule"] += 1
+            elif rng.random() < dropout_probability:
+                metrics["dropped"] += 1
+            else:
+                memory = str(previous)
+                metrics["teacher_forced"] += 1
+                if rng.random() < corruption_probability:
+                    choices = [
+                        phase_instruction(phase)
+                        for phase in PHASE_ORDER
+                        if phase_instruction(phase) != memory
+                    ]
+                    memory = rng.choice(choices)
+                    metrics["corrupted"] += 1
+        example["lang"] = subtask_prompt(FULL_INSTRUCTION, memory)
+        prepared.append(example)
+    return prepared, metrics
+
+
+def _component_gradient_norms(
+    accelerator: Accelerator,
+    optimizer: torch.optim.Optimizer,
+) -> dict[str, torch.Tensor]:
+    groups = {
+        "vlm_gradient_norm": ("vlm_",),
+        "navigation_gradient_norm": ("navigation_",),
+        "manipulation_gradient_norm": ("manipulation_",),
+    }
+    result = {}
+    for result_name, prefixes in groups.items():
+        squared = torch.zeros((), device=accelerator.device, dtype=torch.float32)
+        for group in optimizer.param_groups:
+            if not str(group.get("name", "")).startswith(prefixes):
+                continue
+            for parameter in group["params"]:
+                if parameter.grad is not None:
+                    squared += parameter.grad.detach().float().square().sum()
+        result[result_name] = accelerator.reduce(squared, reduction="sum").sqrt()
+    return result
+
+
 def _schedule(max_steps: int, warmup_steps: int):
     def scale(step: int) -> float:
         if step < warmup_steps:
@@ -474,7 +689,7 @@ def _set_run_status(
         _write_json_atomic(
             output / "run_state.json",
             {
-                "schema_version": "conveyor-vla-al0-seen-two-pass-state-1",
+                "schema_version": "conveyor-vla-al0-seen-two-pass-state-2",
                 "status": status,
                 "global_step": step,
                 "metrics": dict(metrics or {}),
@@ -493,7 +708,11 @@ def _event(
     if not accelerator.is_main_process:
         return
     output.mkdir(parents=True, exist_ok=True)
-    payload = {"event": event, **values}
+    payload = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+        **values,
+    }
     with (output / "events.jsonl").open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, sort_keys=True, default=str) + "\n")
         stream.flush()
@@ -549,6 +768,21 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise M0MobileError("warmup steps must be within [0, max steps)")
     if args.num_workers < 0:
         raise M0MobileError("num workers cannot be negative")
+    if args.limit_train_rows_per_phase < 0:
+        raise M0MobileError("limit train rows per phase cannot be negative")
+    if not (
+        0 <= args.teacher_forcing_full_steps < args.teacher_forcing_end_step
+        < args.max_steps
+    ):
+        raise M0MobileError(
+            "teacher forcing must have a non-empty decay ending before max steps"
+        )
+    probabilities = (
+        args.history_dropout_probability,
+        args.history_corruption_probability,
+    )
+    if any(not math.isfinite(value) or not 0.0 <= value <= 1.0 for value in probabilities):
+        raise M0MobileError("history dropout/corruption probabilities must be within [0, 1]")
     floats = (
         args.subtask_loss_weight,
         args.action_loss_weight,

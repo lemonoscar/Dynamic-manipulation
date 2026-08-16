@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 
 from conveyor_bench.conveyorvla.pct_dataset import (
+    _transition_metadata,
     audit_pct_episode,
     iter_pct_temporal_records,
 )
+from conveyor_bench.conveyorvla.subtasks import Phase
 
 
 JOINT_NAMES = [
@@ -85,6 +87,7 @@ def test_pct_episode_builds_state_and_future_actions(tmp_path: Path) -> None:
         x = step * 0.001
         frames.append(
             {
+                "pipeline_state": "exec_nav_to_pick",
                 "action": {
                     "base_velocity": [0.05, 0.0, 0.0],
                     "metadata": {},
@@ -132,6 +135,8 @@ def test_pct_episode_builds_state_and_future_actions(tmp_path: Path) -> None:
     assert first["phase_name"] == "NAV_TO_SOURCE"
     assert first["action_domain_name"] == "NAVIGATION"
     assert first["phase_pure_action_horizon"] is False
+    assert first["action_valid_mask"] == [True] * 20
+    assert first["next_subtask_label"] == "DONE"
     assert first["camera_clips"][0]["frames"][0]["relative_path"].endswith(
         "camera0_00000.jpg"
     )
@@ -147,3 +152,35 @@ def test_incomplete_pct_episode_is_ineligible_instead_of_aborting_batch(
 
     assert report["eligible"] is False
     assert "cannot read PCT JSON" in report["problems"][0]
+
+
+def test_transition_metadata_keeps_boundary_row_and_masks_expert_suffix() -> None:
+    samples = [
+        {"simulation_step": 0, "pipeline_state": "exec_nav_to_pick"},
+        {"simulation_step": 10, "pipeline_state": "exec_nav_to_pick"},
+        {"simulation_step": 20, "pipeline_state": "exec_pick"},
+        {"simulation_step": 30, "pipeline_state": "exec_pick"},
+    ]
+    controls = {
+        1: {"pipeline_state": "exec_nav_to_pick"},
+        11: {"pipeline_state": "exec_nav_to_pick"},
+        21: {"pipeline_state": "exec_pick"},
+        31: {"pipeline_state": "exec_pick"},
+    }
+
+    metadata = _transition_metadata(
+        samples,
+        1,
+        10,
+        tuple(range(12, 52, 2)),
+        controls,
+        tuple(controls),
+        Phase.NAV_TO_SOURCE,
+    )
+
+    assert metadata["next_subtask_label"] == "PICK"
+    assert metadata["is_boundary_window"] is True
+    assert metadata["boundary_transition"] == "NAV_TO_SOURCE->PICK"
+    assert metadata["transition_reason"] == "base_stopped_source_in_reach"
+    assert metadata["action_valid_mask"][:5] == [True] * 5
+    assert metadata["action_valid_mask"][5:] == [False] * 15

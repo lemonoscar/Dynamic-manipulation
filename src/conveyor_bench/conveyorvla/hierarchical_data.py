@@ -23,16 +23,21 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
     lerobot_model_example,
     load_lerobot_v3_config,
 )
-from conveyor_bench.conveyorvla.pct_dataset import audit_pct_episode
+from conveyor_bench.conveyorvla.pct_dataset import (
+    audit_pct_episode,
+    iter_pct_temporal_records,
+)
 from conveyor_bench.conveyorvla.subtasks import (
     FULL_INSTRUCTION,
+    NAVIGATION_ARM_JOINT_REFERENCES,
+    NAVIGATION_GRIPPER_REFERENCES,
+    NAVIGATION_REFERENCE_MODES,
     PCT_PHASES,
     PHASE_ORDER,
     ActionDomain,
     Phase,
     action_domain,
     phase_instruction,
-    subtask_history,
     subtask_prompt,
     subtask_solution,
     project_action10,
@@ -55,8 +60,12 @@ class HierarchyAuditThresholds:
 
 
 DEFAULT_HIERARCHY_AUDIT_THRESHOLDS = HierarchyAuditThresholds()
-HIERARCHY_VIEW_SCHEMA_VERSION = "conveyor-vla-al0-seen-subtask-view-2"
+HIERARCHY_VIEW_SCHEMA_VERSION = (
+    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-3"
+)
 HIERARCHY_SPLIT_SEED = "conveyor-vla-al0-liangzhu-seen-split-v2"
+BOUNDARY_WINDOW_S = 1.0
+NAVIGATION_DENSE_TERMINAL_WINDOW_S = 4.0
 
 
 class ConveyorVLAAL0HierarchicalDataset:
@@ -127,7 +136,11 @@ class ConveyorVLAAL0HierarchicalDataset:
         counts = Counter(int(row["phase_id"]) for row in self.annotations)
         self.phase_counts = {Phase(key).name: value for key, value in sorted(counts.items())}
         self.sample_weights = tuple(
-            len(self.annotations) / (len(counts) * counts[int(row["phase_id"])])
+            (
+                len(self.annotations)
+                / (len(counts) * counts[int(row["phase_id"])])
+                * float(row["sampling_weight"])
+            )
             for row in self.annotations
         )
 
@@ -150,13 +163,19 @@ class ConveyorVLAAL0HierarchicalDataset:
             )
             if domain is not expected:
                 raise M0MobileError("hierarchy component/action-domain mismatch")
-        history = tuple(str(item) for item in annotation["subtask_history"])
-        example["lang"] = subtask_prompt(FULL_INSTRUCTION, history)
+        valid_mask = tuple(bool(value) for value in annotation["action_valid_mask"])
+        if len(valid_mask) != ACTION_HORIZON or any(
+            not earlier and later
+            for earlier, later in zip(valid_mask, valid_mask[1:])
+        ):
+            raise M0MobileError("hierarchy action_valid_mask must be a valid prefix")
+        example["lang"] = subtask_prompt(FULL_INSTRUCTION)
         example["solution"] = str(annotation["assistant_solution"])
         example["action"] = tuple(
             project_action10(row, domain) for row in example["action"]
         )
         example["action_mask"] = tuple(True for _ in example["action"][0])
+        example["action_valid_mask"] = valid_mask
         example.update(
             {
                 "phase_id": int(phase),
@@ -164,8 +183,22 @@ class ConveyorVLAAL0HierarchicalDataset:
                 "action_domain_id": int(domain),
                 "action_domain_name": domain.name,
                 "subtask_text": str(annotation["subtask_text"]),
-                "subtask_history": history,
+                "previous_subtask_label": annotation.get("previous_subtask_label"),
+                "previous_subtask_text": (
+                    None
+                    if annotation.get("previous_subtask_label") is None
+                    else phase_instruction(Phase[str(annotation["previous_subtask_label"])])
+                ),
+                "next_subtask_label": str(annotation["next_subtask_label"]),
+                "seconds_to_boundary": float(annotation["seconds_to_boundary"]),
+                "is_boundary_window": bool(annotation["is_boundary_window"]),
+                "boundary_transition": annotation.get("boundary_transition"),
+                "transition_reason": str(annotation["transition_reason"]),
+                "navigation_reference_mode": annotation.get(
+                    "navigation_reference_mode"
+                ),
                 "dataset_scope": "seen",
+                "sample_id": str(annotation["sample_id"]),
                 "base_index": int(annotation["base_index"]),
                 "split": self.split,
             }
@@ -194,6 +227,18 @@ def materialize_pct_hierarchy_view(
         raise M0MobileError(f"hierarchy output already exists: {output}")
     base_manifest_path = base_root / "meta" / "conveyorvla_al0_conversion.json"
     base_manifest = _read_json(base_manifest_path)
+    if (
+        base_manifest.get("history_offsets_model_ticks") != [-5, 0]
+        or not math.isclose(
+            float(base_manifest.get("history_span_s", -1.0)),
+            0.20,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        )
+    ):
+        raise M0MobileError(
+            "Liangzhu base manifest must use [-5, 0] / 0.20 s visual history"
+        )
     base_episodes = _sequence(base_manifest.get("episodes"), "base episodes")
     if int(base_manifest.get("episode_count", -1)) != len(base_episodes):
         raise M0MobileError("base LeRobot episode manifest is inconsistent")
@@ -229,32 +274,72 @@ def materialize_pct_hierarchy_view(
                     + "; ".join(hierarchy_audit["problems"])
                 )
             expected_rows = int(report["query_frames"])
-            candidates = _lightweight_base_candidates(source_root)
-            if len(candidates) < expected_rows:
+            candidates = list(iter_pct_temporal_records(source_root))
+            if len(candidates) != expected_rows:
                 raise M0MobileError(
                     f"cannot align base rows for {episode_id}: "
                     f"candidates={len(candidates)} expected={expected_rows}"
                 )
             selected = 0
             split = _episode_split(episode_id)
-            for row_in_episode, candidate in enumerate(candidates[:expected_rows]):
-                if not candidate["phase_pure"]:
-                    continue
-                phase = Phase(candidate["phase_id"])
+            for row_in_episode, candidate in enumerate(candidates):
+                phase = Phase(int(candidate["phase_id"]))
+                valid_mask = [bool(value) for value in candidate["action_valid_mask"]]
+                if len(valid_mask) != ACTION_HORIZON or any(
+                    not earlier and later
+                    for earlier, later in zip(valid_mask, valid_mask[1:])
+                ):
+                    raise M0MobileError(
+                        f"invalid action prefix mask for {candidate['sample_id']}"
+                    )
+                previous_label = candidate.get("previous_subtask_label")
                 annotations.append(
                     {
+                        "episode_id": episode_id,
                         "base_index": base_offset + row_in_episode,
                         "base_episode_index": episode_index,
                         "source_episode_id": episode_id,
                         "sample_id": candidate["sample_id"],
+                        "timestamp_s": (
+                            int(candidate["observation_control_tick"]) / 50.0
+                        ),
                         "phase_id": int(phase),
                         "phase_name": phase.name,
+                        "subtask_label": phase.name,
+                        "previous_subtask_label": previous_label,
+                        "next_subtask_label": candidate["next_subtask_label"],
                         "action_domain_id": int(action_domain(phase)),
                         "action_domain_name": action_domain(phase).name,
                         "dataset_scope": "seen",
                         "subtask_text": phase_instruction(phase),
                         "assistant_solution": subtask_solution(phase),
-                        "subtask_history": list(subtask_history(phase)),
+                        "seconds_to_boundary": float(
+                            candidate["seconds_to_boundary"]
+                        ),
+                        "seconds_to_next_boundary_s": float(
+                            candidate["seconds_to_next_boundary_s"]
+                        ),
+                        "seconds_since_previous_boundary_s": float(
+                            candidate["seconds_since_previous_boundary_s"]
+                        ),
+                        "is_boundary_window": bool(
+                            candidate["is_boundary_window"]
+                        ),
+                        "boundary_transition": candidate["boundary_transition"],
+                        "transition_reason": candidate["transition_reason"],
+                        "action_valid_mask": valid_mask,
+                        "valid_action_steps": sum(valid_mask),
+                        "sampling_weight": _dense_sampling_weight(
+                            phase,
+                            float(candidate["seconds_to_next_boundary_s"]),
+                            float(candidate["seconds_since_previous_boundary_s"]),
+                            bool(candidate["is_boundary_window"]),
+                        ),
+                        "navigation_reference_mode": (
+                            NAVIGATION_REFERENCE_MODES[phase]
+                            if action_domain(phase) is ActionDomain.NAVIGATION
+                            else None
+                        ),
                         "split": split,
                     }
                 )
@@ -264,7 +349,7 @@ def materialize_pct_hierarchy_view(
                     "base_episode_index": episode_index,
                     "source_episode_id": episode_id,
                     "base_query_frames": expected_rows,
-                    "selected_phase_pure_frames": selected,
+                    "selected_dense_transition_frames": selected,
                     "split": split,
                 }
             )
@@ -272,7 +357,7 @@ def materialize_pct_hierarchy_view(
         if base_offset != len(base_dataset):
             raise M0MobileError("hierarchy base-row alignment does not cover the dataset")
         if not annotations:
-            raise M0MobileError("hierarchy view contains no phase-pure rows")
+            raise M0MobileError("hierarchy view contains no dense-transition rows")
         split_counts = Counter(str(row["split"]) for row in annotations)
         if set(split_counts) != {"train", "val", "test"}:
             raise M0MobileError("hierarchy episode hash did not produce all three splits")
@@ -300,6 +385,19 @@ def materialize_pct_hierarchy_view(
         state_statistics = _state_statistics(train_states)
         phase_counts = Counter(str(row["phase_name"]) for row in annotations)
         domain_counts = Counter(str(row["action_domain_name"]) for row in annotations)
+        boundary_counts = Counter(
+            str(row["boundary_transition"])
+            for row in annotations
+            if row["is_boundary_window"] and row["boundary_transition"] is not None
+        )
+        boundary_split_counts = Counter(
+            f"{row['split']}:{row['boundary_transition']}"
+            for row in annotations
+            if row["is_boundary_window"] and row["boundary_transition"] is not None
+        )
+        valid_action_prefix_counts = Counter(
+            int(row["valid_action_steps"]) for row in annotations
+        )
         manifest = {
             "schema_version": HIERARCHY_VIEW_SCHEMA_VERSION,
             "base_dataset_relative_path": os.path.relpath(base_root, output),
@@ -315,6 +413,11 @@ def materialize_pct_hierarchy_view(
             "subtask_solutions": {
                 phase.name: subtask_solution(phase) for phase in PHASE_ORDER
             },
+            "prompt_history_contract": {
+                "ground_truth_subtask_history_allowed": False,
+                "inference_memory": "previous_model_prediction_only",
+                "training_memory": "single_previous_label_with_dropout_corruption_and_teacher_forcing_decay",
+            },
             "phase_order": [phase.name for phase in PHASE_ORDER],
             "phase_action_domains": {
                 phase.name: action_domain(phase).name for phase in PHASE_ORDER
@@ -326,13 +429,29 @@ def materialize_pct_hierarchy_view(
                     "dimension": 7,
                 },
             },
+            "action_valid_mask_semantics": (
+                "prefix of future 25 Hz actions belonging to the current expert; "
+                "cross-expert suffix is false"
+            ),
+            "boundary_window_s": BOUNDARY_WINDOW_S,
+            "navigation_dense_terminal_window_s": (
+                NAVIGATION_DENSE_TERMINAL_WINDOW_S
+            ),
+            "navigation_references": {
+                phase.name: {
+                    "mode": NAVIGATION_REFERENCE_MODES[phase],
+                    "arm_joint_reference": list(
+                        NAVIGATION_ARM_JOINT_REFERENCES[phase]
+                    ),
+                    "gripper_open_fraction": NAVIGATION_GRIPPER_REFERENCES[phase],
+                    "tcp_delta_used": False,
+                }
+                for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET)
+            },
             "action_horizon": ACTION_HORIZON,
             "base_action_dimension": ACTION_DIM,
-            "history_offsets_model_ticks": base_manifest.get(
-                "history_offsets_model_ticks",
-                [-5, 0],
-            ),
-            "history_span_s": float(base_manifest.get("history_span_s", 0.2)),
+            "history_offsets_model_ticks": [-5, 0],
+            "history_span_s": 0.20,
             "video_feature_keys": list(VIDEO_FEATURE_KEYS),
             "split_seed": HIERARCHY_SPLIT_SEED,
             "split_unit": "source_episode_id",
@@ -342,6 +461,12 @@ def materialize_pct_hierarchy_view(
             "split_counts": dict(sorted(split_counts.items())),
             "phase_counts": dict(sorted(phase_counts.items())),
             "domain_counts": dict(sorted(domain_counts.items())),
+            "boundary_counts": dict(sorted(boundary_counts.items())),
+            "boundary_split_counts": dict(sorted(boundary_split_counts.items())),
+            "valid_action_prefix_counts": {
+                str(key): value
+                for key, value in sorted(valid_action_prefix_counts.items())
+            },
             "train_state_statistics": state_statistics,
             "episodes": episode_reports,
         }
@@ -451,6 +576,158 @@ def audit_pct_hierarchy_episode(
     }
 
 
+def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
+    """Audit split, boundary, temporal, masking, and navigation contracts."""
+
+    view_root = Path(root).expanduser().resolve()
+    manifest = _load_view_manifest(view_root)
+    annotations = _read_jsonl(
+        view_root / str(manifest["annotations_relative_path"])
+    )
+    problems: list[str] = []
+    if any("subtask_history" in row for row in annotations):
+        problems.append("annotations contain forbidden ground-truth subtask_history")
+    if len({int(row["base_index"]) for row in annotations}) != len(annotations):
+        problems.append("base_index is not unique")
+    if len({str(row["sample_id"]) for row in annotations}) != len(annotations):
+        problems.append("sample_id is not unique")
+
+    episode_splits: dict[str, set[str]] = {}
+    by_episode: dict[str, list[Mapping[str, Any]]] = {}
+    phase_split_counts: Counter[str] = Counter()
+    boundary_window_counts: Counter[str] = Counter()
+    masked_boundary_counts: Counter[str] = Counter()
+    for row in annotations:
+        episode_id = str(row["source_episode_id"])
+        split = str(row["split"])
+        phase = Phase(int(row["phase_id"]))
+        episode_splits.setdefault(episode_id, set()).add(split)
+        by_episode.setdefault(episode_id, []).append(row)
+        phase_split_counts[f"{split}:{phase.name}"] += 1
+        if row["is_boundary_window"] and row.get("boundary_transition"):
+            boundary_window_counts[
+                f"{split}:{row['boundary_transition']}"
+            ] += 1
+        valid = tuple(bool(value) for value in row["action_valid_mask"])
+        if len(valid) != ACTION_HORIZON or any(
+            not earlier and later
+            for earlier, later in zip(valid, valid[1:])
+        ):
+            problems.append(f"invalid action_valid_mask: {row['sample_id']}")
+        if (
+            row["is_boundary_window"]
+            and row.get("next_subtask_label") in {phase.name for phase in PHASE_ORDER}
+            and sum(valid) < ACTION_HORIZON
+        ):
+            masked_boundary_counts[
+                f"{split}:{phase.name}->{row['next_subtask_label']}"
+            ] += 1
+        reference = row.get("navigation_reference_mode")
+        if action_domain(phase) is ActionDomain.NAVIGATION:
+            if reference != NAVIGATION_REFERENCE_MODES[phase]:
+                problems.append(f"wrong navigation reference: {row['sample_id']}")
+        elif reference is not None:
+            problems.append(f"manipulation row has navigation reference: {row['sample_id']}")
+
+    leaked = sorted(
+        episode_id
+        for episode_id, splits in episode_splits.items()
+        if len(splits) != 1
+    )
+    if leaked:
+        problems.append(f"source episodes cross splits: {leaked[:3]}")
+    for split in ("train", "val", "test"):
+        for phase in PHASE_ORDER:
+            if phase_split_counts[f"{split}:{phase.name}"] == 0:
+                problems.append(f"missing {split}/{phase.name} rows")
+        for left, right in zip(PHASE_ORDER, PHASE_ORDER[1:]):
+            transition = f"{left.name}->{right.name}"
+            if boundary_window_counts[f"{split}:{transition}"] == 0:
+                problems.append(f"missing {split}/{transition} boundary window")
+            if masked_boundary_counts[f"{split}:{transition}"] == 0:
+                problems.append(f"missing {split}/{transition} masked action suffix")
+
+    transition_counts: Counter[str] = Counter()
+    discontinuities = 0
+    for episode_id, rows in by_episode.items():
+        rows.sort(key=lambda row: int(row["base_index"]))
+        phases = [Phase(int(row["phase_id"])) for row in rows]
+        collapsed = [
+            phase
+            for index, phase in enumerate(phases)
+            if index == 0 or phase is not phases[index - 1]
+        ]
+        if tuple(collapsed) != PHASE_ORDER:
+            problems.append(f"episode phase order is incomplete: {episode_id}")
+            continue
+        for index in range(1, len(rows)):
+            previous = phases[index - 1]
+            current = phases[index]
+            if previous is current:
+                continue
+            transition = f"{previous.name}->{current.name}"
+            transition_counts[transition] += 1
+            delta = float(rows[index]["timestamp_s"]) - float(
+                rows[index - 1]["timestamp_s"]
+            )
+            if not math.isclose(delta, 0.20, rel_tol=0.0, abs_tol=1.0e-6):
+                discontinuities += 1
+    for left, right in zip(PHASE_ORDER, PHASE_ORDER[1:]):
+        transition = f"{left.name}->{right.name}"
+        if transition_counts[transition] != len(by_episode):
+            problems.append(
+                f"{transition} occurs in {transition_counts[transition]}/"
+                f"{len(by_episode)} episodes"
+            )
+    if discontinuities:
+        problems.append(f"{discontinuities} phase boundaries are not 0.20 s continuous")
+
+    navigation_trace = []
+    for split in ("train", "val", "test"):
+        for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET):
+            row = next(
+                item
+                for item in annotations
+                if item["split"] == split and int(item["phase_id"]) == int(phase)
+            )
+            navigation_trace.append(
+                {
+                    "split": split,
+                    "sample_id": row["sample_id"],
+                    "phase": phase.name,
+                    "reference_mode": row["navigation_reference_mode"],
+                    "arm_joint_reference": list(
+                        NAVIGATION_ARM_JOINT_REFERENCES[phase]
+                    ),
+                    "gripper_open_fraction": NAVIGATION_GRIPPER_REFERENCES[phase],
+                    "tcp_delta_used": False,
+                }
+            )
+    return {
+        "schema_version": "conveyor-vla-al0-dense-transition-audit-1",
+        "ok": not problems,
+        "dataset_root": str(view_root),
+        "manifest_sha256": _sha256(view_root / "manifest.json"),
+        "annotations_sha256": _sha256(
+            view_root / str(manifest["annotations_relative_path"])
+        ),
+        "episode_count": len(by_episode),
+        "row_count": len(annotations),
+        "split_episode_counts": dict(
+            sorted(
+                Counter(next(iter(splits)) for splits in episode_splits.values()).items()
+            )
+        ),
+        "phase_split_counts": dict(sorted(phase_split_counts.items())),
+        "transition_counts": dict(sorted(transition_counts.items())),
+        "boundary_window_counts": dict(sorted(boundary_window_counts.items())),
+        "masked_boundary_counts": dict(sorted(masked_boundary_counts.items())),
+        "boundary_discontinuities": discontinuities,
+        "navigation_trace": navigation_trace,
+        "problems": problems,
+    }
+
+
 def _episode_metrics(samples: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     if not samples:
         raise ValueError("samples.jsonl is empty")
@@ -501,40 +778,6 @@ def _episode_metrics(samples: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _lightweight_base_candidates(root: Path) -> list[dict[str, Any]]:
-    """Rebuild the old PCT row order from 5 Hz metadata without decoding media."""
-
-    samples = _read_jsonl(root / "samples.jsonl")
-    result = []
-    for index in range(1, len(samples)):
-        history = samples[index - 1]
-        sample = samples[index]
-        source_step = _integer(sample.get("simulation_step"), "simulation_step")
-        history_step = _integer(history.get("simulation_step"), "simulation_step")
-        raw_phase = str(sample.get("pipeline_state", ""))
-        phase = PCT_PHASES.get(raw_phase)
-        if source_step - history_step != 10 or phase is None:
-            continue
-        target = index + 4
-        pure = (
-            target < len(samples)
-            and _integer(samples[target].get("simulation_step"), "simulation_step")
-            == source_step + 40
-            and all(
-                item.get("pipeline_state") == raw_phase
-                for item in samples[index - 1 : target + 1]
-            )
-        )
-        result.append(
-            {
-                "sample_id": f"{_source_episode_id(root)}:control-step-{source_step}",
-                "phase_id": int(phase),
-                "phase_pure": pure,
-            }
-        )
-    return result
-
-
 def _source_episode_id(root: Path) -> str:
     collection = next(
         (
@@ -545,6 +788,25 @@ def _source_episode_id(root: Path) -> str:
         "liangzhu_pct",
     )
     return f"{collection}:{root.name}"
+
+
+def _dense_sampling_weight(
+    phase: Phase,
+    seconds_to_next_boundary: float,
+    seconds_since_previous_boundary: float,
+    is_boundary_window: bool,
+) -> float:
+    """Retain every row while emphasizing navigation endpoints and switches."""
+
+    if action_domain(phase) is ActionDomain.NAVIGATION:
+        weight = 0.5
+        if seconds_to_next_boundary <= NAVIGATION_DENSE_TERMINAL_WINDOW_S:
+            weight = 2.0
+        if seconds_to_next_boundary <= 2.0:
+            weight = 4.0
+    else:
+        weight = 3.0 if seconds_since_previous_boundary <= BOUNDARY_WINDOW_S else 1.0
+    return max(weight, 4.0 if is_boundary_window else weight)
 
 
 def _episode_split(episode_id: str) -> str:
@@ -583,7 +845,7 @@ def _state_statistics(states: np.ndarray) -> dict[str, Any]:
         "count": len(states),
         "mean": mean.tolist(),
         "std": std.tolist(),
-        "std_definition": "population_std_over_phase_pure_train_rows",
+        "std_definition": "population_std_over_dense_transition_train_rows",
         "source_files": ["LeRobotDataset.hf_dataset/observation.state"],
         "source_set_sha256": hashlib.sha256(source_payload).hexdigest(),
     }
@@ -598,6 +860,8 @@ def _load_view_manifest(root: Path) -> Mapping[str, Any]:
         "base_action_dimension": ACTION_DIM,
         "video_feature_keys": list(VIDEO_FEATURE_KEYS),
         "phase_order": [phase.name for phase in PHASE_ORDER],
+        "history_offsets_model_ticks": [-5, 0],
+        "history_span_s": 0.20,
     }
     for key, value in expected.items():
         if manifest.get(key) != value:
@@ -815,5 +1079,6 @@ __all__ = [
     "HIERARCHY_VIEW_SCHEMA_VERSION",
     "HierarchyAuditThresholds",
     "audit_pct_hierarchy_episode",
+    "audit_dense_transition_view",
     "materialize_pct_hierarchy_view",
 ]

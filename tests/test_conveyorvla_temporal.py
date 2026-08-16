@@ -52,7 +52,8 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
     config = load_temporal_config()
 
     assert config["model_identity"]["name"] == "ConveyorVLA AL0"
-    assert config["data"]["history_offsets_model_ticks"] == [-2, 0]
+    assert config["data"]["history_offsets_model_ticks"] == [-5, 0]
+    assert config["data"]["history_span_s"] == 0.20
     assert config["data"]["action_horizon"] == 20
     assert config["data"]["action_rate_hz"] == 25
     assert config["data"]["policy_task_scope"] == POLICY_TASK_SCOPE
@@ -80,6 +81,22 @@ def test_temporal_config_freezes_motion_and_latency_contract() -> None:
         "low_level_root_pose_hold"
     )
     assert config["data"]["maximum_placement_base_displacement_m"] == 0.05
+    assert config["data"]["navigation_action_composer"]["phases"] == {
+        "NAV_TO_SOURCE": {
+            "mode": "stow_open",
+            "arm_joint_reference": pytest.approx(
+                [-1.2146218068664894e-05, 8.995759708341211e-05, -3.996067607658915e-05, -0.001061238581314683, 3.62528589903377e-05, -1.931453425640939e-06]
+            ),
+            "gripper_open_fraction": 1.0,
+        },
+        "NAV_TO_TARGET": {
+            "mode": "carry_closed",
+            "arm_joint_reference": pytest.approx(
+                [7.132788596209139e-05, 0.000671310699544847, -4.186293608654523e-06, -0.002301583532243967, -6.11629438935779e-05, -1.2048939424857963e-05]
+            ),
+            "gripper_open_fraction": 0.0,
+        },
+    }
     assert config["streaming"]["require_episode_generation_id"] is True
     assert ACTION_DIMENSION_MASK[1] is False
     assert m0_dit_config(config).action_horizon == 20
@@ -195,20 +212,20 @@ def test_latest_queue_replaces_old_result() -> None:
 
 def test_temporal_record_loader_keeps_only_policy_inputs(tmp_path: Path) -> None:
     for camera in ("head_rgb", "wrist_rgb"):
-        for tick in (4, 6):
+        for tick in (1, 6):
             path = tmp_path / "cameras" / camera / f"{tick:06d}.png"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"png")
     clips = [
         {
             "camera_id": camera,
-            "history_offsets_model_ticks": [-2, 0],
+            "history_offsets_model_ticks": [-5, 0],
             "frames": [
                 {
                     "camera_id": camera,
                     "relative_path": f"cameras/{camera}/{tick:06d}.png",
                 }
-                for tick in (4, 6)
+                for tick in (1, 6)
             ],
         }
         for camera in ("head_rgb", "wrist_rgb")
@@ -236,7 +253,7 @@ def test_temporal_record_loader_keeps_only_policy_inputs(tmp_path: Path) -> None
     example = sample.as_model_example(normalizer)
 
     assert tuple(path.name for path in example["video"][0]) == (
-        "000004.png",
+        "000001.png",
         "000006.png",
     )
     assert example["action_mask"] == ACTION_DIMENSION_MASK

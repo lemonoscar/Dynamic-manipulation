@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the four-phase sidecar view over a PCT LeRobot v3 dataset."""
+"""Build the four-phase dense-transition view over a PCT LeRobot v3 dataset."""
 
 from __future__ import annotations
 
@@ -46,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
                     "split_counts": report["split_counts"],
                     "phase_counts": report["phase_counts"],
                     "domain_counts": report["domain_counts"],
+                    "boundary_counts": report["boundary_counts"],
                     "annotations_sha256": report["annotations_sha256"],
+                    "schema_version": report["schema_version"],
                 },
                 indent=2,
                 sort_keys=True,

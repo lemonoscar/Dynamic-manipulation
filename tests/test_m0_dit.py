@@ -124,6 +124,33 @@ def test_tiny_loss_is_finite_and_backpropagates() -> None:
     assert any(torch.count_nonzero(gradient) for gradient in gradients)
 
 
+def test_action_valid_prefix_masks_cross_expert_suffix() -> None:
+    torch.manual_seed(0)
+    config = _tiny_config()
+    model = M0DiTActionHead(config)
+    vl_embeddings, actions, state = _inputs(config)
+    changed = actions.clone()
+    changed[:, 2:] += 10_000.0
+    valid = torch.tensor([[True, True, False, False]] * 2)
+    kwargs = {
+        "noise": torch.zeros_like(actions),
+        "time": torch.tensor([0.25, 0.75]),
+        "action_valid_mask": valid,
+    }
+
+    first = model(vl_embeddings, actions, state, **kwargs)
+    second = model(vl_embeddings, changed, state, **kwargs)
+
+    torch.testing.assert_close(first, second)
+    with pytest.raises(ValueError, match="true prefix"):
+        model(
+            vl_embeddings,
+            actions,
+            state,
+            action_valid_mask=torch.tensor([[True, False, True, False]] * 2),
+        )
+
+
 def test_four_step_sample_is_finite_and_zeros_masked_dimensions() -> None:
     torch.manual_seed(0)
     config = _tiny_config()

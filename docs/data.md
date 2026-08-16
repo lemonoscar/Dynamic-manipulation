@@ -55,12 +55,12 @@ episode/
 
 ConveyorVLA AL0 的 temporal 记录使用：
 
-- head `[t-2, t]`；
-- wrist `[t-2, t]`；
+- head `[t-5, t]`；
+- wrist `[t-5, t]`；
 - 当前 `state28`；
 - 未来 `20 × 10` 动作；
 - 25 Hz action rate，覆盖 `0.8 s`；
-- 5 Hz query，query stride 为 5 个 model tick。
+- 5 Hz query，query stride 为 5 个 model tick；两帧跨度固定为 0.20 秒。
 
 当前 profile 为 `conveyorvla_al0_temporal_v3`，任务范围固定为
 `navigate_grasp_deliver`。每个来源 episode 必须按顺序包含接近传送带、动态跟随抓取、
@@ -114,6 +114,12 @@ PCT Liangzhu raw 使用 `scripts/convert_pct_dataset.py`。它保留 5 Hz 双相
 `tminus2` 仅是现有 loader 的兼容字段名；PCT 派生集的权威 manifest 必须写明历史为
 `[-5, 0]`、跨度 0.20 秒，以及状态插值和命令零阶保持方法。该静态 box1→box2 任务
 属于 PCT 适配 pilot，不能伪装成传送带动态抓取配额。
+
+Liangzhu seen 层使用只读 base 的新 sidecar schema
+`conveyor-vla-al0-liangzhu-seen-dense-transition-view-3`。它保留全部 phase boundary row，
+用 20 位 `action_valid_mask` 屏蔽跨 Navigation/Manipulation 专家的未来后缀，并提高两个
+导航终点前 2～4 秒和切换前后 1 秒的采样权重。sidecar 不包含
+`subtask_history`，split 继续按完整 `source_episode_id` 复用既有 seed。
 
 ## 6. 完整性检查
 

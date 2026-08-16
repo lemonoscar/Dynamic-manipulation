@@ -119,7 +119,8 @@ def test_temporal_training_reuses_artifacts_with_20_step_contract() -> None:
     )
 
     assert config["action_model"]["action_horizon"] == 20
-    assert config["data"]["history_offsets_model_ticks"] == [-2, 0]
+    assert config["data"]["history_offsets_model_ticks"] == [-5, 0]
+    assert config["data"]["history_span_s"] == pytest.approx(0.20)
     assert config["data"]["image_size"] == [224, 224]
     assert config["data"]["action_dimension_mask"] == [
         True,
@@ -134,7 +135,7 @@ def test_temporal_training_reuses_artifacts_with_20_step_contract() -> None:
         True,
     ]
     assert config["vlm"]["relative_path"] == "Qwen3-VL-4B-Instruct"
-    assert config["training"]["repeated_diffusion_steps"] == 4
+    assert config["training"]["repeated_diffusion_steps"] == 1
 
 
 def test_saved_temporal_config_is_accepted_by_online_normalizer(tmp_path) -> None:

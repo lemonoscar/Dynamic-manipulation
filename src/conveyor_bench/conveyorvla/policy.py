@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from conveyor_bench.conveyorvla.dit import (
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.subtasks import (
     ActionDomain,
+    Phase,
     SUBTASK_END_TOKEN,
     SUBTASK_SPECIAL_TOKENS,
     SubtaskDecision,
@@ -41,6 +43,12 @@ class PolicyCheckpointReport:
 @dataclass(frozen=True)
 class QwenCheckpointReport:
     loaded_tensors: int
+
+
+@dataclass(frozen=True)
+class RoutedActionPrediction:
+    decision: SubtaskDecision
+    normalized_actions: tuple[tuple[float, ...], ...]
 
 
 class Qwen3VLInterface(nn.Module):
@@ -294,6 +302,8 @@ class Qwen3VLInterface(nn.Module):
             do_sample=False,
             use_cache=True,
             eos_token_id=end_token_id,
+            synced_gpus=torch.distributed.is_available()
+            and torch.distributed.is_initialized(),
         )
         return tuple(
             self.processor.tokenizer.batch_decode(
@@ -373,6 +383,14 @@ class ConveyorVLAAL0Policy(nn.Module):
             device=device,
             dtype=torch.bool,
         )
+        action_valid_mask = torch.as_tensor(
+            [
+                example.get("action_valid_mask", [True] * actions.shape[1])
+                for example in examples
+            ],
+            device=device,
+            dtype=torch.bool,
+        )
         repeats = self.repeated_diffusion_steps
         with _action_autocast(device, dtype):
             loss = self.action_model(
@@ -381,6 +399,7 @@ class ConveyorVLAAL0Policy(nn.Module):
                 state.repeat(repeats, 1, 1),
                 encoder_attention_mask=attention_mask.repeat(repeats, 1),
                 action_dimension_mask=action_mask.repeat(repeats, 1),
+                action_valid_mask=action_valid_mask.repeat(repeats, 1),
             )
         return {"action_loss": loss}
 
@@ -448,7 +467,7 @@ class ConveyorVLAAL0TemporalPolicy(ConveyorVLAAL0Policy):
     def __init__(
         self,
         *args: Any,
-        temporal_history_span_s: float = 0.08,
+        temporal_history_span_s: float = 0.20,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -508,13 +527,19 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
         examples: Sequence[Mapping[str, Any]],
         *,
         objective: str,
+        teacher_forcing_probability: float = 1.0,
+        routing_seed: int = 0,
     ) -> Mapping[str, torch.Tensor | int]:
         """Expose separate passes so their activation graphs need not coexist."""
 
         if objective == "subtask":
             return self._subtask_loss(examples)
         if objective == "action":
-            return self._action_loss(examples)
+            return self._action_loss(
+                examples,
+                teacher_forcing_probability=teacher_forcing_probability,
+                routing_seed=routing_seed,
+            )
         raise ValueError("objective must be subtask or action")
 
     def _subtask_loss(
@@ -538,8 +563,73 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
     def _action_loss(
         self,
         examples: Sequence[Mapping[str, Any]],
+        *,
+        teacher_forcing_probability: float,
+        routing_seed: int,
     ) -> Mapping[str, torch.Tensor | int]:
-        inputs = dict(self._temporal_inputs(examples, include_solutions=True))
+        if not examples:
+            raise ValueError("examples must be non-empty")
+        if not 0.0 <= teacher_forcing_probability <= 1.0:
+            raise ValueError("teacher forcing probability must be within [0, 1]")
+
+        generated = (
+            self.qwen_vl_interface.generate_temporal_subtask_texts(
+                [example["video"] for example in examples],
+                [_instruction(example["lang"]) for example in examples],
+                history_span_s=self.temporal_history_span_s,
+            )
+            if teacher_forcing_probability < 1.0
+            else ("",) * len(examples)
+        )
+        routed_indices: list[int] = []
+        second_pass_solutions: list[str] = []
+        teacher_forced = 0
+        predicted_correct = 0
+        predicted_wrong = 0
+        predicted_invalid = 0
+        for index, example in enumerate(examples):
+            use_teacher = _teacher_forcing_choice(
+                example,
+                teacher_forcing_probability,
+                routing_seed,
+            )
+            expected = Phase(int(example["phase_id"]))
+            if use_teacher:
+                decision = parse_subtask_solution(_instruction(example["solution"]))
+                teacher_forced += 1
+                second_pass_solutions.append(decision.assistant_solution)
+            else:
+                try:
+                    decision = parse_subtask_solution(generated[index])
+                except ValueError:
+                    predicted_invalid += 1
+                    second_pass_solutions.append(
+                        generated[index].strip()
+                        or "<|pred_action|><|subtask|>INVALID<|end_subtask|>"
+                    )
+                    continue
+                second_pass_solutions.append(decision.assistant_solution)
+                if decision.phase is not expected:
+                    predicted_wrong += 1
+                    continue
+                predicted_correct += 1
+            if decision.phase is not expected:
+                raise RuntimeError("teacher-forced route disagrees with the label")
+            routed_indices.append(index)
+
+        result: dict[str, torch.Tensor | int] = {
+            "teacher_forced_samples": teacher_forced,
+            "predicted_route_correct": predicted_correct,
+            "predicted_route_wrong": predicted_wrong,
+            "predicted_route_invalid": predicted_invalid,
+        }
+        inputs = dict(
+            self._temporal_inputs(
+                examples,
+                include_solutions=True,
+                solutions_override=second_pass_solutions,
+            )
+        )
         inputs.pop("labels")
         outputs = self.qwen_vl_interface(
             **inputs,
@@ -554,15 +644,16 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
             raise RuntimeError("Qwen processor did not return an attention mask")
         hidden = outputs.hidden_states[-1]
         losses: list[tuple[int, torch.Tensor]] = []
-        result: dict[str, torch.Tensor | int] = {}
         for domain, name, model in (
             (ActionDomain.NAVIGATION, "navigation", self.navigation_model),
             (ActionDomain.MANIPULATION, "manipulation", self.manipulation_model),
         ):
             indices = [
                 index
-                for index, example in enumerate(examples)
+                for index in routed_indices
+                for example in (examples[index],)
                 if int(example["action_domain_id"]) == int(domain)
+                and any(bool(value) for value in example["action_valid_mask"])
             ]
             result[f"{name}_samples"] = len(indices)
             selected_indices = indices or [0]
@@ -601,6 +692,18 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                 device=device,
                 dtype=torch.bool,
             )
+            action_valid_mask = torch.as_tensor(
+                (
+                    [
+                        examples[index]["action_valid_mask"]
+                        for index in selected_indices
+                    ]
+                    if indices
+                    else [[True] * model.config.action_horizon]
+                ),
+                device=device,
+                dtype=torch.bool,
+            )
             repeats = self.repeated_diffusion_steps
             with _action_autocast(device, dtype):
                 loss = model(
@@ -609,6 +712,7 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                     state.repeat(repeats, 1, 1),
                     encoder_attention_mask=selected_attention.repeat(repeats, 1),
                     action_dimension_mask=action_mask.repeat(repeats, 1),
+                    action_valid_mask=action_valid_mask.repeat(repeats, 1),
                 )
             if not indices:
                 loss = loss * 0.0
@@ -616,8 +720,11 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
             result[f"{name}_loss"] = loss
         sample_count = sum(count for count, _loss in losses)
         if sample_count == 0:
-            raise RuntimeError("two-pass batch has no recognized action domain")
-        result["action_loss"] = sum(count * loss for count, loss in losses) / sample_count
+            result["action_loss"] = sum(loss for _count, loss in losses)
+        else:
+            result["action_loss"] = (
+                sum(count * loss for count, loss in losses) / sample_count
+            )
         return result
 
     def _temporal_inputs(
@@ -625,14 +732,22 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
         examples: Sequence[Mapping[str, Any]],
         *,
         include_solutions: bool,
+        solutions_override: Sequence[str] | None = None,
     ) -> Mapping[str, torch.Tensor]:
         if not examples:
             raise ValueError("examples must be non-empty")
-        solutions = (
-            [_instruction(example["solution"]) for example in examples]
-            if include_solutions
-            else None
-        )
+        if solutions_override is not None and len(solutions_override) != len(examples):
+            raise ValueError("solution override and examples must have equal lengths")
+        solutions = None
+        if include_solutions:
+            solutions = [
+                _instruction(value)
+                for value in (
+                    solutions_override
+                    if solutions_override is not None
+                    else [example["solution"] for example in examples]
+                )
+            ]
         return self.qwen_vl_interface.build_temporal_inputs(
             [example["video"] for example in examples],
             [_instruction(example["lang"]) for example in examples],
@@ -651,6 +766,76 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
             [example["video"] for example in examples],
             [_instruction(example["lang"]) for example in examples],
             history_span_s=self.temporal_history_span_s,
+        )
+
+    @torch.inference_mode()
+    def predict_routed_actions(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> tuple[RoutedActionPrediction, ...]:
+        """Generate the subtask, run a second Qwen forward, then map to one DiT."""
+
+        decisions = self.predict_subtasks(examples)
+        inputs = dict(
+            self._temporal_inputs(
+                examples,
+                include_solutions=True,
+                solutions_override=[item.assistant_solution for item in decisions],
+            )
+        )
+        inputs.pop("labels")
+        outputs = self.qwen_vl_interface(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=True,
+            use_cache=False,
+            logits_to_keep=1,
+            return_dict=True,
+        )
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            raise RuntimeError("Qwen processor did not return an attention mask")
+        hidden = outputs.hidden_states[-1]
+        actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
+        for domain, model in (
+            (ActionDomain.NAVIGATION, self.navigation_model),
+            (ActionDomain.MANIPULATION, self.manipulation_model),
+        ):
+            indices = [
+                index
+                for index, decision in enumerate(decisions)
+                if decision.domain is domain
+            ]
+            if not indices:
+                continue
+            index_tensor = torch.as_tensor(indices, device=hidden.device)
+            device = next(model.parameters()).device
+            dtype = next(model.parameters()).dtype
+            state = torch.as_tensor(
+                [examples[index]["state"] for index in indices],
+                device=device,
+                dtype=dtype,
+            )
+            with _action_autocast(device, dtype):
+                sampled = model.sample(
+                    hidden.index_select(0, index_tensor).to(device=device, dtype=dtype),
+                    state,
+                    encoder_attention_mask=attention_mask.index_select(
+                        0, index_tensor
+                    ).to(device),
+                    action_dimension_mask=torch.ones(
+                        (len(indices), model.config.action_dim),
+                        device=device,
+                        dtype=torch.bool,
+                    ),
+                )
+            for index, value in zip(indices, sampled.float().cpu().tolist(), strict=True):
+                actions[index] = tuple(tuple(float(item) for item in row) for row in value)
+        if any(value is None for value in actions):
+            raise RuntimeError("dispatcher failed to assign one expert per prediction")
+        return tuple(
+            RoutedActionPrediction(decision, action)  # type: ignore[arg-type]
+            for decision, action in zip(decisions, actions, strict=True)
         )
 
 
@@ -816,6 +1001,21 @@ def _action_autocast(device: torch.device, dtype: torch.dtype) -> Any:
     return torch.autocast(device_type=device.type, dtype=dtype) if mixed else nullcontext()
 
 
+def _teacher_forcing_choice(
+    example: Mapping[str, Any],
+    probability: float,
+    seed: int,
+) -> bool:
+    if probability >= 1.0:
+        return True
+    if probability <= 0.0:
+        return False
+    identity = example.get("sample_id", example.get("base_index", example.get("phase_id")))
+    digest = hashlib.sha256(f"{seed}:{identity}".encode("utf-8")).digest()
+    score = int.from_bytes(digest[:8], "big") / float(1 << 64)
+    return score < probability
+
+
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise M0MobileError(f"{name} must be an object")
@@ -842,6 +1042,7 @@ __all__ = [
     "PolicyCheckpointReport",
     "QwenCheckpointReport",
     "Qwen3VLInterface",
+    "RoutedActionPrediction",
     "m0_dit_config",
     "transfer_robocasa_policy_weights",
     "transfer_qwen_checkpoint_weights",

@@ -66,6 +66,36 @@ NAVIGATION_ACTION_INDICES = (0, 2)
 MANIPULATION_ACTION_INDICES = tuple(range(3, 10))
 NAVIGATION_ACTION_DIM = len(NAVIGATION_ACTION_INDICES)
 MANIPULATION_ACTION_DIM = len(MANIPULATION_ACTION_INDICES)
+NAVIGATION_REFERENCE_MODES = {
+    Phase.NAV_TO_SOURCE: "stow_open",
+    Phase.NAV_TO_TARGET: "carry_closed",
+}
+# Joint-space references are intentionally explicit.  They are the per-phase
+# medians of the immutable Liangzhu seen navigation observations; the gripper
+# command below, rather than an empty TCP delta, distinguishes stow from carry.
+NAVIGATION_ARM_JOINT_REFERENCES = {
+    Phase.NAV_TO_SOURCE: (
+        -1.2146218068664894e-05,
+        8.995759708341211e-05,
+        -3.996067607658915e-05,
+        -0.001061238581314683,
+        3.62528589903377e-05,
+        -1.931453425640939e-06,
+    ),
+    Phase.NAV_TO_TARGET: (
+        7.132788596209139e-05,
+        0.000671310699544847,
+        -4.186293608654523e-06,
+        -0.002301583532243967,
+        -6.11629438935779e-05,
+        -1.2048939424857963e-05,
+    ),
+}
+NAVIGATION_GRIPPER_REFERENCES = {
+    Phase.NAV_TO_SOURCE: 1.0,
+    Phase.NAV_TO_TARGET: 0.0,
+}
+NAVIGATION_ARM_MAX_STEP_RAD = (0.008, 0.010, 0.010, 0.010, 0.008, 0.010)
 
 
 def phase_from_pct(value: object) -> Phase:
@@ -97,15 +127,6 @@ def phase_instruction(phase: Phase | int) -> str:
         raise ValueError(f"phase has no action instruction: {resolved.name}") from error
 
 
-def subtask_history(phase: Phase | int) -> tuple[str, ...]:
-    """Return canonical subtasks completed before the current executable phase."""
-
-    resolved = Phase(phase)
-    if resolved not in PHASE_ORDER:
-        raise ValueError(f"phase has no supervised subtask history: {resolved.name}")
-    return tuple(phase_instruction(item) for item in PHASE_ORDER[: int(resolved)])
-
-
 def subtask_solution(phase: Phase | int) -> str:
     """Build the exact assistant answer used by both Qwen passes."""
 
@@ -119,18 +140,27 @@ def subtask_solution(phase: Phase | int) -> str:
 
 def subtask_prompt(
     instruction: str,
-    completed_subtasks: Sequence[str] = (),
+    previous_prediction: str | None = None,
 ) -> str:
-    """Build the single seen-task prompt shared by training and inference."""
+    """Build a prompt with no privileged task history.
+
+    The optional memory is one model-produced prediction from the preceding
+    observation.  Dataset ground truth must never be passed here at inference.
+    """
 
     task = str(instruction).strip()
     if not task:
         raise ValueError("instruction must be non-empty")
-    history = "None" if not completed_subtasks else " ".join(completed_subtasks)
+    memory = ""
+    if previous_prediction is not None:
+        prediction = str(previous_prediction).strip()
+        if prediction not in PHASE_INSTRUCTIONS.values():
+            raise ValueError("previous prediction must be one canonical subtask")
+        memory = f"Previous model prediction (may be wrong): {prediction}\n"
     return (
         f"Task: {task}\n"
         "The head and wrist videos are ordered from oldest to newest.\n"
-        f"Completed subtasks: {history}\n"
+        f"{memory}"
         "What should the robot do now? Output exactly one canonical subtask as "
         f"{PRED_ACTION_TOKEN}{SUBTASK_START_TOKEN}<subtask>{SUBTASK_END_TOKEN}"
     )
@@ -144,6 +174,19 @@ class SubtaskDecision:
     phase: Phase
     domain: ActionDomain
     assistant_solution: str
+
+
+@dataclass(frozen=True)
+class NavigationAction:
+    """Composed navigation command with an explicit arm/gripper reference."""
+
+    phase: Phase
+    base_velocity: tuple[float, float, float]
+    arm_joint_positions: tuple[float, ...]
+    gripper_open_fraction: float
+    reference_mode: str
+    joint_reference_kind: str = "joint_space"
+    tcp_delta_used: bool = False
 
 
 def parse_subtask_solution(value: str) -> SubtaskDecision:
@@ -188,25 +231,49 @@ def project_action10(
     return tuple(values[index] for index in indices)
 
 
-def compose_gated_action10(
+def compose_navigation_action(
+    phase: Phase | int,
     action: Sequence[float],
-    domain: ActionDomain | int,
     *,
-    gripper_latch: float,
-) -> tuple[float, ...]:
-    """Lift a compact head output into 10-D while hard-locking the inactive domain."""
+    measured_arm_joint_positions: Sequence[float] | None = None,
+) -> NavigationAction:
+    """Compose ``[vx, wz]`` with a rate-limited phase-specific joint reference."""
 
-    if not math.isfinite(gripper_latch) or not 0.0 <= gripper_latch <= 1.0:
-        raise ValueError("gripper_latch must be finite and within [0, 1]")
-    resolved = ActionDomain(domain)
-    if resolved is ActionDomain.NAVIGATION:
-        vx, wz = _finite_vector(action, NAVIGATION_ACTION_DIM, "navigation action")
-        return (vx, 0.0, wz, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, gripper_latch)
-    manipulation = _finite_vector(
-        action,
-        MANIPULATION_ACTION_DIM,
-        "manipulation action",
+    resolved = Phase(phase)
+    if action_domain(resolved) is not ActionDomain.NAVIGATION:
+        raise ValueError("navigation composer requires a navigation phase")
+    vx, wz = _finite_vector(action, NAVIGATION_ACTION_DIM, "navigation action")
+    target = NAVIGATION_ARM_JOINT_REFERENCES[resolved]
+    if measured_arm_joint_positions is None:
+        arm = target
+    else:
+        measured = _finite_vector(
+            measured_arm_joint_positions,
+            len(target),
+            "measured arm joints",
+        )
+        arm = tuple(
+            current + max(-limit, min(limit, desired - current))
+            for current, desired, limit in zip(
+                measured,
+                target,
+                NAVIGATION_ARM_MAX_STEP_RAD,
+                strict=True,
+            )
+        )
+    return NavigationAction(
+        phase=resolved,
+        base_velocity=(vx, 0.0, wz),
+        arm_joint_positions=arm,
+        gripper_open_fraction=NAVIGATION_GRIPPER_REFERENCES[resolved],
+        reference_mode=NAVIGATION_REFERENCE_MODES[resolved],
     )
+
+
+def compose_manipulation_action10(action: Sequence[float]) -> tuple[float, ...]:
+    """Lift the manipulation expert into 10-D while hard-locking the base."""
+
+    manipulation = _finite_vector(action, MANIPULATION_ACTION_DIM, "manipulation action")
     return (0.0, 0.0, 0.0, *manipulation)
 
 
@@ -226,6 +293,9 @@ __all__ = [
     "MANIPULATION_ACTION_INDICES",
     "NAVIGATION_ACTION_DIM",
     "NAVIGATION_ACTION_INDICES",
+    "NAVIGATION_ARM_JOINT_REFERENCES",
+    "NAVIGATION_GRIPPER_REFERENCES",
+    "NAVIGATION_REFERENCE_MODES",
     "PCT_PHASES",
     "PRED_ACTION_TOKEN",
     "PHASE_DOMAINS",
@@ -235,14 +305,15 @@ __all__ = [
     "SUBTASK_SPECIAL_TOKENS",
     "SUBTASK_START_TOKEN",
     "Phase",
+    "NavigationAction",
     "SubtaskDecision",
     "action_domain",
-    "compose_gated_action10",
+    "compose_manipulation_action10",
+    "compose_navigation_action",
     "phase_from_pct",
     "phase_instruction",
     "parse_subtask_solution",
     "project_action10",
-    "subtask_history",
     "subtask_prompt",
     "subtask_solution",
 ]

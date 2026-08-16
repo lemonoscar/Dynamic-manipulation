@@ -1,5 +1,5 @@
 {
-  "schema_version": "conveyor-vla-al0-lerobot-v3-config-2",
+  "schema_version": "conveyor-vla-al0-lerobot-v3-config-3",
   "model_identity": {
     "family": "ConveyorVLA",
     "variant": "AL0",
@@ -26,8 +26,8 @@
     "query_fps": 5,
     "query_stride_model_ticks": 5,
     "query_anchor": "first_eligible_record",
-    "history_offsets_model_ticks": [-2, 0],
-    "history_span_s": 0.08,
+    "history_offsets_model_ticks": [-5, 0],
+    "history_span_s": 0.20,
     "action_rate_hz": 25,
     "action_horizon": 20,
     "action_horizon_s": 0.8
@@ -37,7 +37,7 @@
       {
         "key": "observation.images.head_tminus2",
         "source_camera_id": "head_rgb",
-        "history_offset_model_ticks": -2,
+        "history_offset_model_ticks": -5,
         "shape": [224, 224, 3]
       },
       {
@@ -49,7 +49,7 @@
       {
         "key": "observation.images.wrist_tminus2",
         "source_camera_id": "wrist_rgb",
-        "history_offset_model_ticks": -2,
+        "history_offset_model_ticks": -5,
         "shape": [224, 224, 3]
       },
       {
