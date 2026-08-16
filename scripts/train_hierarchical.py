@@ -75,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
     parser.add_argument("--warmup-steps", type=int, default=200)
     parser.add_argument("--save-interval-steps", type=int, default=500)
+    parser.add_argument("--save-first-checkpoint-step", type=int, default=0)
     parser.add_argument("--log-interval-steps", type=int, default=10)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--limit-train-rows-per-phase", type=int, default=0)
@@ -180,8 +181,11 @@ def main(argv: list[str] | None = None) -> int:
                         args.initial_action_checkpoint.expanduser().resolve()
                     ),
                     "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                    "visible_gpu_uuids": os.environ.get("CONVEYORVLA_GPU_UUIDS"),
+                    "conda_environment": os.environ.get("CONVEYORVLA_CONDA_ENV"),
                     "code_snapshot": os.environ.get("CONVEYORVLA_CODE_SNAPSHOT"),
                     "hostname": os.uname().nodename,
+                    "argv": [sys.executable, *sys.argv],
                     "world_size": accelerator.num_processes,
                     "mixed_precision": accelerator.mixed_precision,
                     "max_steps": args.max_steps,
@@ -348,7 +352,10 @@ def main(argv: list[str] | None = None) -> int:
                         },
                         learning_rates=[group["lr"] for group in optimizer.param_groups],
                     )
-                if global_step % args.save_interval_steps == 0:
+                if (
+                    global_step % args.save_interval_steps == 0
+                    or global_step == args.save_first_checkpoint_step
+                ):
                     _save_checkpoint(accelerator, output, global_step)
                     last_checkpoint_step = global_step
                 if global_step >= args.max_steps:
@@ -768,6 +775,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise M0MobileError("warmup steps must be within [0, max steps)")
     if args.num_workers < 0:
         raise M0MobileError("num workers cannot be negative")
+    if not 0 <= args.save_first_checkpoint_step <= args.max_steps:
+        raise M0MobileError("first checkpoint step must be within [0, max steps]")
     if args.limit_train_rows_per_phase < 0:
         raise M0MobileError("limit train rows per phase cannot be negative")
     if not (

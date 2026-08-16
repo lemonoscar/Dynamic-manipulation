@@ -23,6 +23,7 @@ from conveyor_bench.conveyorvla.online import (
     M0OnlineClient,
     M0OnlineError,
     build_live_state28,
+    compose_navigation_action_chunk,
     decode_rgb_jpeg,
     encode_rgb_jpeg,
     guard_pregrasp_tcp_target,
@@ -32,6 +33,7 @@ from conveyor_bench.conveyorvla.online import (
     project_action_chunk,
     quantize_go2_forward_intent,
 )
+from conveyor_bench.conveyorvla.subtasks import Phase
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +143,36 @@ def test_action_projection_clamps_hard_zeros_and_binarizes_gripper() -> None:
     bad[3][4] = math.inf
     with pytest.raises(M0OnlineError, match="finite"):
         project_action_chunk(bad, _normalizer())
+
+
+def test_navigation_online_composer_uses_stow_and_carry_without_tcp_delta() -> None:
+    source = compose_navigation_action_chunk(
+        Phase.NAV_TO_SOURCE,
+        [(2.0, -2.0)],
+        _normalizer(),
+    )[0]
+    target = compose_navigation_action_chunk(
+        Phase.NAV_TO_TARGET,
+        [(0.5, 0.25), (0.5, 0.25)],
+        _normalizer(),
+        measured_arm_joint_positions=(0.5,) * 6,
+    )
+
+    assert source.base_velocity == pytest.approx((0.3, 0.0, -0.35))
+    assert source.reference_mode == "stow_open"
+    assert source.gripper_open_fraction == 1.0
+    assert source.tcp_delta_used is False
+    assert target[0].reference_mode == "carry_closed"
+    assert target[0].gripper_open_fraction == 0.0
+    assert target[0].tcp_delta_used is False
+    assert all(
+        later < earlier
+        for earlier, later in zip(
+            target[0].arm_joint_positions,
+            target[1].arm_joint_positions,
+            strict=True,
+        )
+    )
 
 
 def test_go2_forward_intent_uses_only_the_audited_speed_primitive() -> None:

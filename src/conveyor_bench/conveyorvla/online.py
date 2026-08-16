@@ -30,6 +30,11 @@ from conveyor_bench.conveyorvla.lerobot_v3 import (
     load_lerobot_v3_config,
     preprocess_policy_rgb,
 )
+from conveyor_bench.conveyorvla.subtasks import (
+    NavigationAction,
+    Phase,
+    compose_navigation_action,
+)
 from conveyor_bench.schema.exporters import M0_MOBILE_STATE_LAYOUT
 
 
@@ -321,6 +326,56 @@ def project_action_chunk(
         projected_rows.append(tuple(projected))
         physical_rows.append(tuple(physical))
     return tuple(projected_rows), tuple(physical_rows)
+
+
+def compose_navigation_action_chunk(
+    phase: Phase | int,
+    normalized_vx_wz: Any,
+    normalizer: M0MobileNormalizer,
+    *,
+    measured_arm_joint_positions: Sequence[float] | None = None,
+) -> tuple[NavigationAction, ...]:
+    """Turn compact Navigation DiT output into explicit online commands.
+
+    The arm is rate-limited toward the phase-specific joint reference on every
+    row.  No TCP delta exists in this contract.
+    """
+
+    if len(normalizer.action_scale) != ACTION_DIM:
+        raise M0OnlineError("normalizer action dimension must be 10")
+    if any(
+        index in normalizer.hard_zero_indices
+        or index in normalizer.passthrough_indices
+        for index in (0, 2)
+    ):
+        raise M0OnlineError("navigation vx/wz normalization indices are invalid")
+    if hasattr(normalized_vx_wz, "detach"):
+        normalized_vx_wz = normalized_vx_wz.detach().cpu().tolist()
+    elif hasattr(normalized_vx_wz, "tolist"):
+        normalized_vx_wz = normalized_vx_wz.tolist()
+    if (
+        isinstance(normalized_vx_wz, (str, bytes))
+        or not isinstance(normalized_vx_wz, Sequence)
+        or not normalized_vx_wz
+    ):
+        raise M0OnlineError("navigation action chunk must be a non-empty array")
+    low, high = normalizer.action_clip
+    current = measured_arm_joint_positions
+    commands = []
+    for row_index, row in enumerate(normalized_vx_wz):
+        normalized = _finite_vector(row, 2, f"navigation_actions[{row_index}]")
+        physical = tuple(
+            min(high, max(low, value)) * normalizer.action_scale[action_index]
+            for value, action_index in zip(normalized, (0, 2), strict=True)
+        )
+        command = compose_navigation_action(
+            phase,
+            physical,
+            measured_arm_joint_positions=current,
+        )
+        commands.append(command)
+        current = command.arm_joint_positions
+    return tuple(commands)
 
 
 def quantize_go2_forward_intent(
@@ -727,6 +782,7 @@ __all__ = [
     "STATE_DIM",
     "build_live_state28",
     "build_state28",
+    "compose_navigation_action_chunk",
     "decode_rgb_jpeg",
     "encode_rgb_jpeg",
     "health_payload",
