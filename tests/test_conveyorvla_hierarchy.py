@@ -136,6 +136,7 @@ class _FakeQwen(nn.Module):
         self.generated = ()
         self.build_calls = []
         self.build_batch_sizes = []
+        self.supervision_calls = []
 
     def build_temporal_inputs(
         self,
@@ -144,15 +145,17 @@ class _FakeQwen(nn.Module):
         *,
         history_span_s: float,
         solutions: object = None,
+        supervise_solutions: bool = True,
     ) -> dict[str, torch.Tensor]:
         self.build_calls.append(solutions is not None)
+        self.supervision_calls.append(supervise_solutions)
         batch = len(videos)  # type: ignore[arg-type]
         self.build_batch_sizes.append(batch)
         result = {
             "input_ids": torch.ones(batch, 5, dtype=torch.long),
             "attention_mask": torch.ones(batch, 5, dtype=torch.long),
         }
-        if solutions is not None:
+        if solutions is not None and supervise_solutions:
             result["labels"] = torch.ones(batch, 5, dtype=torch.long)
         return result
 
@@ -308,6 +311,7 @@ def test_zero_teacher_forcing_uses_generated_route_and_skips_wrong_expert() -> N
     assert result["navigation_samples"] == 1
     assert result["manipulation_samples"] == 0
     assert qwen.build_batch_sizes == [2]
+    assert qwen.supervision_calls == [False]
 
 
 def test_online_two_pass_generation_runs_second_full_forward_and_dispatches() -> None:

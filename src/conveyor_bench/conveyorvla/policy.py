@@ -158,8 +158,9 @@ class Qwen3VLInterface(nn.Module):
         *,
         history_span_s: float,
         solutions: Sequence[str] | None = None,
+        supervise_solutions: bool = True,
     ) -> Mapping[str, torch.Tensor]:
-        """Build two ordered clips and optionally supervise only the assistant span."""
+        """Build two ordered clips and optionally supervise the assistant span."""
 
         if len(videos) != len(instructions) or not videos:
             raise ValueError("videos and instructions must be non-empty equal batches")
@@ -219,7 +220,7 @@ class Qwen3VLInterface(nn.Module):
                 for sample_clips in videos
             ],
         )
-        if solutions is not None:
+        if solutions is not None and supervise_solutions:
             inputs["labels"] = self._assistant_labels(inputs["input_ids"])
         device = next(self.model.parameters()).device
         return {
@@ -633,9 +634,9 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                 examples,
                 include_solutions=True,
                 solutions_override=second_pass_solutions,
+                supervise_solutions=False,
             )
         )
-        inputs.pop("labels")
         outputs = self.qwen_vl_interface(
             **inputs,
             output_attentions=False,
@@ -738,6 +739,7 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
         *,
         include_solutions: bool,
         solutions_override: Sequence[str] | None = None,
+        supervise_solutions: bool = True,
     ) -> Mapping[str, torch.Tensor]:
         if not examples:
             raise ValueError("examples must be non-empty")
@@ -758,6 +760,7 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
             [_instruction(example["lang"]) for example in examples],
             history_span_s=self.temporal_history_span_s,
             solutions=solutions,
+            supervise_solutions=supervise_solutions,
         )
 
     @torch.inference_mode()
@@ -786,9 +789,9 @@ class ConveyorVLAAL0TwoPassPolicy(nn.Module):
                 examples,
                 include_solutions=True,
                 solutions_override=[item.assistant_solution for item in decisions],
+                supervise_solutions=False,
             )
         )
-        inputs.pop("labels")
         outputs = self.qwen_vl_interface(
             **inputs,
             output_attentions=False,

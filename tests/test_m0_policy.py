@@ -217,6 +217,40 @@ def test_temporal_generation_temporarily_disables_training_mode(monkeypatch) -> 
     assert model.training is True
 
 
+def test_second_pass_accepts_control_only_prediction_without_supervision() -> None:
+    class _Tokenizer:
+        def __call__(self, _text, **_kwargs):
+            return SimpleNamespace(input_ids=[10, 11])
+
+        def convert_tokens_to_ids(self, token):
+            assert token == "<|im_end|>"
+            return 12
+
+    class _ControlOnlyProcessor:
+        tokenizer = _Tokenizer()
+
+        def apply_chat_template(self, _messages, **_kwargs):
+            tokens = torch.tensor([[10, 11, 12]], dtype=torch.long)
+            return {"input_ids": tokens, "attention_mask": torch.ones_like(tokens)}
+
+    interface = Qwen3VLInterface(_Qwen(24), _ControlOnlyProcessor())
+    arguments = {
+        "videos": [((object(), object()), (object(), object()))],
+        "instructions": ["route the current subtask"],
+        "history_span_s": 0.2,
+        "solutions": ["<|im_end|>"],
+    }
+
+    with pytest.raises(RuntimeError, match="assistant answer span is empty"):
+        interface.build_temporal_inputs(**arguments)
+    inputs = interface.build_temporal_inputs(
+        **arguments,
+        supervise_solutions=False,
+    )
+
+    assert "labels" not in inputs
+
+
 def test_release_config_builds_go2_x5_dit_contract() -> None:
     config = m0_dit_config(load_m0_mobile_config())
     assert (config.state_dim, config.action_dim, config.action_horizon) == (28, 10, 16)
