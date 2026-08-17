@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
-from accelerate.utils import gather_object, set_seed  # noqa: E402
+from accelerate.utils import DistributedType, gather_object, set_seed  # noqa: E402
 from torch.utils.data import DataLoader, Subset  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import (  # noqa: E402
@@ -87,11 +87,6 @@ def main(argv: list[str] | None = None) -> int:
         weight_decay=1e-8,
     )
     model, _transfer = _build_model(config, model_root, training_args)
-    optimizer, _groups = _optimizer(model, training_args)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        _schedule(args.max_steps, args.warmup_steps),
-    )
     dataset = ConveyorVLAAL0HierarchicalDataset(
         args.hierarchy_root,
         config,
@@ -107,14 +102,26 @@ def main(argv: list[str] | None = None) -> int:
         collate_fn=list,
         pin_memory=True,
     )
-    model, optimizer, loader, scheduler = accelerator.prepare(
-        model, optimizer, loader, scheduler
-    )
-    accelerator.load_state(
-        checkpoint,
-        load_optimizer_states=False,
-        load_lr_scheduler_states=False,
-    )
+    if accelerator.distributed_type == DistributedType.DEEPSPEED:
+        optimizer, _groups = _optimizer(model, training_args)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            _schedule(args.max_steps, args.warmup_steps),
+        )
+        model, optimizer, loader, scheduler = accelerator.prepare(
+            model, optimizer, loader, scheduler
+        )
+        accelerator.load_state(
+            checkpoint,
+            load_optimizer_states=False,
+            load_lr_scheduler_states=False,
+        )
+    else:
+        # A consolidated checkpoint contains model weights but deliberately no
+        # optimizer or scheduler state. Register only objects that can be
+        # restored so Accelerate does not look for absent optimizer files.
+        model, loader = accelerator.prepare(model, loader)
+        accelerator.load_state(checkpoint)
     model.eval()
 
     phase_count = len(PHASE_ORDER)
