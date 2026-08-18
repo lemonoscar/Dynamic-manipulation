@@ -79,6 +79,9 @@ python scripts/probe_dense_loader.py --hierarchy-root DATASET
 python scripts/extract_dense_transition_videos.py --hierarchy-root DATASET --output-root CLIPS
 ```
 
+视频产物既包含 12 个 split×phase 边界片段，也包含 train/val/test 各一个四阶段完整
+episode 和三者拼接版。源数据只有 front/head 与 wrist；不得把它们标成外部第三视角。
+
 正式运行必须记录 commit、manifest SHA-256、resolved config、环境、GPU UUID、tmux、日志、
 checkpoint 和连续训练事件；`scripts/audit_training_events.py` 检查有限 loss/LR/梯度以及
 VLM、Navigation DiT、Manipulation DiT 三条非零梯度路径。routing 计数按所有 rank 求和，

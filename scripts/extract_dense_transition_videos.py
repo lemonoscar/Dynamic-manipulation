@@ -78,12 +78,43 @@ def main(argv: list[str] | None = None) -> int:
         montage = output / f"{phase.name}_train_val_test.mp4"
         _write_video(montage, phase_frames[phase.name])
 
+    full_episodes = []
+    full_episode_frames: list[np.ndarray] = []
+    for split in ("train", "val", "test"):
+        episode_id, rows = _select_full_episode(by_episode, split)
+        frames = [
+            _render_frame(dataset[int(row["base_index"])], row) for row in rows
+        ]
+        path = output / "full_episodes" / f"{split}_{episode_id.replace(':', '_')}.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_video(path, frames)
+        full_episode_frames.extend(frames)
+        full_episodes.append(
+            {
+                "split": split,
+                "source_episode_id": episode_id,
+                "frame_count": len(frames),
+                "phase_order": list(dict.fromkeys(row["phase_name"] for row in rows)),
+                "relative_path": path.relative_to(output).as_posix(),
+                "sha256": _sha256(path),
+            }
+        )
+    full_montage = output / "full_episode_train_val_test.mp4"
+    _write_video(full_montage, full_episode_frames)
+
     payload = {
-        "schema_version": "conveyor-vla-al0-dense-transition-clips-1",
+        "schema_version": "conveyor-vla-al0-dense-transition-clips-2",
         "hierarchy_manifest_sha256": _sha256(root / "manifest.json"),
         "fps": 5,
         "frame_layout": "head_current_left_wrist_current_right",
+        "source_cameras": ["front/head", "wrist"],
+        "third_person_available": False,
         "clips": clips,
+        "full_episodes": full_episodes,
+        "full_episode_montage": {
+            "relative_path": full_montage.relative_to(output).as_posix(),
+            "sha256": _sha256(full_montage),
+        },
     }
     temporary = output / ".clip_manifest.json.tmp"
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -114,6 +145,23 @@ def _select_annotation(
             int(row["base_index"]),
         ),
     )
+
+
+def _select_full_episode(
+    by_episode: Mapping[str, Sequence[Mapping[str, Any]]],
+    split: str,
+) -> tuple[str, Sequence[Mapping[str, Any]]]:
+    required = {phase.name for phase in PHASE_ORDER}
+    candidates = [
+        (episode_id, rows)
+        for episode_id, rows in by_episode.items()
+        if rows
+        and rows[0]["split"] == split
+        and {row["phase_name"] for row in rows} == required
+    ]
+    if not candidates:
+        raise RuntimeError(f"no complete four-phase episode for {split}")
+    return min(candidates, key=lambda item: item[0])
 
 
 def _render_frame(frame: Mapping[str, Any], annotation: Mapping[str, Any]) -> np.ndarray:
