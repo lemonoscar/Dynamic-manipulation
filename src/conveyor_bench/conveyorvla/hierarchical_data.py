@@ -791,15 +791,6 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
                 problems.append(
                     f"{phase.name} composer reference disagrees with train pose"
                 )
-            if not math.isclose(
-                float(statistics.get("gripper_open_fraction_median", math.nan)),
-                NAVIGATION_GRIPPER_REFERENCES[phase],
-                rel_tol=0.0,
-                abs_tol=0.05,
-            ):
-                problems.append(
-                    f"{phase.name} composer gripper disagrees with train pose"
-                )
     manipulation_statistics = manifest.get(
         "train_manipulation_action_statistics"
     )
@@ -1113,7 +1104,8 @@ def _train_navigation_reference_statistics(
     if train_states.shape != (len(train_rows), 28):
         raise M0MobileError("train states and hierarchy rows are not aligned")
     report: dict[str, Any] = {
-        "schema_version": "conveyor-vla-al0-train-navigation-reference-statistics-1"
+        "schema_version": "conveyor-vla-al0-train-navigation-reference-statistics-1",
+        "observed_gripper_is_state_not_command_reference": True,
     }
     for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET):
         selected = train_states[
@@ -1129,7 +1121,7 @@ def _train_navigation_reference_statistics(
             "arm_joint_position_median": np.median(
                 selected[:, 9:15], axis=0
             ).tolist(),
-            "gripper_open_fraction_median": float(
+            "observed_gripper_open_fraction_median": float(
                 np.median(selected[:, 27])
             ),
         }

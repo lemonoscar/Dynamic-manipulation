@@ -110,7 +110,7 @@ def test_navigation_references_are_derived_from_train_phase_states() -> None:
         "arm_joint_position_median"
     ] == pytest.approx([0.2] * 6)
     assert report[Phase.NAV_TO_SOURCE.name][
-        "gripper_open_fraction_median"
+        "observed_gripper_open_fraction_median"
     ] == 1.0
     assert report[Phase.NAV_TO_TARGET.name][
         "arm_joint_position_median"
