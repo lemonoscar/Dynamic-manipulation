@@ -75,6 +75,17 @@ def test_training_cli_has_no_semantic_history_injection_controls() -> None:
     assert not hasattr(TRAIN, "_prepare_training_examples")
 
 
+def test_distributed_ranks_use_isolated_tmpdirs(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("CONVEYORVLA_RANK_TMP_ROOT", str(tmp_path))
+    monkeypatch.setenv("LOCAL_RANK", "3")
+
+    isolated = TRAIN._configure_rank_tmpdir()
+
+    assert isolated == tmp_path / "rank-3"
+    assert isolated.is_dir()
+    assert TRAIN.os.environ["TMPDIR"] == str(isolated)
+
+
 def test_zero3_component_norms_use_partitioned_gradient_buffers() -> None:
     zero_optimizer = SimpleNamespace(
         averaged_gradients={

@@ -18,6 +18,27 @@ from typing import Any, Iterable, Mapping
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+
+def _configure_rank_tmpdir() -> Path | None:
+    """Give each distributed rank an isolated temp directory on shared storage."""
+
+    root_value = os.environ.get("CONVEYORVLA_RANK_TMP_ROOT")
+    rank_value = os.environ.get("LOCAL_RANK")
+    if root_value is None or rank_value is None:
+        return None
+    if not rank_value.isdecimal():
+        raise RuntimeError("LOCAL_RANK must be a non-negative integer")
+    root = Path(root_value).expanduser().resolve()
+    if not root.is_dir():
+        raise RuntimeError("CONVEYORVLA_RANK_TMP_ROOT must be an existing directory")
+    isolated = root / f"rank-{rank_value}"
+    isolated.mkdir(exist_ok=True)
+    os.environ["TMPDIR"] = str(isolated)
+    return isolated
+
+
+RANK_TMPDIR = _configure_rank_tmpdir()
+
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
 from accelerate.utils import set_seed  # noqa: E402
@@ -192,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
                     "visible_gpu_uuids": os.environ.get("CONVEYORVLA_GPU_UUIDS"),
                     "conda_environment": os.environ.get("CONVEYORVLA_CONDA_ENV"),
                     "code_snapshot": os.environ.get("CONVEYORVLA_CODE_SNAPSHOT"),
+                    "rank_tmp_root": os.environ.get("CONVEYORVLA_RANK_TMP_ROOT"),
+                    "rank_tmpdir": None if RANK_TMPDIR is None else str(RANK_TMPDIR),
                     "hostname": os.uname().nodename,
                     "argv": [sys.executable, *sys.argv],
                     "world_size": accelerator.num_processes,
