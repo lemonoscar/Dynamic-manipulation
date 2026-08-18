@@ -41,6 +41,14 @@ def main(argv: list[str] | None = None) -> int:
     manifest_path = args.hierarchy_root.expanduser().resolve() / "manifest.json"
     manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     action_scale_check = _check_action_scales(config, manifest_payload)
+    finalization = manifest_payload.get("finalized_training_contract", {})
+    if finalization.get("temporal_config_sha256") != _sha256(
+        args.temporal_config.expanduser().resolve()
+    ):
+        action_scale_check["ok"] = False
+        action_scale_check["problems"].append(
+            "finalized view is not bound to the selected temporal config"
+        )
     if not action_scale_check["ok"]:
         raise RuntimeError(
             "temporal action scale is smaller than the new train-split "
@@ -109,6 +117,9 @@ def _check_action_scales(
     scales = [float(value) for value in config["normalization"]["action"]["scale"]]
     recommendations: dict[str, float] = {}
     problems = []
+    finalized = manifest.get("finalized_training_contract", {})
+    if finalized.get("resolved_training_action_scale") != scales:
+        problems.append("finalized manifest action scale differs from temporal config")
     for key in (
         "train_navigation_action_statistics",
         "train_manipulation_action_statistics",

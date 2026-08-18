@@ -13,6 +13,11 @@ SPEC.loader.exec_module(PROBE)
 
 def _manifest() -> dict:
     return {
+        "finalized_training_contract": {
+            "resolved_training_action_scale": [
+                0.47, 1.0, 0.52, 0.3, 0.3, 0.25, 0.5, 1.4, 0.5, 1.0
+            ]
+        },
         "train_navigation_action_statistics": {
             "action_indices_in_action10": [0, 2],
             "recommended_physical_scale": [0.47, 0.52],
@@ -47,4 +52,7 @@ def test_action_scale_check_rejects_under_scaled_channel() -> None:
     }
     report = PROBE._check_action_scales(config, _manifest())
     assert report["ok"] is False
-    assert report["problems"] == ["action[0]=0.3 < recommended=0.47"]
+    assert report["problems"] == [
+        "finalized manifest action scale differs from temporal config",
+        "action[0]=0.3 < recommended=0.47",
+    ]
