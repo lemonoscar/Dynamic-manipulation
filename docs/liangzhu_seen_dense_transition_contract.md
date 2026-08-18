@@ -66,6 +66,9 @@ Navigation DiT 只预测 `[vx,wz]`。在线 composer 输出显式 joint-space re
 补成 10 维时底盘三维严格为零。新数据 manifest 按专家统计 train split 有效动作的绝对
 P95/P99/P99.5/P99.9，并以 `1.05 × P99.9` 生成建议物理 scale；夹爪单独检查 `[0,1]`。
 正式配置必须记录采用值与相对旧 scale 的裁剪率。
+本轮完整 train split 冻结的 action10 scale 为
+`[0.473, 1.0, 0.525, 0.3, 0.3, 0.265, 0.5, 1.424, 0.562, 1.0]`；只向上扩展旧尺度，
+不因样本分布变小而收窄已有动作合同。
 
 完整 view 首先作为只读统计探针生成；冻结 train-derived scale 与导航中位姿后，使用
 `scripts/finalize_dense_transition_view.py` 复制同一 annotations 到新的最终目录，并在

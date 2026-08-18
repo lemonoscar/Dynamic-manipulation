@@ -18,7 +18,7 @@ from conveyor_bench.conveyorvla.subtasks import (
 )
 
 
-TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-4"
+TEMPORAL_CONFIG_SCHEMA_VERSION = "conveyor-vla-al0-temporal-config-5"
 TEMPORAL_TRAINING_CONFIG_SCHEMA_VERSION = (
     "conveyor-vla-al0-temporal-training-config-2"
 )
