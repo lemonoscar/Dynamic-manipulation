@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,6 +85,26 @@ def test_distributed_ranks_use_isolated_tmpdirs(tmp_path, monkeypatch) -> None:
     assert isolated == tmp_path / "rank-3"
     assert isolated.is_dir()
     assert TRAIN.os.environ["TMPDIR"] == str(isolated)
+
+
+def test_shared_storage_cleanup_retries_transient_nfs_error(
+    tmp_path, monkeypatch
+) -> None:
+    calls = []
+
+    def remove(path):
+        calls.append(path)
+        if len(calls) < 3:
+            raise OSError(errno.ENOTEMPTY, "directory not empty")
+        return "removed"
+
+    monkeypatch.setattr(TRAIN.time, "sleep", lambda _seconds: None)
+
+    assert (
+        TRAIN._rmtree_with_shared_storage_retries(remove, tmp_path)
+        == "removed"
+    )
+    assert calls == [tmp_path, tmp_path, tmp_path]
 
 
 def test_zero3_component_norms_use_partitioned_gradient_buffers() -> None:

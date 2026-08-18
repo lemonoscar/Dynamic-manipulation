@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import argparse
 import copy
+import errno
 import hashlib
 import json
 import math
 import os
+import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -38,6 +41,50 @@ def _configure_rank_tmpdir() -> Path | None:
 
 
 RANK_TMPDIR = _configure_rank_tmpdir()
+
+
+def _rmtree_with_shared_storage_retries(
+    remove: Any,
+    path: str | os.PathLike[str],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Retry the transient ENOTEMPTY/EBUSY reported by NFS temp cleanup."""
+
+    for attempt in range(20):
+        try:
+            return remove(path, *args, **kwargs)
+        except OSError as error:
+            if error.errno not in {errno.ENOTEMPTY, errno.EBUSY} or attempt == 19:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    raise AssertionError("unreachable shared-storage cleanup retry")
+
+
+def _preload_deepspeed() -> bool:
+    """Import DeepSpeed while its compiler-probe cleanup is NFS tolerant."""
+
+    if os.environ.get("ACCELERATE_USE_DEEPSPEED", "").lower() != "true":
+        return False
+    original = shutil.rmtree
+
+    def resilient(path: str | os.PathLike[str], *args: Any, **kwargs: Any) -> Any:
+        return _rmtree_with_shared_storage_retries(
+            original,
+            path,
+            *args,
+            **kwargs,
+        )
+
+    shutil.rmtree = resilient
+    try:
+        __import__("deepspeed")
+    finally:
+        shutil.rmtree = original
+    return True
+
+
+DEEPSPEED_PRELOADED = _preload_deepspeed()
 
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
