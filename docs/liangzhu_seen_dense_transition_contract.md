@@ -81,7 +81,8 @@ python scripts/extract_dense_transition_videos.py --hierarchy-root DATASET --out
 
 正式运行必须记录 commit、manifest SHA-256、resolved config、环境、GPU UUID、tmux、日志、
 checkpoint 和连续训练事件；`scripts/audit_training_events.py` 检查有限 loss/LR/梯度以及
-VLM、Navigation DiT、Manipulation DiT 三条非零梯度路径。
+VLM、Navigation DiT、Manipulation DiT 三条非零梯度路径。routing 计数按所有 rank 求和，
+并同时记录观测样本、实际送入 DiT 的样本及其比例，不能再把 rank 0 局部计数称为 global。
 
 balanced empty-history 路由门禁要求严格 parser invalid rate 为 0、预测不全部坍缩为
 `NAV_TO_SOURCE`，并且四个真值阶段都至少有一个正确预测。全 INVALID、自由文本、缺少

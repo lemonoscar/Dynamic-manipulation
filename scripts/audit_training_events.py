@@ -54,6 +54,23 @@ def main(argv: list[str] | None = None) -> int:
             for value in rates
         ):
             problems.append(f"step {event.get('step')} has invalid learning rates")
+        routing = event.get("routing")
+        if not isinstance(routing, Mapping):
+            problems.append(f"step {event.get('step')} has no routing summary")
+            continue
+        observed = routing.get("observed_samples")
+        routed = routing.get("action_routed_samples")
+        fraction = routing.get("action_routed_fraction")
+        if (
+            not isinstance(observed, int)
+            or not isinstance(routed, int)
+            or observed <= 0
+            or not 0 <= routed <= observed
+            or not isinstance(fraction, (int, float))
+            or not math.isfinite(float(fraction))
+            or not math.isclose(float(fraction), routed / observed)
+        ):
+            problems.append(f"step {event.get('step')} has invalid routing summary")
     if any(event.get("event") == "failed" for event in events):
         problems.append("run contains a failed event")
     checkpoint = None
@@ -62,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         if not checkpoint.is_dir() or not (checkpoint / "trainer_state.json").is_file():
             problems.append("checkpoint is missing trainer_state.json")
     report = {
-        "schema_version": "conveyor-vla-al0-training-health-audit-1",
+        "schema_version": "conveyor-vla-al0-training-health-audit-2",
         "ok": not problems,
         "events": str(args.events.expanduser().resolve()),
         "observed_steps": steps,

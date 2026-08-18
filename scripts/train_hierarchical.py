@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_json_atomic(
                 output / "resolved_run.json",
                 {
-                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-3",
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-4",
                     "status": "initializing",
                     "hierarchy_root": str(args.hierarchy_root.expanduser().resolve()),
                     "hierarchy_manifest_sha256": _sha256(
@@ -439,23 +439,41 @@ def main(argv: list[str] | None = None) -> int:
                     "teacher_forcing_probability": teacher_forcing_probability,
                 }
                 if global_step == 1 or global_step % args.log_interval_steps == 0:
+                    routing = {
+                        key: _distributed_sum_int(accelerator, action[key])
+                        for key in (
+                            "teacher_forced_samples",
+                            "predicted_route_correct",
+                            "predicted_route_wrong",
+                            "predicted_route_invalid",
+                            "navigation_samples",
+                            "manipulation_samples",
+                        )
+                    }
+                    routing["observed_samples"] = sum(
+                        routing[key]
+                        for key in (
+                            "teacher_forced_samples",
+                            "predicted_route_correct",
+                            "predicted_route_wrong",
+                            "predicted_route_invalid",
+                        )
+                    )
+                    routing["action_routed_samples"] = (
+                        routing["navigation_samples"]
+                        + routing["manipulation_samples"]
+                    )
+                    routing["action_routed_fraction"] = (
+                        routing["action_routed_samples"]
+                        / routing["observed_samples"]
+                    )
                     _event(
                         accelerator,
                         output,
                         "train_step",
                         step=global_step,
                         **last_metrics,
-                        routing={
-                            key: int(action[key])
-                            for key in (
-                                "teacher_forced_samples",
-                                "predicted_route_correct",
-                                "predicted_route_wrong",
-                                "predicted_route_invalid",
-                                "navigation_samples",
-                                "manipulation_samples",
-                            )
-                        },
+                        routing=routing,
                         learning_rates=[group["lr"] for group in optimizer.param_groups],
                     )
                 if (
@@ -874,6 +892,11 @@ def _distributed_mean(
     )
     gathered = accelerator.gather(tensor.reshape(1))
     return float(gathered.mean().cpu())
+
+
+def _distributed_sum_int(accelerator: Accelerator, value: int) -> int:
+    tensor = torch.tensor(int(value), dtype=torch.int64, device=accelerator.device)
+    return int(accelerator.reduce(tensor, reduction="sum").item())
 
 
 def _finite(value: torch.Tensor | float, name: str) -> None:

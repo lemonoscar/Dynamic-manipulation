@@ -68,6 +68,15 @@ def test_teacher_forcing_schedule_reaches_zero_before_training_end() -> None:
     assert TRAIN._teacher_forcing_probability(6, 2, 6) == 0.0
 
 
+def test_routing_counts_are_summed_across_processes() -> None:
+    accelerator = SimpleNamespace(
+        device=torch.device("cpu"),
+        reduce=lambda value, reduction: value * 4,
+    )
+
+    assert TRAIN._distributed_sum_int(accelerator, 3) == 12
+
+
 def test_training_cli_has_no_semantic_history_injection_controls() -> None:
     options = TRAIN.build_parser()._option_string_actions
 
