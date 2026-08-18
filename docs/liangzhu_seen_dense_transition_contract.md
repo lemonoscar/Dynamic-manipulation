@@ -67,6 +67,11 @@ Navigation DiT 只预测 `[vx,wz]`。在线 composer 输出显式 joint-space re
 P95/P99/P99.5/P99.9，并以 `1.05 × P99.9` 生成建议物理 scale；夹爪单独检查 `[0,1]`。
 正式配置必须记录采用值与相对旧 scale 的裁剪率。
 
+完整 view 首先作为只读统计探针生成；冻结 train-derived scale 与导航中位姿后，使用
+`scripts/finalize_dense_transition_view.py` 复制同一 annotations 到新的最终目录，并在
+manifest 中绑定统计探针 SHA、最终 temporal config SHA、动作 scale 和 composer reference。
+该步骤不重新选样，也不修改或覆盖统计探针。
+
 manifest 另记录导航观测中的夹爪开度中位数，但它不是 composer 命令目标：携物时接触到
 可乐会使实测指间开度非零。门禁检查的是显式 `stow_open/carry_closed` 命令 trace，不要求
 接触状态下的实测开度等于无物体命令参考。
