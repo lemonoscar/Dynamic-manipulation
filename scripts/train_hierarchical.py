@@ -262,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                     "code_snapshot": os.environ.get("CONVEYORVLA_CODE_SNAPSHOT"),
                     "rank_tmp_root": os.environ.get("CONVEYORVLA_RANK_TMP_ROOT"),
                     "rank_tmpdir": None if RANK_TMPDIR is None else str(RANK_TMPDIR),
+                    "deepspeed_preloaded": DEEPSPEED_PRELOADED,
                     "hostname": os.uname().nodename,
                     "argv": [sys.executable, *sys.argv],
                     "world_size": accelerator.num_processes,

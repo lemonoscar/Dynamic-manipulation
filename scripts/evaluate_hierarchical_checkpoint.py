@@ -196,8 +196,30 @@ def main(argv: list[str] | None = None) -> int:
             for index, phase in enumerate(PHASE_ORDER)
         }
         generation_distribution["INVALID"] = invalid
+        all_nav_to_source = (
+            generation_distribution[Phase.NAV_TO_SOURCE.name] == total
+        )
+        generation_problems = []
+        if invalid:
+            generation_problems.append(
+                f"{invalid}/{total} generated answers failed the strict parser"
+            )
+        if all_nav_to_source:
+            generation_problems.append(
+                "every empty-history answer was NAV_TO_SOURCE"
+            )
+        phases_without_correct_prediction = [
+            phase.name
+            for index, phase in enumerate(PHASE_ORDER)
+            if int(confusion[index, index].item()) == 0
+        ]
+        if phases_without_correct_prediction:
+            generation_problems.append(
+                "no correct empty-history prediction for: "
+                + ", ".join(phases_without_correct_prediction)
+            )
         report = {
-            "schema_version": "conveyor-vla-al0-hierarchical-eval-3",
+            "schema_version": "conveyor-vla-al0-hierarchical-eval-4",
             "checkpoint": str(checkpoint),
             "checkpoint_step": _checkpoint_step(checkpoint),
             "split": args.split,
@@ -208,10 +230,16 @@ def main(argv: list[str] | None = None) -> int:
             "generation_accuracy": correct / total,
             "generation_invalid_rate": invalid / total,
             "generation_distribution": generation_distribution,
-            "empty_history_all_nav_to_source": generation_distribution[
-                Phase.NAV_TO_SOURCE.name
-            ]
-            == total,
+            "empty_history_all_nav_to_source": all_nav_to_source,
+            "empty_history_generation_gate": {
+                "ok": not generation_problems,
+                "requirements": [
+                    "strict_parser_invalid_rate_equals_zero",
+                    "not_all_predictions_are_NAV_TO_SOURCE",
+                    "at_least_one_correct_prediction_per_canonical_phase",
+                ],
+                "problems": generation_problems,
+            },
             "prompt_history_contract": "empty; no oracle or previous prediction supplied",
             "confusion_columns": [phase.name for phase in PHASE_ORDER] + ["INVALID"],
             "confusion": confusion.cpu().tolist(),

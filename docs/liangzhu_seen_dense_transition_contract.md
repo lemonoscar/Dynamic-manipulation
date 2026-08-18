@@ -25,6 +25,33 @@ false，VLM subtask loss 仍覆盖整个边界窗口。
 或 Pass 2。视觉历史仍保留。动作路由 teacher forcing 是独立机制，只决定训练时使用真值
 route 还是模型当前预测 route，并在配置区间内线性降到 0。
 
+实际 Qwen chat 没有额外 system message。Pass 1 的唯一 user message 按以下顺序构造：
+
+```text
+Head camera, oldest to newest: + head[t-0.20s, t]
+Wrist camera, oldest to newest: + wrist[t-0.20s, t]
+Task: Walk to the box holding the Coke can. Keep the base still and pick up
+the can. Lift it and retract the arm. Turn around and walk to the other empty
+box. Keep the base still and place the can on top of it.
+The head and wrist videos are ordered from oldest to newest.
+What should the robot do now? Output exactly one canonical subtask as
+<|pred_action|><|subtask|><subtask><|end_subtask|>
+```
+
+允许的 answer 只有四条完整 canonical 文本：
+
+```text
+<|pred_action|><|subtask|>Walk to the box holding the Coke can.<|end_subtask|>
+<|pred_action|><|subtask|>Pick up the Coke can, lift it, and retract the arm.<|end_subtask|>
+<|pred_action|><|subtask|>Turn around and walk to the empty box.<|end_subtask|>
+<|pred_action|><|subtask|>Lower the Coke can onto the empty box and release it.<|end_subtask|>
+```
+
+Pass 2 重新提交同一个 user message，并追加 Pass 1 的 assistant answer；不追加真实 phase、
+completed list 或上一步专家标签。28 维 proprioception 不被文本化进 prompt，而是直接进入
+被路由的 DiT state encoder。这样训练和在线的语言输入完全相同，teacher forcing 只影响
+“动作 loss 是否采用真值 route”，不改变 prompt 内容。
+
 Pass 1 的 batch 输出在 token 级逐行裁到首个 `<|end_subtask|>`（含结束 token）后再解码，
 从而丢弃 batch 对齐 padding；没有结束 token 或非四种 canonical 文本仍由严格 parser
 fail closed。Pass 2 使用模型当前预测文本与原始观测做完整 Qwen forward。Qwen3-VL 与
@@ -55,3 +82,8 @@ python scripts/extract_dense_transition_videos.py --hierarchy-root DATASET --out
 正式运行必须记录 commit、manifest SHA-256、resolved config、环境、GPU UUID、tmux、日志、
 checkpoint 和连续训练事件；`scripts/audit_training_events.py` 检查有限 loss/LR/梯度以及
 VLM、Navigation DiT、Manipulation DiT 三条非零梯度路径。
+
+balanced empty-history 路由门禁要求严格 parser invalid rate 为 0、预测不全部坍缩为
+`NAV_TO_SOURCE`，并且四个真值阶段都至少有一个正确预测。全 INVALID、自由文本、缺少
+结束 token，或完全学不到任一 canonical phase 都是失败，不能通过 dispatcher fallback
+伪装成有效专家样本。

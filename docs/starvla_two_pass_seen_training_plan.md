@@ -4,7 +4,7 @@
 > `docs/liangzhu_seen_dense_transition_contract.md`；真实 `subtask_history`、
 > phase-pure 边界删除和 0.08 秒视觉元数据均已废止。
 
-> 状态：实施中
+> 状态：历史归档，禁止作为当前 Prompt、数据或训练配置
 > 更新时间：2026-08-15
 > 本文替代“外部 Phase Router + 冻结 VLM”的旧模型计划；原始数据与既有 checkpoint 保持只读。
 
