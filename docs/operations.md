@@ -181,50 +181,51 @@ episode。PCT 状态记录是稀疏控制结点，因此 25 Hz 监督由结点�
 
 ## 8. 训练
 
-模型资产根需要包含 `configs/model.json` 登记的 Qwen3-VL 与基线检查点。训练默认冻结
-Qwen3-VL，适配 DiT 动作模型。
+Liangzhu seen 四阶段训练必须使用 `scripts/train_hierarchical.py`。同一个 Qwen3-VL
+依次执行“生成当前 subtask 文本”和“带预测文本重新编码原始观测”两次 forward，
+Qwen 主干、LM head、Navigation DiT 与 Manipulation DiT 全部参与反向传播。主 prompt
+在训练与推理时都不接收真实或预测的 semantic history；teacher forcing 只影响动作
+专家路由，并按配置衰减到 0。旧的 `scripts/train.py` 是冻结 Qwen 的单动作头路径，
+不得用于本合同的正式训练。
+
+正式训练从干净的本地 Qwen3-VL 与发布的 ABot action 权重初始化，不恢复旧
+optimizer/scheduler，也不使用旧 hierarchy view：
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 scripts/train.py \
-  --lerobot-root outputs/lerobot_pilot \
-  --output-dir outputs/checkpoints/al0_pilot \
-  --model-root /diff/wallx_workspace/dzb/models/base \
-  --belt-speed 0.01
-```
-
-PCT 全任务补充训练从已经完成 10k-step 抓取预训练的 AL0 动作头继续，而不是从随机
-边界层重新开始：
-
-```bash
-CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 scripts/train.py \
-  --lerobot-root DATASETS/conveyorvla-pct-full \
-  --output-dir RUNS/conveyorvla-pct-full \
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
+  --config_file RUNS/accelerate_zero3_4gpu_accum1.yaml \
+  scripts/train_hierarchical.py \
+  --hierarchy-root DATASETS/NEW_DENSE_TRANSITION_VIEW \
+  --output-dir RUNS/NEW_FORMAL_RUN/output \
   --model-root /diff/wallx_workspace/dzb/models/base \
   --initial-action-checkpoint \
     /diff/wallx_workspace/dzb/models/conveyorvla-al0/action_model_final.safetensors \
   --max-steps 10000 \
+  --warmup-steps 200 \
+  --save-first-checkpoint-step 25 \
   --save-interval-steps 1000 \
-  --batch-size-per-device 8 \
+  --log-interval-steps 1 \
+  --batch-size 64 \
   --gradient-accumulation-steps 1 \
-  --action-scale 0.5 1.0 0.55 0.35 0.3 0.3 0.5 1.6 0.5 1.0 \
+  --teacher-forcing-full-steps 100 \
+  --teacher-forcing-end-step 4000 \
   --attention-implementation sdpa
 ```
 
-该配置在两张 H20 上的有效 batch 为 16；实测每卡峰值约 13.1 GiB。每 1000 step 写
-一个原子 safetensors 中间点；正式完成仍
-以最终 checkpoint、训练报告、配置和状态统计四者哈希一致为准。上述 PCT 专用物理
-尺度覆盖源数据中的 0.45 m/s 前进、0.50 rad/s 偏航及 0.8 秒窗口内的腕部位姿范围，
-避免沿用较慢传送带配置时把完整任务的导航和远期姿态监督截断；训练产物会原样保存
-这些尺度供在线反归一化使用。
+该命令在四卡上的 global batch 为 `64 × 4 × 1 = 256`。动作物理尺度从新 view 的
+train split P99.9 统计派生并冻结在 `configs/temporal.json`，线上 action composer
+读取同一配置。Navigation DiT 仍只输出 `[vx,wz]`；composer 显式补齐
+`stow + open` 或 `carry + closed` 的关节/夹爪命令。
 
 健康启动至少要求：
 
-- 两个 rank 都初始化完成；
+- 四个 rank 都初始化完成；
 - 数据帧数、state/action 维度和统计量正常；
 - checkpoint transfer 报告无缺失/意外 key；
-- loss 有限并持续更新；
-- GPU 仅为 2/3；
-- `training_report.json` 和 safetensors checkpoint 可原子写入。
+- 连续至少 20 个 step 的 loss、gradient norm 与 learning rate 有限且 step 递增；
+- Qwen、Navigation DiT 和 Manipulation DiT 都有非零梯度；
+- GPU 0/1/2/3 有真实计算利用率；
+- tmux、事件日志、run metadata 与可加载 checkpoint 都存在。
 
 ## 9. 服务与闭环
 
