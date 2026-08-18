@@ -159,14 +159,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         if accelerator.is_main_process:
             model.qwen_vl_interface.processor.save_pretrained(output / "processor")
+            resolved_policy_config = output / "resolved_policy_config.json"
+            _write_json_atomic(resolved_policy_config, config)
             _write_json_atomic(
                 output / "resolved_run.json",
                 {
-                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-2",
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-run-3",
                     "status": "initializing",
                     "hierarchy_root": str(args.hierarchy_root.expanduser().resolve()),
                     "hierarchy_manifest_sha256": _sha256(
                         args.hierarchy_root.expanduser().resolve() / "manifest.json"
+                    ),
+                    "model_config_sha256": _sha256(
+                        args.config.expanduser().resolve()
+                    ),
+                    "temporal_config_sha256": _sha256(
+                        args.temporal_config.expanduser().resolve()
+                    ),
+                    "resolved_policy_config_sha256": _sha256(
+                        resolved_policy_config
+                    ),
+                    "resolved_action_scale": list(
+                        config["normalization"]["action"]["scale"]
                     ),
                     "initial_action_checkpoint": str(
                         args.initial_action_checkpoint.expanduser().resolve()
@@ -189,6 +203,21 @@ def main(argv: list[str] | None = None) -> int:
                         args.batch_size
                         * args.gradient_accumulation_steps
                         * accelerator.num_processes
+                    ),
+                    "optimizer_steps_per_equivalent_sampling_epoch": (
+                        len(loader_dataset)
+                        / (
+                            args.batch_size
+                            * args.gradient_accumulation_steps
+                            * accelerator.num_processes
+                        )
+                    ),
+                    "equivalent_sampling_epochs_at_max_steps": (
+                        args.max_steps
+                        * args.batch_size
+                        * args.gradient_accumulation_steps
+                        * accelerator.num_processes
+                        / len(loader_dataset)
                     ),
                     "train_rows": len(loader_dataset),
                     "train_phase_counts": (
@@ -381,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_json_atomic(
                 state_path,
                 {
-                    "schema_version": "conveyor-vla-al0-seen-two-pass-state-2",
+                    "schema_version": "conveyor-vla-al0-seen-two-pass-state-3",
                     "status": "failed",
                     "global_step": failed_step,
                     "error": str(error),
@@ -735,7 +764,7 @@ def _set_run_status(
         _write_json_atomic(
             output / "run_state.json",
             {
-                "schema_version": "conveyor-vla-al0-seen-two-pass-state-2",
+                "schema_version": "conveyor-vla-al0-seen-two-pass-state-3",
                 "status": status,
                 "global_step": step,
                 "metrics": dict(metrics or {}),

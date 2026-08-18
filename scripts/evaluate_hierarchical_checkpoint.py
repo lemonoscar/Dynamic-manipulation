@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         generation_distribution["INVALID"] = invalid
         report = {
-            "schema_version": "conveyor-vla-al0-hierarchical-eval-2",
+            "schema_version": "conveyor-vla-al0-hierarchical-eval-3",
             "checkpoint": str(checkpoint),
             "checkpoint_step": _checkpoint_step(checkpoint),
             "split": args.split,

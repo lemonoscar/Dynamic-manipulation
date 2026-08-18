@@ -155,6 +155,11 @@ PCT Liangzhu 的 `liangzhu_0815_n200` 与 `liangzhu_0815_n400` 使用单独入�
 目录保持只读：
 
 ```bash
+python scripts/audit_pct_source_overlap.py \
+  --source-root DATASETS/liangzhu_0815_n200 \
+  --source-root DATASETS/liangzhu_0815_n400 \
+  --output RUNS/liangzhu_0815_source_overlap.json
+
 python scripts/convert_pct_dataset.py \
   --source-root DATASETS/liangzhu_0815_n200 \
   --source-root DATASETS/liangzhu_0815_n400 \

@@ -36,9 +36,9 @@ Navigation DiT 只预测 `[vx,wz]`。在线 composer 输出显式 joint-space re
 - `NAV_TO_TARGET`: `carry_closed`，夹爪 closed。
 
 关节目标按每控制步限速；导航路径不再构造零 TCP delta。Manipulation DiT 的 7 维输出
-补成 10 维时底盘三维严格为零。新数据 manifest 统计 train split 有效导航动作的绝对
-P95/P99/P99.5/P99.9，并以 `1.05 × P99.9` 生成建议物理 scale；正式配置必须记录采用值与
-裁剪率。
+补成 10 维时底盘三维严格为零。新数据 manifest 按专家统计 train split 有效动作的绝对
+P95/P99/P99.5/P99.9，并以 `1.05 × P99.9` 生成建议物理 scale；夹爪单独检查 `[0,1]`。
+正式配置必须记录采用值与相对旧 scale 的裁剪率。
 
 训练前依次运行：
 

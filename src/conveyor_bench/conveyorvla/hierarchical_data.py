@@ -391,6 +391,25 @@ def materialize_pct_hierarchy_view(
             base_dataset,
             annotations,
         )
+        manipulation_action_statistics = _train_domain_action_statistics(
+            base_dataset,
+            annotations,
+            domain=ActionDomain.MANIPULATION,
+            indices=tuple(range(3, 10)),
+            names=(
+                "tcp_dx_m",
+                "tcp_dy_m",
+                "tcp_dz_m",
+                "tcp_drx_rad",
+                "tcp_dry_rad",
+                "tcp_drz_rad",
+                "gripper_open_fraction",
+            ),
+            previous_scales=(0.3, 0.3, 0.2, 0.5, 0.5, 0.5, None),
+            schema_version=(
+                "conveyor-vla-al0-train-manipulation-action-statistics-1"
+            ),
+        )
         navigation_reference_statistics = _train_navigation_reference_statistics(
             train_states,
             train_rows,
@@ -486,6 +505,9 @@ def materialize_pct_hierarchy_view(
                 for key, value in sorted(valid_action_prefix_counts.items())
             },
             "train_navigation_action_statistics": navigation_action_statistics,
+            "train_manipulation_action_statistics": (
+                manipulation_action_statistics
+            ),
             "train_navigation_reference_statistics": (
                 navigation_reference_statistics
             ),
@@ -778,6 +800,39 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
                 problems.append(
                     f"{phase.name} composer gripper disagrees with train pose"
                 )
+    manipulation_statistics = manifest.get(
+        "train_manipulation_action_statistics"
+    )
+    if not isinstance(manipulation_statistics, Mapping):
+        problems.append("train manipulation action statistics are missing")
+    else:
+        manipulation_scales = manipulation_statistics.get(
+            "recommended_physical_scale"
+        )
+        if (
+            not isinstance(manipulation_scales, list)
+            or len(manipulation_scales) != 7
+            or any(
+                not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) <= 0.0
+                for value in manipulation_scales[:6]
+            )
+            or manipulation_scales[6] is not None
+        ):
+            problems.append("recommended manipulation action scale is invalid")
+        channels = manipulation_statistics.get("channels")
+        gripper = (
+            channels.get("gripper_open_fraction")
+            if isinstance(channels, Mapping)
+            else None
+        )
+        if (
+            not isinstance(gripper, Mapping)
+            or float(gripper.get("outside_unit_interval_fraction", math.inf))
+            != 0.0
+        ):
+            problems.append("train gripper actions leave the unit interval")
     return {
         "schema_version": "conveyor-vla-al0-dense-transition-audit-1",
         "ok": not problems,
@@ -803,6 +858,7 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
         "train_navigation_reference_statistics": (
             navigation_reference_statistics
         ),
+        "train_manipulation_action_statistics": manipulation_statistics,
         "problems": problems,
     }
 
@@ -900,14 +956,42 @@ def _train_navigation_action_statistics(
     base_dataset: Any,
     annotations: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
+    return _train_domain_action_statistics(
+        base_dataset,
+        annotations,
+        domain=ActionDomain.NAVIGATION,
+        indices=(0, 2),
+        names=("vx_mps", "wz_radps"),
+        previous_scales=(0.3, 0.35),
+        schema_version=(
+            "conveyor-vla-al0-train-navigation-action-statistics-1"
+        ),
+    )
+
+
+def _train_domain_action_statistics(
+    base_dataset: Any,
+    annotations: Sequence[Mapping[str, Any]],
+    *,
+    domain: ActionDomain,
+    indices: tuple[int, ...],
+    names: tuple[str, ...],
+    previous_scales: tuple[float | None, ...],
+    schema_version: str,
+) -> dict[str, Any]:
+    if not (
+        len(indices) == len(names) == len(previous_scales)
+        and len(set(indices)) == len(indices)
+    ):
+        raise ValueError("action statistics channel contract is invalid")
     rows = [
         row
         for row in annotations
         if row["split"] == "train"
-        and int(row["action_domain_id"]) == int(ActionDomain.NAVIGATION)
+        and int(row["action_domain_id"]) == int(domain)
     ]
     if not rows:
-        raise M0MobileError("train split has no navigation actions")
+        raise M0MobileError(f"train split has no {domain.name.lower()} actions")
     raw_actions = base_dataset.hf_dataset.select(
         [int(row["base_index"]) for row in rows]
     )["action"]
@@ -925,23 +1009,31 @@ def _train_navigation_action_statistics(
     try:
         actions = actions.reshape(len(rows), ACTION_HORIZON, ACTION_DIM)
     except ValueError as error:
-        raise M0MobileError("navigation actions have an invalid shape") from error
+        raise M0MobileError(
+            f"{domain.name.lower()} actions have an invalid shape"
+        ) from error
     valid = np.asarray(
         [row["action_valid_mask"] for row in rows],
         dtype=np.bool_,
     )
-    values = actions[valid][:, (0, 2)]
+    values = actions[valid][:, indices]
     if values.size == 0 or not np.isfinite(values).all():
-        raise M0MobileError("train navigation actions are empty or non-finite")
+        raise M0MobileError(
+            f"train {domain.name.lower()} actions are empty or non-finite"
+        )
 
     channels: dict[str, Any] = {}
-    recommended = []
-    previous_scales = (0.3, 0.35)
-    for index, name in enumerate(("vx_mps", "wz_radps")):
+    recommended: list[float | None] = []
+    for index, name in enumerate(names):
         channel = values[:, index]
         absolute = np.abs(channel)
         quantiles = np.quantile(absolute, (0.95, 0.99, 0.995, 0.999))
-        scale = max(float(quantiles[-1]) * 1.05, 1.0e-4)
+        previous_scale = previous_scales[index]
+        scale = (
+            None
+            if previous_scale is None
+            else max(float(quantiles[-1]) * 1.05, 1.0e-4)
+        )
         recommended.append(scale)
         channels[name] = {
             "minimum": float(channel.min()),
@@ -952,20 +1044,27 @@ def _train_navigation_action_statistics(
             "absolute_p99": float(quantiles[1]),
             "absolute_p99_5": float(quantiles[2]),
             "absolute_p99_9": float(quantiles[3]),
-            "previous_scale": previous_scales[index],
-            "previous_scale_clip_fraction": float(
-                np.mean(absolute > previous_scales[index])
+            "previous_scale": previous_scale,
+            "previous_scale_clip_fraction": (
+                float(np.mean(absolute > previous_scale))
+                if previous_scale is not None
+                else None
             ),
-            "recommended_scale_clip_fraction": float(
-                np.mean(absolute > scale)
+            "recommended_scale_clip_fraction": (
+                float(np.mean(absolute > scale)) if scale is not None else None
             ),
         }
+        if previous_scale is None:
+            channels[name]["outside_unit_interval_fraction"] = float(
+                np.mean(np.logical_or(channel < 0.0, channel > 1.0))
+            )
     return {
-        "schema_version": "conveyor-vla-al0-train-navigation-action-statistics-1",
+        "schema_version": schema_version,
+        "action_domain": domain.name,
         "row_count": len(rows),
         "valid_future_action_count": int(valid.sum()),
-        "action_indices_in_action10": [0, 2],
-        "channel_order": ["vx_mps", "wz_radps"],
+        "action_indices_in_action10": list(indices),
+        "channel_order": list(names),
         "channels": channels,
         "previous_physical_scale": list(previous_scales),
         "recommended_physical_scale": recommended,
