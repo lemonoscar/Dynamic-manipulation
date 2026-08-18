@@ -9,7 +9,6 @@ import hashlib
 import json
 import math
 import os
-import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,12 +45,9 @@ from conveyor_bench.conveyorvla.policy import (  # noqa: E402
     transfer_qwen_checkpoint_weights,
 )
 from conveyor_bench.conveyorvla.subtasks import (  # noqa: E402
-    FULL_INSTRUCTION,
     MANIPULATION_ACTION_DIM,
     NAVIGATION_ACTION_DIM,
     PHASE_ORDER,
-    phase_instruction,
-    subtask_prompt,
 )
 from conveyor_bench.conveyorvla.temporal import (  # noqa: E402
     DEFAULT_TEMPORAL_CONFIG_PATH,
@@ -90,8 +86,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeated-diffusion-steps", type=int, default=1)
     parser.add_argument("--teacher-forcing-full-steps", type=int, default=100)
     parser.add_argument("--teacher-forcing-end-step", type=int, default=4_000)
-    parser.add_argument("--history-dropout-probability", type=float, default=0.50)
-    parser.add_argument("--history-corruption-probability", type=float, default=0.25)
     parser.add_argument(
         "--attention-implementation",
         choices=("sdpa", "flash_attention_2", "eager"),
@@ -214,14 +208,14 @@ def main(argv: list[str] | None = None) -> int:
                         "legacy_step_007000_used": False,
                         "optimizer_resume": args.resume_from is not None,
                     },
-                    "history_training_contract": {
+                    "routing_training_contract": {
                         "ground_truth_subtask_history_in_main_prompt": False,
+                        "training_semantic_memory": "disabled",
+                        "inference_semantic_memory": "disabled",
+                        "visual_history_model_ticks": [-5, 0],
                         "teacher_forcing_full_steps": args.teacher_forcing_full_steps,
                         "teacher_forcing_end_step": args.teacher_forcing_end_step,
-                        "history_dropout_probability": args.history_dropout_probability,
-                        "history_corruption_probability": (
-                            args.history_corruption_probability
-                        ),
+                        "teacher_forcing_scope": "action expert route only",
                     },
                     "arguments": vars(args),
                 },
@@ -253,13 +247,6 @@ def main(argv: list[str] | None = None) -> int:
                     global_step,
                     args.teacher_forcing_full_steps,
                     args.teacher_forcing_end_step,
-                )
-                examples, history_metrics = _prepare_training_examples(
-                    examples,
-                    teacher_forcing_probability,
-                    seed=args.seed + global_step * 1_000_003 + accelerator.process_index,
-                    dropout_probability=args.history_dropout_probability,
-                    corruption_probability=args.history_corruption_probability,
                 )
                 with accelerator.accumulate(model):
                     subtask = model(examples, objective="subtask")
@@ -358,7 +345,6 @@ def main(argv: list[str] | None = None) -> int:
                         "train_step",
                         step=global_step,
                         **last_metrics,
-                        history_training=history_metrics,
                         routing={
                             key: int(action[key])
                             for key in (
@@ -547,51 +533,6 @@ def _limited_phase_indices(
             raise M0MobileError(f"not enough {phase.name} rows for the training subset")
         result.extend(selected)
     return result
-
-
-def _prepare_training_examples(
-    examples: Iterable[Mapping[str, Any]],
-    teacher_forcing_probability: float,
-    *,
-    seed: int,
-    dropout_probability: float,
-    corruption_probability: float,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Inject only a single training-time previous label, then decay it away."""
-
-    prepared: list[dict[str, Any]] = []
-    metrics = {
-        "available": 0,
-        "teacher_forced": 0,
-        "dropped": 0,
-        "corrupted": 0,
-        "omitted_by_schedule": 0,
-    }
-    for offset, source in enumerate(examples):
-        example = dict(source)
-        previous = example.get("previous_subtask_text")
-        memory = None
-        if previous is not None:
-            metrics["available"] += 1
-            rng = random.Random(f"{seed}:{offset}:{example.get('sample_id')}")
-            if rng.random() >= teacher_forcing_probability:
-                metrics["omitted_by_schedule"] += 1
-            elif rng.random() < dropout_probability:
-                metrics["dropped"] += 1
-            else:
-                memory = str(previous)
-                metrics["teacher_forced"] += 1
-                if rng.random() < corruption_probability:
-                    choices = [
-                        phase_instruction(phase)
-                        for phase in PHASE_ORDER
-                        if phase_instruction(phase) != memory
-                    ]
-                    memory = rng.choice(choices)
-                    metrics["corrupted"] += 1
-        example["lang"] = subtask_prompt(FULL_INSTRUCTION, memory)
-        prepared.append(example)
-    return prepared, metrics
 
 
 def _component_gradient_norms(
@@ -884,12 +825,6 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise M0MobileError(
             "teacher forcing must have a non-empty decay ending before max steps"
         )
-    probabilities = (
-        args.history_dropout_probability,
-        args.history_corruption_probability,
-    )
-    if any(not math.isfinite(value) or not 0.0 <= value <= 1.0 for value in probabilities):
-        raise M0MobileError("history dropout/corruption probabilities must be within [0, 1]")
     floats = (
         args.subtask_loss_weight,
         args.action_loss_weight,

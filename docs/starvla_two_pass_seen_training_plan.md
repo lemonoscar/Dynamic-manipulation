@@ -325,7 +325,7 @@ phase_id
 phase_name
 subtask_text
 assistant_solution
-previous_subtask_label  # 仅用于带 dropout/corruption 且衰减到 0 的训练 teacher forcing
+previous_subtask_label  # 历史设计字段；现行训练 example 不再暴露
 action_domain
 action_valid_mask
 ```

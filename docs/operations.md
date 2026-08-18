@@ -151,18 +151,18 @@ python scripts/convert_dataset.py \
 先使用 `--max-episodes 1` 做 smoke，再运行完整转换。转换后检查四个视频 feature 的
 首帧，并抽查首/中/末 episode。
 
-PCT Liangzhu 的 `liangzhu_0729_n200` 与 `liangzhu_0729_n250` 使用单独入口；raw
+PCT Liangzhu 的 `liangzhu_0815_n200` 与 `liangzhu_0815_n400` 使用单独入口；raw
 目录保持只读：
 
 ```bash
 python scripts/convert_pct_dataset.py \
-  --source-root DATASETS/liangzhu_0729_n200 \
-  --source-root DATASETS/liangzhu_0729_n250 \
+  --source-root DATASETS/liangzhu_0815_n200 \
+  --source-root DATASETS/liangzhu_0815_n400 \
   --audit-only
 
 python scripts/convert_pct_dataset.py \
-  --source-root DATASETS/liangzhu_0729_n200 \
-  --source-root DATASETS/liangzhu_0729_n250 \
+  --source-root DATASETS/liangzhu_0815_n200 \
+  --source-root DATASETS/liangzhu_0815_n400 \
   --output-root outputs/lerobot_pct_pilot \
   --max-episodes-per-source 4
 ```

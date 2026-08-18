@@ -12,6 +12,9 @@ from conveyor_bench.conveyorvla.dit import (
     M0DiTConfig,
     transfer_conveyorvla_action_trunk,
 )
+from conveyor_bench.conveyorvla.hierarchical_data import (
+    _train_navigation_action_statistics,
+)
 from conveyor_bench.conveyorvla.policy import (
     ConveyorVLAAL0TwoPassPolicy,
 )
@@ -47,6 +50,45 @@ def test_pct_phases_map_to_two_disjoint_action_domains() -> None:
         phase_from_pct("plan_unknown")
 
 
+def test_navigation_scale_is_derived_only_from_valid_train_actions() -> None:
+    first = [0.0] * 200
+    second = [0.0] * 200
+    for step in range(20):
+        first[step * 10] = 0.5
+        first[step * 10 + 2] = -0.7
+        second[step * 10] = 100.0
+        second[step * 10 + 2] = 100.0
+
+    class _Dataset:
+        class _HF:
+            def select(self, indices):
+                values = [first, second]
+                return {"action": [values[index] for index in indices]}
+
+        hf_dataset = _HF()
+
+    annotations = [
+        {
+            "split": "train",
+            "action_domain_id": int(ActionDomain.NAVIGATION),
+            "base_index": 0,
+            "action_valid_mask": [True] * 20,
+        },
+        {
+            "split": "val",
+            "action_domain_id": int(ActionDomain.NAVIGATION),
+            "base_index": 1,
+            "action_valid_mask": [True] * 20,
+        },
+    ]
+
+    report = _train_navigation_action_statistics(_Dataset(), annotations)
+
+    assert report["row_count"] == 1
+    assert report["valid_future_action_count"] == 20
+    assert report["recommended_physical_scale"] == pytest.approx([0.525, 0.735])
+
+
 def test_canonical_subtask_answer_is_visible_parseable_and_determines_dit() -> None:
     solution = subtask_solution(Phase.NAV_TO_TARGET)
     decision = parse_subtask_solution(solution)
@@ -60,10 +102,8 @@ def test_canonical_subtask_answer_is_visible_parseable_and_determines_dit() -> N
     empty_prompt = subtask_prompt("Move the Coke can.")
     assert "Completed subtasks" not in empty_prompt
     assert "Previous model prediction" not in empty_prompt
-    predicted_prompt = subtask_prompt(
-        "Move the Coke can.", phase_instruction(Phase.PICK)
-    )
-    assert "Previous model prediction (may be wrong)" in predicted_prompt
+    with pytest.raises(TypeError):
+        subtask_prompt("Move the Coke can.", phase_instruction(Phase.PICK))
     with pytest.raises(ValueError, match="unsupported canonical"):
         parse_subtask_solution(
             "<|pred_action|><|subtask|>Maybe move somewhere.<|end_subtask|>"

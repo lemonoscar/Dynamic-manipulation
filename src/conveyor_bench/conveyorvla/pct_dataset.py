@@ -162,7 +162,11 @@ def iter_pct_temporal_records(episode_root: str | Path) -> Iterator[dict[str, An
     action_records = tuple(controls[step] for step in control_steps)
     samples = _sample_frames(root / "samples.jsonl")
     collection = next(
-        (parent.name for parent in root.parents if parent.name.startswith("liangzhu_0729_n")),
+        (
+            parent.name
+            for parent in root.parents
+            if parent.name.startswith("liangzhu_") and "_n" in parent.name
+        ),
         "liangzhu_pct",
     )
     episode_id = f"{collection}:{root.name}"
@@ -522,7 +526,7 @@ def materialize_pct_lerobot_v3(
                 raise M0MobileError(f"decoded PCT video shape mismatch: {key}")
         manifest = {
             "schema_version": (
-                "conveyor-vla-al0-lerobot-v3-dense-transition-manifest-4"
+                "conveyor-vla-al0-liangzhu-0815-lerobot-v3-dense-transition-manifest-5"
             ),
             "dataset_version": "v3.0",
             "repo_id": repo_id,
@@ -530,7 +534,7 @@ def materialize_pct_lerobot_v3(
             "lerobot_package_version": installed_version,
             "config_sha256": _sha256(config_source),
             "source_format": "pct_full_physics_raw",
-            "source_adapter": "conveyorvla_pct_dense_transition_v4",
+            "source_adapter": "conveyorvla_pct_dense_transition_v5",
             "source_phase_aliases": {
                 raw: phase.name for raw, phase in sorted(PCT_PHASES.items())
             },

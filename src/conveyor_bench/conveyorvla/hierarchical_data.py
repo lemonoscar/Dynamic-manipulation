@@ -61,7 +61,7 @@ class HierarchyAuditThresholds:
 
 DEFAULT_HIERARCHY_AUDIT_THRESHOLDS = HierarchyAuditThresholds()
 HIERARCHY_VIEW_SCHEMA_VERSION = (
-    "conveyor-vla-al0-liangzhu-seen-dense-transition-view-6"
+    "conveyor-vla-al0-liangzhu-0815-seen-dense-transition-view-7"
 )
 HIERARCHY_SPLIT_SEED = "conveyor-vla-al0-liangzhu-seen-split-v2"
 BOUNDARY_WINDOW_S = 1.0
@@ -183,12 +183,6 @@ class ConveyorVLAAL0HierarchicalDataset:
                 "action_domain_id": int(domain),
                 "action_domain_name": domain.name,
                 "subtask_text": str(annotation["subtask_text"]),
-                "previous_subtask_label": annotation.get("previous_subtask_label"),
-                "previous_subtask_text": (
-                    None
-                    if annotation.get("previous_subtask_label") is None
-                    else phase_instruction(Phase[str(annotation["previous_subtask_label"])])
-                ),
                 "next_subtask_label": str(annotation["next_subtask_label"]),
                 "seconds_to_boundary": float(annotation["seconds_to_boundary"]),
                 "is_boundary_window": bool(annotation["is_boundary_window"]),
@@ -394,6 +388,10 @@ def materialize_pct_hierarchy_view(
         if train_states.shape != (len(train_indices), 28) or not np.isfinite(train_states).all():
             raise M0MobileError("hierarchy train states are missing or non-finite")
         state_statistics = _state_statistics(train_states)
+        navigation_action_statistics = _train_navigation_action_statistics(
+            base_dataset,
+            annotations,
+        )
         phase_counts = Counter(str(row["phase_name"]) for row in annotations)
         domain_counts = Counter(str(row["action_domain_name"]) for row in annotations)
         boundary_counts = Counter(
@@ -430,8 +428,10 @@ def materialize_pct_hierarchy_view(
             },
             "prompt_history_contract": {
                 "ground_truth_subtask_history_allowed": False,
-                "inference_memory": "previous_model_prediction_only",
-                "training_memory": "single_previous_label_with_dropout_corruption_and_teacher_forcing_decay",
+                "training_semantic_memory": "disabled",
+                "inference_semantic_memory": "disabled",
+                "visual_history": "two frames at model ticks [-5, 0]",
+                "route_teacher_forcing_is_prompt_memory": False,
             },
             "phase_order": [phase.name for phase in PHASE_ORDER],
             "phase_action_domains": {
@@ -482,6 +482,7 @@ def materialize_pct_hierarchy_view(
                 str(key): value
                 for key, value in sorted(valid_action_prefix_counts.items())
             },
+            "train_navigation_action_statistics": navigation_action_statistics,
             "train_state_statistics": state_statistics,
             "episodes": episode_reports,
         }
@@ -718,6 +719,22 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
                     "tcp_delta_used": False,
                 }
             )
+    navigation_statistics = manifest.get("train_navigation_action_statistics")
+    if not isinstance(navigation_statistics, Mapping):
+        problems.append("train navigation action statistics are missing")
+    else:
+        scales = navigation_statistics.get("recommended_physical_scale")
+        if (
+            not isinstance(scales, list)
+            or len(scales) != 2
+            or any(
+                not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) <= 0.0
+                for value in scales
+            )
+        ):
+            problems.append("recommended navigation action scale is invalid")
     return {
         "schema_version": "conveyor-vla-al0-dense-transition-audit-1",
         "ok": not problems,
@@ -739,6 +756,7 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
         "masked_boundary_counts": dict(sorted(masked_boundary_counts.items())),
         "boundary_discontinuities": discontinuities,
         "navigation_trace": navigation_trace,
+        "train_navigation_action_statistics": navigation_statistics,
         "problems": problems,
     }
 
@@ -798,7 +816,7 @@ def _source_episode_id(root: Path) -> str:
         (
             parent.name
             for parent in root.parents
-            if parent.name.startswith("liangzhu_0729_n")
+            if parent.name.startswith("liangzhu_") and "_n" in parent.name
         ),
         "liangzhu_pct",
     )
@@ -830,6 +848,77 @@ def _episode_split(episode_id: str) -> str:
     ).digest()
     bucket = int.from_bytes(digest[:8], "big") % 100
     return "train" if bucket < 90 else ("val" if bucket < 95 else "test")
+
+
+def _train_navigation_action_statistics(
+    base_dataset: Any,
+    annotations: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    rows = [
+        row
+        for row in annotations
+        if row["split"] == "train"
+        and int(row["action_domain_id"]) == int(ActionDomain.NAVIGATION)
+    ]
+    if not rows:
+        raise M0MobileError("train split has no navigation actions")
+    raw_actions = base_dataset.hf_dataset.select(
+        [int(row["base_index"]) for row in rows]
+    )["action"]
+    actions = np.stack(
+        [
+            np.asarray(
+                value.detach().cpu().numpy()
+                if hasattr(value, "detach")
+                else value,
+                dtype=np.float64,
+            )
+            for value in raw_actions
+        ]
+    )
+    try:
+        actions = actions.reshape(len(rows), ACTION_HORIZON, ACTION_DIM)
+    except ValueError as error:
+        raise M0MobileError("navigation actions have an invalid shape") from error
+    valid = np.asarray(
+        [row["action_valid_mask"] for row in rows],
+        dtype=np.bool_,
+    )
+    values = actions[valid][:, (0, 2)]
+    if values.size == 0 or not np.isfinite(values).all():
+        raise M0MobileError("train navigation actions are empty or non-finite")
+
+    channels: dict[str, Any] = {}
+    recommended = []
+    for index, name in enumerate(("vx_mps", "wz_radps")):
+        channel = values[:, index]
+        absolute = np.abs(channel)
+        quantiles = np.quantile(absolute, (0.95, 0.99, 0.995, 0.999))
+        scale = max(float(quantiles[-1]) * 1.05, 1.0e-4)
+        recommended.append(scale)
+        channels[name] = {
+            "minimum": float(channel.min()),
+            "maximum": float(channel.max()),
+            "mean": float(channel.mean()),
+            "standard_deviation": float(channel.std()),
+            "absolute_p95": float(quantiles[0]),
+            "absolute_p99": float(quantiles[1]),
+            "absolute_p99_5": float(quantiles[2]),
+            "absolute_p99_9": float(quantiles[3]),
+            "recommended_scale_clip_fraction": float(
+                np.mean(absolute > scale)
+            ),
+        }
+    return {
+        "schema_version": "conveyor-vla-al0-train-navigation-action-statistics-1",
+        "row_count": len(rows),
+        "valid_future_action_count": int(valid.sum()),
+        "action_indices_in_action10": [0, 2],
+        "channel_order": ["vx_mps", "wz_radps"],
+        "channels": channels,
+        "recommended_physical_scale": recommended,
+        "scale_rule": "1.05_times_train_absolute_p99_9_with_1e-4_floor",
+    }
 
 
 def _state_statistics(states: np.ndarray) -> dict[str, Any]:
@@ -877,6 +966,13 @@ def _load_view_manifest(root: Path) -> Mapping[str, Any]:
         "phase_order": [phase.name for phase in PHASE_ORDER],
         "history_offsets_model_ticks": [-5, 0],
         "history_span_s": 0.20,
+        "prompt_history_contract": {
+            "ground_truth_subtask_history_allowed": False,
+            "training_semantic_memory": "disabled",
+            "inference_semantic_memory": "disabled",
+            "visual_history": "two frames at model ticks [-5, 0]",
+            "route_teacher_forcing_is_prompt_memory": False,
+        },
     }
     for key, value in expected.items():
         if manifest.get(key) != value:

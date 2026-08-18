@@ -311,9 +311,15 @@ class Qwen3VLInterface(nn.Module):
             )
         finally:
             self.model.train(was_training)
+        generated_suffixes = []
+        for row in generated[:, prompt_width:]:
+            matches = torch.nonzero(row == end_token_id, as_tuple=False)
+            if matches.numel():
+                row = row[: int(matches[0].item()) + 1]
+            generated_suffixes.append(row.detach().cpu().tolist())
         return tuple(
             self.processor.tokenizer.batch_decode(
-                generated[:, prompt_width:],
+                generated_suffixes,
                 skip_special_tokens=False,
             )
         )

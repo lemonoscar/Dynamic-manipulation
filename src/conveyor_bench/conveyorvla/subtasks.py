@@ -149,29 +149,15 @@ def subtask_solution(phase: Phase | int) -> str:
     )
 
 
-def subtask_prompt(
-    instruction: str,
-    previous_prediction: str | None = None,
-) -> str:
-    """Build a prompt with no privileged task history.
-
-    The optional memory is one model-produced prediction from the preceding
-    observation.  Dataset ground truth must never be passed here at inference.
-    """
+def subtask_prompt(instruction: str) -> str:
+    """Build the shared train/inference prompt without semantic history."""
 
     task = str(instruction).strip()
     if not task:
         raise ValueError("instruction must be non-empty")
-    memory = ""
-    if previous_prediction is not None:
-        prediction = str(previous_prediction).strip()
-        if prediction not in PHASE_INSTRUCTIONS.values():
-            raise ValueError("previous prediction must be one canonical subtask")
-        memory = f"Previous model prediction (may be wrong): {prediction}\n"
     return (
         f"Task: {task}\n"
         "The head and wrist videos are ordered from oldest to newest.\n"
-        f"{memory}"
         "What should the robot do now? Output exactly one canonical subtask as "
         f"{PRED_ACTION_TOKEN}{SUBTASK_START_TOKEN}<subtask>{SUBTASK_END_TOKEN}"
     )

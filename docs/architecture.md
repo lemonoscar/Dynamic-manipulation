@@ -78,8 +78,8 @@ Qwen3-VL 第二次完整 forward（全量微调）
 ```
 
 Qwen3-VL 主干、embedding/lm head 和两个 DiT 都参与训练。Dispatcher 只做语言到专家
-的映射，不保存外部任务顺序。主 prompt 不接收真实 completed-phase history；在线需要
-记忆时只允许上一时刻模型预测，训练 teacher forcing 在 dropout/corruption 下逐步衰减到 0。
+的映射，不保存外部任务顺序。主 prompt 在训练和在线都不接收 semantic history；阶段
+判断只依赖当前双帧视觉与完整任务。动作专家 route 的 teacher forcing 单独衰减到 0。
 
 28 维状态包含底盘速度、角速度、重力投影、机械臂/夹爪关节等 proprioception。
 10 维动作包含底盘、TCP 和夹爪命令。overview、物体真值和教师 phase 都不能进入

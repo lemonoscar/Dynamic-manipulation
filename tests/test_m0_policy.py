@@ -71,10 +71,14 @@ class _GeneratingQwen(_Qwen):
 
 
 class _GenerationTokenizer:
+    def __init__(self):
+        self.decoded_values = []
+
     def convert_tokens_to_ids(self, _token):
         return 99
 
     def batch_decode(self, values, **_kwargs):
+        self.decoded_values = [list(map(int, row)) for row in values]
         return [f"decoded-{int(row[0])}" for row in values]
 
 
@@ -215,6 +219,43 @@ def test_temporal_generation_temporarily_disables_training_mode(monkeypatch) -> 
     assert generated == ("decoded-99",)
     assert model.generate_training_modes == [False]
     assert model.training is True
+
+
+def test_temporal_generation_trims_each_batch_row_at_its_first_end_token(
+    monkeypatch,
+) -> None:
+    class _PaddedGeneratingQwen(_GeneratingQwen):
+        def generate(self, input_ids, **_kwargs):
+            suffix = torch.tensor(
+                [[41, 99, 0, 0], [42, 43, 44, 99]],
+                device=input_ids.device,
+                dtype=input_ids.dtype,
+            )
+            return torch.cat((input_ids, suffix), dim=1)
+
+    model = _PaddedGeneratingQwen(24)
+    tokenizer = _GenerationTokenizer()
+    interface = Qwen3VLInterface(model, SimpleNamespace(tokenizer=tokenizer))
+    monkeypatch.setattr(
+        interface,
+        "build_temporal_inputs",
+        lambda *_args, **_kwargs: {
+            "input_ids": torch.ones((2, 5), dtype=torch.long),
+            "attention_mask": torch.ones((2, 5), dtype=torch.long),
+        },
+    )
+
+    generated = interface.generate_temporal_subtask_texts(
+        [
+            ((object(), object()), (object(), object())),
+            ((object(), object()), (object(), object())),
+        ],
+        ["route the current subtask", "route the current subtask"],
+        history_span_s=0.2,
+    )
+
+    assert generated == ("decoded-41", "decoded-42")
+    assert tokenizer.decoded_values == [[41, 99], [42, 43, 44, 99]]
 
 
 def test_second_pass_accepts_control_only_prediction_without_supervision() -> None:

@@ -42,7 +42,7 @@ def _write_jsonl(path: Path, values) -> None:
 
 
 def test_pct_episode_builds_state_and_future_actions(tmp_path: Path) -> None:
-    episode = tmp_path / "liangzhu_0729_n200" / "episode_000000"
+    episode = tmp_path / "liangzhu_0815_n200" / "episode_000000"
     episode.mkdir(parents=True)
     _write_json(
         episode / "task.json",
@@ -126,6 +126,7 @@ def test_pct_episode_builds_state_and_future_actions(tmp_path: Path) -> None:
     records = list(iter_pct_temporal_records(episode))
     assert len(records) == 3
     first = records[0]
+    assert first["source_episode_id"] == "liangzhu_0815_n200:episode_000000"
     assert len(first["state28"]) == 28
     assert len(first["model_action10_chunk"]) == 20
     assert all(len(action) == 10 for action in first["model_action10_chunk"])

@@ -1,10 +1,11 @@
 # Liangzhu seen dense-transition 合同
 
-本轮不续训旧 `seen-subtask-view-2`，也不继承 `step_007000` 的 optimizer/scheduler。
-旧 base LeRobot v3 保持只读；新的 expanded base 采用
-`conveyor-vla-al0-lerobot-v3-dense-transition-manifest-4`，sidecar schema 为
-`conveyor-vla-al0-liangzhu-seen-dense-transition-view-6`，split seed 继续使用
-`conveyor-vla-al0-liangzhu-seen-split-v2`。
+本轮只使用 ModelScope `liangzhu_0815_n200` 与 `liangzhu_0815_n400`。旧 raw、base、
+sidecar 和 checkpoint 均保持只读，但不再进入训练引用；不继承旧 optimizer/scheduler。
+新 expanded base schema 是
+`conveyor-vla-al0-liangzhu-0815-lerobot-v3-dense-transition-manifest-5`，sidecar schema 是
+`conveyor-vla-al0-liangzhu-0815-seen-dense-transition-view-7`。split 仍以完整
+`source_episode_id` 为单位并复用 `conveyor-vla-al0-liangzhu-seen-split-v2`。
 
 expanded base 显式保留 navigation planning、`plan_pick`、`plan_nav_to_place`、
 `plan_place`，以及三个专家切换处的 reachable/success verifier 物理观测。planning row
@@ -19,10 +20,15 @@ false，VLM subtask loss 仍覆盖整个边界窗口。
 视觉合同唯一为 head/wrist `[-5,0]` model tick、0.20 秒、5 Hz query。历史 feature 名
 `tminus2` 只是兼容名称，不表示 0.08 秒。
 
-主 prompt 不包含真实 `subtask_history`。训练只允许单个 previous label 作为早期 teacher
-forcing，并同时执行 dropout/corruption；teacher forcing 在配置的 step 区间内线性降到
-0。动作 pass 在非 teacher-forced 样本上先贪心生成当前 subtask，解析成功且路由正确时，
-把该模型文本与原始观测送入第二次完整 Qwen forward。Qwen3-VL 与两个 DiT 均全量更新。
+训练与推理使用同一个无 semantic-memory prompt：只有完整任务、head/wrist 双帧视觉和
+“现在应做什么”的格式要求；annotation previous phase 和上一 query 预测都不进入 Pass 1
+或 Pass 2。视觉历史仍保留。动作路由 teacher forcing 是独立机制，只决定训练时使用真值
+route 还是模型当前预测 route，并在配置区间内线性降到 0。
+
+Pass 1 的 batch 输出在 token 级逐行裁到首个 `<|end_subtask|>`（含结束 token）后再解码，
+从而丢弃 batch 对齐 padding；没有结束 token 或非四种 canonical 文本仍由严格 parser
+fail closed。Pass 2 使用模型当前预测文本与原始观测做完整 Qwen forward。Qwen3-VL 与
+两个 DiT 均全量更新。
 
 Navigation DiT 只预测 `[vx,wz]`。在线 composer 输出显式 joint-space reference：
 
@@ -30,7 +36,9 @@ Navigation DiT 只预测 `[vx,wz]`。在线 composer 输出显式 joint-space re
 - `NAV_TO_TARGET`: `carry_closed`，夹爪 closed。
 
 关节目标按每控制步限速；导航路径不再构造零 TCP delta。Manipulation DiT 的 7 维输出
-补成 10 维时底盘三维严格为零。
+补成 10 维时底盘三维严格为零。新数据 manifest 统计 train split 有效导航动作的绝对
+P95/P99/P99.5/P99.9，并以 `1.05 × P99.9` 生成建议物理 scale；正式配置必须记录采用值与
+裁剪率。
 
 训练前依次运行：
 

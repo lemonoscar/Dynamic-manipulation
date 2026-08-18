@@ -6,9 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from conveyor_bench.conveyorvla.subtasks import phase_instruction, Phase
-
-
 torch = pytest.importorskip("torch")
 pytest.importorskip("accelerate")
 pytest.importorskip("safetensors")
@@ -70,42 +67,12 @@ def test_teacher_forcing_schedule_reaches_zero_before_training_end() -> None:
     assert TRAIN._teacher_forcing_probability(6, 2, 6) == 0.0
 
 
-def test_history_training_never_inserts_ground_truth_when_schedule_is_zero() -> None:
-    example = {
-        "sample_id": "episode:10",
-        "previous_subtask_text": phase_instruction(Phase.PICK),
-        "lang": "old prompt",
-    }
+def test_training_cli_has_no_semantic_history_injection_controls() -> None:
+    options = TRAIN.build_parser()._option_string_actions
 
-    empty, empty_metrics = TRAIN._prepare_training_examples(
-        [example],
-        0.0,
-        seed=1,
-        dropout_probability=0.0,
-        corruption_probability=0.0,
-    )
-    teacher, teacher_metrics = TRAIN._prepare_training_examples(
-        [example],
-        1.0,
-        seed=1,
-        dropout_probability=0.0,
-        corruption_probability=0.0,
-    )
-
-    assert "Previous model prediction" not in empty[0]["lang"]
-    assert empty_metrics["omitted_by_schedule"] == 1
-    assert phase_instruction(Phase.PICK) in teacher[0]["lang"]
-    assert teacher_metrics["teacher_forced"] == 1
-
-    corrupted, corrupted_metrics = TRAIN._prepare_training_examples(
-        [example],
-        1.0,
-        seed=1,
-        dropout_probability=0.0,
-        corruption_probability=1.0,
-    )
-    assert phase_instruction(Phase.PICK) not in corrupted[0]["lang"]
-    assert corrupted_metrics["corrupted"] == 1
+    assert "--history-dropout-probability" not in options
+    assert "--history-corruption-probability" not in options
+    assert not hasattr(TRAIN, "_prepare_training_examples")
 
 
 def test_zero3_component_norms_use_partitioned_gradient_buffers() -> None:

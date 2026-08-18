@@ -115,12 +115,14 @@ PCT Liangzhu raw 使用 `scripts/convert_pct_dataset.py`。它保留 5 Hz 双相
 `[-5, 0]`、跨度 0.20 秒，以及状态插值和命令零阶保持方法。该静态 box1→box2 任务
 属于 PCT 适配 pilot，不能伪装成传送带动态抓取配额。
 
-Liangzhu seen 层不修改旧 base，而是生成包含 navigation/planning 与专家切换
-verifier transition observation 的 expanded base，并使用新 sidecar schema
-`conveyor-vla-al0-liangzhu-seen-dense-transition-view-6`。它保留全部 phase boundary row，
+Liangzhu seen 层只从新的 `liangzhu_0815_n200` 与 `liangzhu_0815_n400` 生成独立
+expanded base；旧数据保持只读且不参与训练。sidecar schema 为
+`conveyor-vla-al0-liangzhu-0815-seen-dense-transition-view-7`。它保留全部 phase boundary row，
 用 20 位 `action_valid_mask` 屏蔽跨 Navigation/Manipulation 专家的未来后缀，并提高两个
 导航终点前 2～4 秒和切换前后 1 秒的采样权重。sidecar 不包含
-`subtask_history`，split 继续按完整 `source_episode_id` 复用既有 seed。
+`subtask_history`，模型 example 也不暴露 previous phase；split 继续按完整
+`source_episode_id` 复用既有 seed。manifest 同时给出 train navigation 动作分位数与建议
+物理 scale。
 
 ## 6. 完整性检查
 

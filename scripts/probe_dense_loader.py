@@ -59,6 +59,15 @@ def main(argv: list[str] | None = None) -> int:
                 or "Previous model prediction" in example["lang"]
             ):
                 raise RuntimeError("loader prompt contains externally supplied history")
+            if any(
+                key in example
+                for key in (
+                    "subtask_history",
+                    "previous_subtask_label",
+                    "previous_subtask_text",
+                )
+            ):
+                raise RuntimeError("loader example exposes annotation semantic history")
             if len(example["video"]) != 2 or any(
                 len(clip) != 2 for clip in example["video"]
             ):
