@@ -38,6 +38,14 @@ def main(argv: list[str] | None = None) -> int:
         load_m0_mobile_config(args.config),
         load_temporal_config(args.temporal_config),
     )
+    manifest_path = args.hierarchy_root.expanduser().resolve() / "manifest.json"
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    action_scale_check = _check_action_scales(config, manifest_payload)
+    if not action_scale_check["ok"]:
+        raise RuntimeError(
+            "temporal action scale is smaller than the new train-split "
+            "recommendation: " + ", ".join(action_scale_check["problems"])
+        )
     decoded = []
     for split in ("train", "val", "test"):
         dataset = ConveyorVLAAL0HierarchicalDataset(
@@ -84,15 +92,45 @@ def main(argv: list[str] | None = None) -> int:
                     "navigation_reference_mode": example["navigation_reference_mode"],
                 }
             )
-    manifest = args.hierarchy_root.expanduser().resolve() / "manifest.json"
     report = {
-        "schema_version": "conveyor-vla-al0-dense-loader-probe-1",
+        "schema_version": "conveyor-vla-al0-dense-loader-probe-2",
         "ok": True,
-        "manifest_sha256": _sha256(manifest),
+        "manifest_sha256": _sha256(manifest_path),
+        "action_scale_check": action_scale_check,
         "decoded": decoded,
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
+
+
+def _check_action_scales(
+    config: dict[str, Any], manifest: dict[str, Any]
+) -> dict[str, Any]:
+    scales = [float(value) for value in config["normalization"]["action"]["scale"]]
+    recommendations: dict[str, float] = {}
+    problems = []
+    for key in (
+        "train_navigation_action_statistics",
+        "train_manipulation_action_statistics",
+    ):
+        statistics = manifest[key]
+        indices = statistics["action_indices_in_action10"]
+        values = statistics["recommended_physical_scale"]
+        for index, recommendation in zip(indices, values, strict=True):
+            if recommendation is None:
+                continue
+            value = float(recommendation)
+            recommendations[str(index)] = value
+            if scales[int(index)] + 1.0e-12 < value:
+                problems.append(
+                    f"action[{index}]={scales[int(index)]} < recommended={value}"
+                )
+    return {
+        "ok": not problems,
+        "configured_action_scale": scales,
+        "recommended_minimum_by_action_index": recommendations,
+        "problems": problems,
+    }
 
 
 def _sha256(path: Path) -> str:
