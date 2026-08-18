@@ -369,9 +369,8 @@ def materialize_pct_hierarchy_view(
         with annotations_path.open("w", encoding="utf-8") as stream:
             for row in annotations:
                 stream.write(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n")
-        train_indices = [
-            int(row["base_index"]) for row in annotations if row["split"] == "train"
-        ]
+        train_rows = [row for row in annotations if row["split"] == "train"]
+        train_indices = [int(row["base_index"]) for row in train_rows]
         train_states = np.stack(
             [
                 np.asarray(
@@ -391,6 +390,10 @@ def materialize_pct_hierarchy_view(
         navigation_action_statistics = _train_navigation_action_statistics(
             base_dataset,
             annotations,
+        )
+        navigation_reference_statistics = _train_navigation_reference_statistics(
+            train_states,
+            train_rows,
         )
         phase_counts = Counter(str(row["phase_name"]) for row in annotations)
         domain_counts = Counter(str(row["action_domain_name"]) for row in annotations)
@@ -483,6 +486,9 @@ def materialize_pct_hierarchy_view(
                 for key, value in sorted(valid_action_prefix_counts.items())
             },
             "train_navigation_action_statistics": navigation_action_statistics,
+            "train_navigation_reference_statistics": (
+                navigation_reference_statistics
+            ),
             "train_state_statistics": state_statistics,
             "episodes": episode_reports,
         }
@@ -735,6 +741,43 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
             )
         ):
             problems.append("recommended navigation action scale is invalid")
+    navigation_reference_statistics = manifest.get(
+        "train_navigation_reference_statistics"
+    )
+    if not isinstance(navigation_reference_statistics, Mapping):
+        problems.append("train navigation reference statistics are missing")
+    else:
+        for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET):
+            statistics = navigation_reference_statistics.get(phase.name)
+            if not isinstance(statistics, Mapping):
+                problems.append(f"missing {phase.name} train navigation reference")
+                continue
+            median = statistics.get("arm_joint_position_median")
+            if (
+                not isinstance(median, list)
+                or len(median) != 6
+                or max(
+                    abs(float(value) - reference)
+                    for value, reference in zip(
+                        median,
+                        NAVIGATION_ARM_JOINT_REFERENCES[phase],
+                        strict=True,
+                    )
+                )
+                > 0.01
+            ):
+                problems.append(
+                    f"{phase.name} composer reference disagrees with train pose"
+                )
+            if not math.isclose(
+                float(statistics.get("gripper_open_fraction_median", math.nan)),
+                NAVIGATION_GRIPPER_REFERENCES[phase],
+                rel_tol=0.0,
+                abs_tol=0.05,
+            ):
+                problems.append(
+                    f"{phase.name} composer gripper disagrees with train pose"
+                )
     return {
         "schema_version": "conveyor-vla-al0-dense-transition-audit-1",
         "ok": not problems,
@@ -757,6 +800,9 @@ def audit_dense_transition_view(root: str | Path) -> dict[str, Any]:
         "boundary_discontinuities": discontinuities,
         "navigation_trace": navigation_trace,
         "train_navigation_action_statistics": navigation_statistics,
+        "train_navigation_reference_statistics": (
+            navigation_reference_statistics
+        ),
         "problems": problems,
     }
 
@@ -890,6 +936,7 @@ def _train_navigation_action_statistics(
 
     channels: dict[str, Any] = {}
     recommended = []
+    previous_scales = (0.3, 0.35)
     for index, name in enumerate(("vx_mps", "wz_radps")):
         channel = values[:, index]
         absolute = np.abs(channel)
@@ -905,6 +952,10 @@ def _train_navigation_action_statistics(
             "absolute_p99": float(quantiles[1]),
             "absolute_p99_5": float(quantiles[2]),
             "absolute_p99_9": float(quantiles[3]),
+            "previous_scale": previous_scales[index],
+            "previous_scale_clip_fraction": float(
+                np.mean(absolute > previous_scales[index])
+            ),
             "recommended_scale_clip_fraction": float(
                 np.mean(absolute > scale)
             ),
@@ -916,6 +967,7 @@ def _train_navigation_action_statistics(
         "action_indices_in_action10": [0, 2],
         "channel_order": ["vx_mps", "wz_radps"],
         "channels": channels,
+        "previous_physical_scale": list(previous_scales),
         "recommended_physical_scale": recommended,
         "scale_rule": "1.05_times_train_absolute_p99_9_with_1e-4_floor",
     }
@@ -953,6 +1005,36 @@ def _state_statistics(states: np.ndarray) -> dict[str, Any]:
         "source_files": ["LeRobotDataset.hf_dataset/observation.state"],
         "source_set_sha256": hashlib.sha256(source_payload).hexdigest(),
     }
+
+
+def _train_navigation_reference_statistics(
+    train_states: np.ndarray,
+    train_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    if train_states.shape != (len(train_rows), 28):
+        raise M0MobileError("train states and hierarchy rows are not aligned")
+    report: dict[str, Any] = {
+        "schema_version": "conveyor-vla-al0-train-navigation-reference-statistics-1"
+    }
+    for phase in (Phase.NAV_TO_SOURCE, Phase.NAV_TO_TARGET):
+        selected = train_states[
+            np.asarray(
+                [int(row["phase_id"]) == int(phase) for row in train_rows],
+                dtype=np.bool_,
+            )
+        ]
+        if not len(selected):
+            raise M0MobileError(f"train split has no {phase.name} reference states")
+        report[phase.name] = {
+            "row_count": len(selected),
+            "arm_joint_position_median": np.median(
+                selected[:, 9:15], axis=0
+            ).tolist(),
+            "gripper_open_fraction_median": float(
+                np.median(selected[:, 27])
+            ),
+        }
+    return report
 
 
 def _load_view_manifest(root: Path) -> Mapping[str, Any]:

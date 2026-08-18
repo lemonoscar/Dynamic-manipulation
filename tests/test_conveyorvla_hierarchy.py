@@ -14,6 +14,7 @@ from conveyor_bench.conveyorvla.dit import (
 )
 from conveyor_bench.conveyorvla.hierarchical_data import (
     _train_navigation_action_statistics,
+    _train_navigation_reference_statistics,
 )
 from conveyor_bench.conveyorvla.policy import (
     ConveyorVLAAL0TwoPassPolicy,
@@ -87,6 +88,33 @@ def test_navigation_scale_is_derived_only_from_valid_train_actions() -> None:
     assert report["row_count"] == 1
     assert report["valid_future_action_count"] == 20
     assert report["recommended_physical_scale"] == pytest.approx([0.525, 0.735])
+
+
+def test_navigation_references_are_derived_from_train_phase_states() -> None:
+    states = torch.zeros((4, 28), dtype=torch.float64).numpy()
+    states[0, 9:15] = 0.1
+    states[1, 9:15] = 0.3
+    states[0:2, 27] = 1.0
+    states[2, 9:15] = -0.2
+    states[3, 9:15] = -0.4
+    rows = [
+        {"phase_id": int(Phase.NAV_TO_SOURCE)},
+        {"phase_id": int(Phase.NAV_TO_SOURCE)},
+        {"phase_id": int(Phase.NAV_TO_TARGET)},
+        {"phase_id": int(Phase.NAV_TO_TARGET)},
+    ]
+
+    report = _train_navigation_reference_statistics(states, rows)
+
+    assert report[Phase.NAV_TO_SOURCE.name][
+        "arm_joint_position_median"
+    ] == pytest.approx([0.2] * 6)
+    assert report[Phase.NAV_TO_SOURCE.name][
+        "gripper_open_fraction_median"
+    ] == 1.0
+    assert report[Phase.NAV_TO_TARGET.name][
+        "arm_joint_position_median"
+    ] == pytest.approx([-0.3] * 6)
 
 
 def test_canonical_subtask_answer_is_visible_parseable_and_determines_dit() -> None:

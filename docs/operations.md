@@ -158,11 +158,13 @@ PCT Liangzhu 的 `liangzhu_0815_n200` 与 `liangzhu_0815_n400` 使用单独入�
 python scripts/convert_pct_dataset.py \
   --source-root DATASETS/liangzhu_0815_n200 \
   --source-root DATASETS/liangzhu_0815_n400 \
+  --require-hierarchy-eligible \
   --audit-only
 
 python scripts/convert_pct_dataset.py \
   --source-root DATASETS/liangzhu_0815_n200 \
   --source-root DATASETS/liangzhu_0815_n400 \
+  --require-hierarchy-eligible \
   --output-root outputs/lerobot_pct_pilot \
   --max-episodes-per-source 4
 ```

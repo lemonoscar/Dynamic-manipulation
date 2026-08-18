@@ -13,6 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
+from conveyor_bench.conveyorvla.hierarchical_data import (  # noqa: E402
+    audit_pct_hierarchy_episode,
+)
 from conveyor_bench.conveyorvla.pct_dataset import (  # noqa: E402
     audit_pct_episode,
     discover_pct_episodes,
@@ -28,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-episodes", type=int)
     parser.add_argument("--max-episodes-per-source", type=int)
     parser.add_argument("--audit-only", action="store_true")
+    parser.add_argument(
+        "--require-hierarchy-eligible",
+        action="store_true",
+        help="select only episodes passing all four-phase and action-domain gates",
+    )
     return parser
 
 
@@ -44,7 +52,12 @@ def main(argv: list[str] | None = None) -> int:
         episodes = tuple(
             episode for group in episodes_by_source for episode in group
         )
-        audits = [audit_pct_episode(root) for root in episodes]
+        audit_episode = (
+            audit_pct_hierarchy_episode
+            if args.require_hierarchy_eligible
+            else audit_pct_episode
+        )
+        audits = [audit_episode(root) for root in episodes]
         eligible = [
             Path(report["episode_root"])
             for report in audits
@@ -66,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
                 )[: args.max_episodes_per_source]
             ]
         audit_summary = {
+            "eligibility_contract": (
+                "four_phase_hierarchy"
+                if args.require_hierarchy_eligible
+                else "base_pct"
+            ),
             "discovered_episodes": len(audits),
             "eligible_episodes": sum(report["eligible"] for report in audits),
             "ineligible_episodes": sum(not report["eligible"] for report in audits),
