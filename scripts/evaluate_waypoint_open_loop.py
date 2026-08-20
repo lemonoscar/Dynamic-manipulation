@@ -43,6 +43,17 @@ FORMAT_RECOVER_REASONS = {
     "subtask_too_long",
     "invalid_subtask_tokens",
 }
+OVERFIT_THRESHOLDS = {
+    "route_accuracy_min": 0.95,
+    "route_recover_rate_max": 0.0,
+    "navigation_ade_mean_m_max": 0.15,
+    "navigation_fde_mean_m_max": 0.25,
+    "navigation_direction_accuracy_min": 0.90,
+    "arm_position_mean_m_max": 0.05,
+    "arm_orientation_mean_rad_max": 0.20,
+    "arm_gripper_accuracy_min": 0.90,
+    "safety_violation_rate_max": 0.0,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--split", choices=("train", "val", "test"), default="val")
+    parser.add_argument(
+        "--profile", choices=("diagnostic", "overfit"), default="diagnostic"
+    )
     parser.add_argument("--rows", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--diffusion-seeds", default="17,29,43,71")
@@ -135,9 +149,21 @@ def main(argv: list[str] | None = None) -> int:
     model.eval()
     policy = accelerator.unwrap_model(model)
     evaluation = ConveyorVLAWaypointDataset(dataset_root, split=args.split)
-    selected = training._balanced_subset_indices(evaluation, args.rows)
-    if selected is None:
-        raise M0MobileError("open-loop balanced selection unexpectedly returned all rows")
+    if args.profile == "overfit":
+        if args.split != "train":
+            raise M0MobileError("overfit evaluation must use the train split")
+        raw_selected = resolved.get("training_subset_indices")
+        if not isinstance(raw_selected, list) or len(raw_selected) != args.rows:
+            raise M0MobileError(
+                "overfit evaluation rows must exactly match the recorded training subset"
+            )
+        selected = [int(value) for value in raw_selected]
+    else:
+        selected = training._balanced_subset_indices(evaluation, args.rows)
+        if selected is None:
+            raise M0MobileError(
+                "open-loop balanced selection unexpectedly returned all rows"
+            )
     local_indices = selected[accelerator.process_index :: accelerator.num_processes]
     if len(local_indices) % args.batch_size:
         raise M0MobileError("open-loop rank shard is not batch aligned")
@@ -193,20 +219,21 @@ def main(argv: list[str] | None = None) -> int:
         for seed in seeds
     }
     accelerator.wait_for_everyone()
+    report = _report(
+        checkpoint,
+        manifest,
+        resolved,
+        args.split,
+        args.profile,
+        selected,
+        route_rows,
+        seed_rows,
+    )
     if accelerator.is_main_process:
-        report = _report(
-            checkpoint,
-            manifest,
-            resolved,
-            args.split,
-            selected,
-            route_rows,
-            seed_rows,
-        )
         training.common._write_json_atomic(args.report.expanduser().resolve(), report)
-        print(json.dumps(report, indent=2, sort_keys=True), flush=True)
+        print(json.dumps(_console_summary(report), indent=2, sort_keys=True), flush=True)
     accelerator.wait_for_everyone()
-    return 0
+    return 0 if report["status"] == "pass" else 1
 
 
 def _action_row(
@@ -378,6 +405,7 @@ def _report(
     manifest: Mapping[str, Any],
     resolved: Mapping[str, Any],
     split: str,
+    profile: str,
     selected: Sequence[int],
     route_rows: Sequence[Mapping[str, Any]],
     seed_rows: Mapping[int, Sequence[Mapping[str, Any]]],
@@ -442,13 +470,54 @@ def _report(
         )
         if field in row and not math.isfinite(float(row[field]))
     ]
+    structural_pass = not format_invalid and not missing_actions and not nonfinite_metrics
+    combined_action = [row for rows in seed_rows.values() for row in rows]
+    nav = [row for row in combined_action if row.get("domain") == "NAVIGATION"]
+    arm = [row for row in combined_action if row.get("domain") == "MANIPULATION"]
+    route_accuracy = _mean(row["target"] == row["predicted"] for row in route_rows)
+    route_recover_rate = _mean(row["predicted"] == "RECOVER" for row in route_rows)
+    quality_metrics = {
+        "route_accuracy": route_accuracy,
+        "route_recover_rate": route_recover_rate,
+        "navigation_ade_mean_m": _mean(row["ade_m"] for row in nav),
+        "navigation_fde_mean_m": _mean(row["fde_m"] for row in nav),
+        "navigation_direction_accuracy": _mean(
+            row["first_waypoint_direction_correct"] for row in nav
+        ),
+        "navigation_segment_violation_rate": _mean(
+            row["segment_violation"] for row in nav
+        ),
+        "navigation_normalization_oob_rate": _mean(
+            row["normalization_out_of_bounds"] for row in nav
+        ),
+        "arm_position_mean_m": _mean(row["tcp_position_error_m"] for row in arm),
+        "arm_orientation_mean_rad": _mean(
+            row["tcp_orientation_error_rad"] for row in arm
+        ),
+        "arm_gripper_accuracy": _mean(row["gripper_accuracy"] for row in arm),
+        "arm_workspace_violation_rate": _mean(row["workspace_violation"] for row in arm),
+        "arm_step_violation_rate": _mean(
+            row["inter_target_step_violation"] for row in arm
+        ),
+        "arm_normalization_oob_rate": _mean(
+            row["normalization_out_of_bounds"] for row in arm
+        ),
+    }
+    overfit_checks = _overfit_checks(quality_metrics) if profile == "overfit" else {}
+    quality_pass = profile != "overfit" or all(overfit_checks.values())
     return {
         "schema_version": "conveyorvla-waypoint-open-loop-report-v1",
-        "status": (
-            "pass"
-            if not format_invalid and not missing_actions and not nonfinite_metrics
-            else "fail"
-        ),
+        "status": "pass" if structural_pass and quality_pass else "fail",
+        "profile": profile,
+        "gate": {
+            "structural_pass": structural_pass,
+            "quality_metrics": quality_metrics,
+            "overfit_thresholds": (
+                dict(OVERFIT_THRESHOLDS) if profile == "overfit" else None
+            ),
+            "overfit_checks": overfit_checks,
+            "quality_pass": quality_pass,
+        },
         "identity": {
             "checkpoint": str(checkpoint),
             "checkpoint_step": manifest["global_step"],
@@ -463,7 +532,7 @@ def _report(
             "rows": len(route_rows),
             "format_invalid_count": sum(row["format_invalid"] for row in route_rows),
             "recover_count": sum(row["predicted"] == "RECOVER" for row in route_rows),
-            "accuracy": _mean(row["target"] == row["predicted"] for row in route_rows),
+            "accuracy": route_accuracy,
             "confusion_matrix": confusion,
             "recover_reasons": dict(
                 Counter(
@@ -521,6 +590,83 @@ def _worst_sample(
         "index": row["index"],
         "seed": row["seed"],
         metric: row[metric],
+    }
+
+
+def _overfit_checks(metrics: Mapping[str, float | None]) -> dict[str, bool]:
+    def at_most(name: str, threshold: str) -> bool:
+        value = metrics[name]
+        return value is not None and value <= OVERFIT_THRESHOLDS[threshold]
+
+    def at_least(name: str, threshold: str) -> bool:
+        value = metrics[name]
+        return value is not None and value >= OVERFIT_THRESHOLDS[threshold]
+
+    safety = OVERFIT_THRESHOLDS["safety_violation_rate_max"]
+    return {
+        "route_accuracy": at_least("route_accuracy", "route_accuracy_min"),
+        "route_recover_rate": at_most(
+            "route_recover_rate", "route_recover_rate_max"
+        ),
+        "navigation_ade": at_most(
+            "navigation_ade_mean_m", "navigation_ade_mean_m_max"
+        ),
+        "navigation_fde": at_most(
+            "navigation_fde_mean_m", "navigation_fde_mean_m_max"
+        ),
+        "navigation_direction": at_least(
+            "navigation_direction_accuracy", "navigation_direction_accuracy_min"
+        ),
+        "arm_position": at_most("arm_position_mean_m", "arm_position_mean_m_max"),
+        "arm_orientation": at_most(
+            "arm_orientation_mean_rad", "arm_orientation_mean_rad_max"
+        ),
+        "arm_gripper": at_least(
+            "arm_gripper_accuracy", "arm_gripper_accuracy_min"
+        ),
+        "navigation_segment_safety": (
+            metrics["navigation_segment_violation_rate"] is not None
+            and metrics["navigation_segment_violation_rate"] <= safety
+        ),
+        "navigation_normalization_bounds": (
+            metrics["navigation_normalization_oob_rate"] is not None
+            and metrics["navigation_normalization_oob_rate"] <= safety
+        ),
+        "arm_workspace_safety": (
+            metrics["arm_workspace_violation_rate"] is not None
+            and metrics["arm_workspace_violation_rate"] <= safety
+        ),
+        "arm_step_safety": (
+            metrics["arm_step_violation_rate"] is not None
+            and metrics["arm_step_violation_rate"] <= safety
+        ),
+        "arm_normalization_bounds": (
+            metrics["arm_normalization_oob_rate"] is not None
+            and metrics["arm_normalization_oob_rate"] <= safety
+        ),
+    }
+
+
+def _console_summary(report: Mapping[str, Any]) -> dict[str, Any]:
+    gate = _mapping(report["gate"], "report gate")
+    identity = _mapping(report["identity"], "report identity")
+    route = _mapping(report["route"], "report route")
+    action = _mapping(report["oracle_prefix_action"], "report action")
+    return {
+        "schema_version": report["schema_version"],
+        "status": report["status"],
+        "profile": report["profile"],
+        "report_checkpoint": identity["checkpoint"],
+        "checkpoint_step": identity["checkpoint_step"],
+        "split": identity["split"],
+        "selected_row_count": len(identity["selected_indices"]),
+        "route_accuracy": route["accuracy"],
+        "route_recover_count": route["recover_count"],
+        "format_invalid_count": route["format_invalid_count"],
+        "quality_metrics": gate["quality_metrics"],
+        "overfit_checks": gate["overfit_checks"],
+        "missing_action_count": action["missing_action_count"],
+        "nonfinite_metric_count": len(action["nonfinite_metrics"]),
     }
 
 

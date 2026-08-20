@@ -185,14 +185,34 @@ def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_first_waypoint():
     )
     planned = executor.begin(response, (1.0, 2.0, 1.57079632679), now_s=0.0)
     assert not planned.failed
-    assert pct.calls[0][1] == pytest.approx((1.0, 2.2, 1.57079632679))
+    assert planned.gripper_target == 1.0
+    assert pct.calls[0][1] == pytest.approx((1.0, 2.2, 0.0, 1.57079632679))
     command = executor.step((1.0, 2.0, 1.57079632679), (0.0, 0.0, 0.0), object(), now_s=0.1)
     assert command.base_velocity == (0.2, 0.05, 0.3)
+    assert command.gripper_target == 1.0
     assert len(dwa.calls) == 1
     reached = executor.step((1.0, 2.2, 1.57079632679), (0.0, 0.0, 0.0), object(), now_s=0.2)
     assert reached.base_velocity == (0.0, 0.0, 0.0)
     assert reached.requires_requery
     assert reached.reason == "first_waypoint_reached"
+
+
+def test_nav_preserves_base_height_for_pct_local_goal():
+    pct = _PCT()
+    response = _response(
+        WaypointRoute.NAV_TO_TARGET,
+        [(0.2, 0.0, 0.0)] * ACTION_HORIZON,
+    )
+    executor = PCTDWARecedingHorizonExecutor(pct, _DWA())
+    planned = executor.begin(
+        response,
+        (1.0, 2.0, 1.25, 1.0, 0.0, 0.0, 0.0),
+        now_s=0.0,
+    )
+    assert not planned.failed
+    assert planned.gripper_target == 0.0
+    assert pct.calls[0][0] == (1.0, 2.0, 1.25, 0.0)
+    assert pct.calls[0][1] == pytest.approx((1.2, 2.0, 1.25, 0.0))
 
 
 def test_nav_pct_failure_and_unsafe_dwa_are_zero_speed_fail_closed():
