@@ -136,7 +136,7 @@ def test_gradient_accumulation_has_one_runtime_source_of_truth():
     accelerator = SimpleNamespace(
         state=SimpleNamespace(
             deepspeed_plugin=SimpleNamespace(
-                deepspeed_config={"gradient_accumulation_steps": "auto"}
+                deepspeed_config={"gradient_accumulation_steps": 2}
             )
         ),
         gradient_accumulation_steps=2,

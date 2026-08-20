@@ -648,10 +648,10 @@ def _validate_accumulation_config(
     if plugin is None:
         return
     configured = plugin.deepspeed_config.get("gradient_accumulation_steps")
-    if configured not in ("auto", expected):
+    if configured != expected:
         raise M0MobileError(
             "DeepSpeed gradient accumulation conflicts with the training CLI: "
-            f"config={configured!r}, cli={expected}; use 'auto' in the launch config"
+            f"config={configured!r}, cli={expected}"
         )
 
 
