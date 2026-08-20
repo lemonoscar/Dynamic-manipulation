@@ -74,7 +74,8 @@ class DirectPoseCuroboService:
                 "arm_vla_reference_commit": self.reference_commit,
                 "features": {
                     "direct_absolute_tcp_target": True,
-                    "target_frame": "query-base-B_t",
+                    "input_target_frame": "query-base-B_t",
+                    "planner_target_frame": "curobo-planner-base",
                     "orientation_fallback": False,
                     "world_collision": True,
                 },
@@ -101,6 +102,9 @@ class DirectPoseCuroboService:
         scene_collision = request.get("scene_collision")
         if not isinstance(scene_collision, Mapping) or "cuboids_base" not in scene_collision:
             raise ValueError("cuRobo request requires typed cuboids_base collision input")
+        if scene_collision.get("frame") != "curobo-planner-base":
+            raise ValueError("cuRobo collision frame must be curobo-planner-base")
+        transform = _planner_base_transform(scene_collision)
         cuboids = scene_collision["cuboids_base"]
         if not isinstance(cuboids, Sequence) or isinstance(cuboids, (str, bytes)):
             raise ValueError("cuRobo cuboids_base must be a sequence")
@@ -113,12 +117,18 @@ class DirectPoseCuroboService:
         )
         if float(np.max(np.abs(q_start - np.asarray(joints)))) > MAX_START_JOINT_CLIP_RAD:
             raise ValueError("current joints exceed cuRobo limits by more than the clip tolerance")
-        target_position = np.asarray(target[:3], dtype=np.float32)
-        target_quaternion = np.asarray(
-            _rpy_to_quaternion(*target[3:]), dtype=np.float32
+        query_target_position = target[:3]
+        query_target_quaternion = _rpy_to_quaternion(*target[3:])
+        target_position, target_quaternion = _transform_pose(
+            transform["position_xyz"],
+            transform["quaternion_wxyz"],
+            query_target_position,
+            query_target_quaternion,
         )
+        target_position_array = np.asarray(target_position, dtype=np.float32)
+        target_quaternion_array = np.asarray(target_quaternion, dtype=np.float32)
         collision_scene = self.module.make_world_collision_scene(
-            {"world_collision": dict(scene_collision)}
+            {"world_collision": {"cuboids_base": list(cuboids)}}
         )
         self.module.update_planner_world(self.planner, collision_scene)
         started = time.perf_counter()
@@ -126,8 +136,8 @@ class DirectPoseCuroboService:
             joint_path, plan_info = self.module.plan_pose_path(
                 planner=self.planner,
                 q_start=q_start,
-                target_position=target_position,
-                target_quaternion=target_quaternion,
+                target_position=target_position_array,
+                target_quaternion=target_quaternion_array,
                 segment_name="approach_to_grasp",
             )
             final_position, final_quaternion = self.module.run_fk(
@@ -137,10 +147,10 @@ class DirectPoseCuroboService:
             raise RuntimeError("cuRobo did not report a successful direct-pose plan")
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         position_error = float(
-            np.linalg.norm(np.asarray(final_position) - target_position)
+            np.linalg.norm(np.asarray(final_position) - target_position_array)
         )
         orientation_error = _quaternion_error_rad(
-            final_quaternion, target_quaternion
+            final_quaternion, target_quaternion_array
         )
         path = np.asarray(joint_path, dtype=np.float64)
         if path.ndim != 2 or path.shape[1] != len(joints) or not np.isfinite(path).all():
@@ -156,9 +166,12 @@ class DirectPoseCuroboService:
             "target_orientation_error_rad": orientation_error,
             "metadata": {
                 "planner": "curobo.MotionPlanner.plan_pose",
-                "target_frame": "query-base-B_t",
-                "target_position_xyz": target_position.tolist(),
-                "target_quaternion_wxyz": target_quaternion.tolist(),
+                "input_target_frame": "query-base-B_t",
+                "planner_target_frame": "curobo-planner-base",
+                "input_target_tcp_rpy": list(target),
+                "planner_base_from_query_base": transform,
+                "planner_target_position_xyz": target_position_array.tolist(),
+                "planner_target_quaternion_wxyz": target_quaternion_array.tolist(),
                 "plan_info": _jsonable(plan_info),
                 "world_collision_cuboid_count": len(cuboids),
                 "orientation_fallback_used": False,
@@ -297,6 +310,92 @@ def _rpy_to_quaternion(
     )
     norm = math.sqrt(sum(value * value for value in quaternion))
     return tuple(value / norm for value in quaternion)  # type: ignore[return-value]
+
+
+def _planner_base_transform(
+    scene_collision: Mapping[str, Any],
+) -> dict[str, tuple[float, ...]]:
+    raw = scene_collision.get("planner_base_from_query_base")
+    if not isinstance(raw, Mapping):
+        raise ValueError("cuRobo scene requires planner_base_from_query_base")
+    position = _finite_vector(raw.get("position_xyz"), 3, "planner/query translation")
+    quaternion = _finite_vector(
+        raw.get("quaternion_wxyz"), 4, "planner/query quaternion"
+    )
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    if abs(norm - 1.0) > 1.0e-4:
+        raise ValueError("planner/query quaternion must be normalized")
+    return {
+        "position_xyz": position,
+        "quaternion_wxyz": quaternion,
+    }
+
+
+def _transform_pose(
+    parent_from_child_position: Sequence[float],
+    parent_from_child_quaternion: Sequence[float],
+    child_target_position: Sequence[float],
+    child_target_quaternion: Sequence[float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
+    translation = _finite_vector(
+        parent_from_child_position, 3, "planner/query translation"
+    )
+    rotation = _normalized_quaternion(
+        parent_from_child_quaternion, "planner/query quaternion"
+    )
+    position = _finite_vector(child_target_position, 3, "query target position")
+    orientation = _normalized_quaternion(
+        child_target_quaternion, "query target quaternion"
+    )
+    rotated = _rotate_vector(rotation, position)
+    target_position = tuple(
+        translation[index] + rotated[index] for index in range(3)
+    )
+    target_quaternion = _normalized_quaternion(
+        _quaternion_multiply(rotation, orientation), "planner target quaternion"
+    )
+    return target_position, target_quaternion  # type: ignore[return-value]
+
+
+def _normalized_quaternion(
+    value: Sequence[float], name: str
+) -> tuple[float, float, float, float]:
+    quaternion = _finite_vector(value, 4, name)
+    norm = math.sqrt(sum(item * item for item in quaternion))
+    if norm < 1.0e-9:
+        raise ValueError(f"{name} is degenerate")
+    return tuple(item / norm for item in quaternion)  # type: ignore[return-value]
+
+
+def _quaternion_multiply(
+    left: Sequence[float], right: Sequence[float]
+) -> tuple[float, float, float, float]:
+    lw, lx, ly, lz = left
+    rw, rx, ry, rz = right
+    return (
+        lw * rw - lx * rx - ly * ry - lz * rz,
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+    )
+
+
+def _rotate_vector(
+    quaternion: Sequence[float], vector: Sequence[float]
+) -> tuple[float, float, float]:
+    w, x, y, z = quaternion
+    vx, vy, vz = vector
+    return (
+        (1.0 - 2.0 * (y * y + z * z)) * vx
+        + 2.0 * (x * y - z * w) * vy
+        + 2.0 * (x * z + y * w) * vz,
+        2.0 * (x * y + z * w) * vx
+        + (1.0 - 2.0 * (x * x + z * z)) * vy
+        + 2.0 * (y * z - x * w) * vz,
+        2.0 * (x * z - y * w) * vx
+        + 2.0 * (y * z + x * w) * vy
+        + (1.0 - 2.0 * (x * x + y * y)) * vz,
+    )
 
 
 def _quaternion_error_rad(first: Sequence[float], second: Sequence[float]) -> float:

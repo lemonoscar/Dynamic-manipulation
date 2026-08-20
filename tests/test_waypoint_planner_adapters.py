@@ -35,6 +35,22 @@ class _Goal:
     z: float
 
 
+def _planner_scene(
+    *,
+    position=(0.0, 0.0, 0.0),
+    quaternion=(1.0, 0.0, 0.0, 0.0),
+    cuboids=(),
+):
+    return {
+        "frame": "curobo-planner-base",
+        "planner_base_from_query_base": {
+            "position_xyz": list(position),
+            "quaternion_wxyz": list(quaternion),
+        },
+        "cuboids_base": list(cuboids),
+    }
+
+
 @dataclass
 class _ReferencePlan:
     waypoints: tuple[tuple[float, float], ...]
@@ -159,7 +175,7 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
     plan = adapter.plan(
         (0.0, 0.0),
         (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
-        {"cuboids_base": []},
+        _planner_scene(),
     )
     assert plan.planner == "curobo" and plan.reachable and plan.collision_free
     assert set(requests[0]) == {
@@ -175,6 +191,10 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
     assert "phase" not in requests[0] and "target_pose_world" not in requests[0]
     assert plan.metadata["current_joints"] == [0.0, 0.0]
     assert plan.metadata["target_tcp_base"] == [0.3, 0.0, 0.2, 0.0, 0.0, 0.0]
+    assert plan.metadata["planner_base_from_query_base"] == {
+        "position_xyz": [0.0, 0.0, 0.0],
+        "quaternion_wxyz": [1.0, 0.0, 0.0, 0.0],
+    }
     assert plan.metadata["scene_collision_cuboid_count"] == 0
 
     rejecting = WaypointCuRoboPlannerAdapter(
@@ -187,7 +207,7 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
         rejecting.plan(
             (0.0, 0.0),
             (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
-            {"cuboids_base": []},
+            _planner_scene(),
         )
 
 
@@ -273,7 +293,7 @@ def test_direct_pose_service_plans_the_exact_rpy_target_without_fallback():
             "target_units": ["m", "m", "m", "rad", "rad", "rad"],
             "current_joints": [0.0, 0.0],
             "target_tcp_base": [0.3, 0.0, 0.2, 0.0, 0.0, 0.0],
-            "scene_collision": {"cuboids_base": []},
+            "scene_collision": _planner_scene(),
         }
     )
     assert response["ok"] is True
@@ -282,6 +302,38 @@ def test_direct_pose_service_plans_the_exact_rpy_target_without_fallback():
     assert module.target_quaternion.tolist() == pytest.approx([1.0, 0.0, 0.0, 0.0])
     assert response["metadata"]["orientation_fallback_used"] is False
     assert module.collision == {"world_collision": {"cuboids_base": []}}
+
+
+def test_direct_pose_service_transforms_query_base_target_into_planner_base():
+    module = _CuroboModule()
+    service = DirectPoseCuroboService(
+        module,
+        object(),
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    half_sqrt = 2.0**-0.5
+    response = service.handle(
+        {
+            "schema_version": CUROBO_REQUEST_SCHEMA,
+            "command": "plan_tcp_target",
+            "deployment": "simulation",
+            "target_frame": "query-base-B_t",
+            "target_units": ["m", "m", "m", "rad", "rad", "rad"],
+            "current_joints": [0.0, 0.0],
+            "target_tcp_base": [0.3, 0.1, 0.2, 0.0, 0.0, 0.0],
+            "scene_collision": _planner_scene(
+                position=(1.0, 2.0, 3.0),
+                quaternion=(half_sqrt, 0.0, 0.0, half_sqrt),
+            ),
+        }
+    )
+    assert response["ok"] is True
+    assert module.target_position.tolist() == pytest.approx([0.9, 2.3, 3.2])
+    assert module.target_quaternion.tolist() == pytest.approx(
+        [half_sqrt, 0.0, 0.0, half_sqrt]
+    )
+    assert response["metadata"]["input_target_frame"] == "query-base-B_t"
+    assert response["metadata"]["planner_target_frame"] == "curobo-planner-base"
 
 
 def test_direct_pose_service_rejects_malformed_collision_instead_of_skipping_it():
@@ -299,8 +351,8 @@ def test_direct_pose_service_rejects_malformed_collision_instead_of_skipping_it(
         "target_units": ["m", "m", "m", "rad", "rad", "rad"],
         "current_joints": [0.0, 0.0],
         "target_tcp_base": [0.3, 0.0, 0.2, 0.0, 0.0, 0.0],
-        "scene_collision": {
-            "cuboids_base": [
+        "scene_collision": _planner_scene(
+            cuboids=[
                 {
                     "name": "table",
                     "pose_base": {
@@ -310,7 +362,40 @@ def test_direct_pose_service_rejects_malformed_collision_instead_of_skipping_it(
                     "dims_xyz": [0.0, 0.5, 0.1],
                 }
             ]
-        },
+        ),
     }
     with pytest.raises(ValueError, match="dimensions must be positive"):
+        service.handle(request)
+
+
+def test_curobo_adapter_and_service_reject_missing_query_to_planner_transform():
+    adapter = WaypointCuRoboPlannerAdapter(
+        lambda _request: {},
+        deployment="simulation",
+        safety_gate=lambda _request, _response: True,
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    with pytest.raises(ValueError, match="collision frame"):
+        adapter.plan((0.0, 0.0), (0.3, 0.0, 0.2, 0.0, 0.0, 0.0), {"cuboids_base": []})
+
+    module = _CuroboModule()
+    service = DirectPoseCuroboService(
+        module,
+        object(),
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    request = {
+        "schema_version": CUROBO_REQUEST_SCHEMA,
+        "command": "plan_tcp_target",
+        "deployment": "simulation",
+        "target_frame": "query-base-B_t",
+        "target_units": ["m", "m", "m", "rad", "rad", "rad"],
+        "current_joints": [0.0, 0.0],
+        "target_tcp_base": [0.3, 0.0, 0.2, 0.0, 0.0, 0.0],
+        "scene_collision": {
+            "frame": "curobo-planner-base",
+            "cuboids_base": [],
+        },
+    }
+    with pytest.raises(ValueError, match="planner_base_from_query_base"):
         service.handle(request)

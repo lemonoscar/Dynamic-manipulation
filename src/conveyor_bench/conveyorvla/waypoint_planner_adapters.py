@@ -226,6 +226,7 @@ class WaypointCuRoboPlannerAdapter:
         target = _finite_vector(target_tcp_base, 6, "absolute TCP target")
         if not isinstance(scene_collision, Mapping):
             raise ValueError("cuRobo scene collision must be a typed mapping")
+        transform = _planner_base_transform(scene_collision)
         request = {
             "schema_version": CUROBO_REQUEST_SCHEMA,
             "command": "plan_tcp_target",
@@ -279,11 +280,34 @@ class WaypointCuRoboPlannerAdapter:
                 "target_frame": "query-base-B_t",
                 "current_joints": list(joints),
                 "target_tcp_base": list(target),
+                "planner_base_from_query_base": transform,
                 "scene_collision_cuboid_count": cuboid_count,
                 "transport_elapsed_ms": elapsed_ms,
                 "arm_vla_reference_commit": self.reference_commit,
             },
         )
+
+
+def _planner_base_transform(scene_collision: Mapping[str, Any]) -> dict[str, list[float]]:
+    if scene_collision.get("frame") != "curobo-planner-base":
+        raise ValueError("cuRobo collision frame must be curobo-planner-base")
+    raw = scene_collision.get("planner_base_from_query_base")
+    if not isinstance(raw, Mapping):
+        raise ValueError("cuRobo scene requires planner_base_from_query_base")
+    position = _finite_vector(raw.get("position_xyz"), 3, "planner/query translation")
+    quaternion = _finite_vector(
+        raw.get("quaternion_wxyz"), 4, "planner/query quaternion"
+    )
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    if abs(norm - 1.0) > 1.0e-4:
+        raise ValueError("planner/query quaternion must be normalized")
+    cuboids = scene_collision.get("cuboids_base")
+    if not isinstance(cuboids, Sequence) or isinstance(cuboids, (str, bytes)):
+        raise ValueError("cuRobo scene requires cuboids_base")
+    return {
+        "position_xyz": list(position),
+        "quaternion_wxyz": list(quaternion),
+    }
 
 
 @dataclass(frozen=True)
