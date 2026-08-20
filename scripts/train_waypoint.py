@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -490,6 +491,20 @@ def _resolved_run(
     )
     dataset_root = args.dataset_root.expanduser().resolve()
     config_path = args.config.expanduser().resolve()
+    source_git = _source_git_identity(PROJECT_ROOT)
+    code_snapshot = os.environ.get("CONVEYORVLA_CODE_SNAPSHOT")
+    if code_snapshot and code_snapshot != source_git["commit"]:
+        raise M0MobileError(
+            "CONVEYORVLA_CODE_SNAPSHOT does not match the checked-out Git commit"
+        )
+    camera_contract = {
+        "camera_calibration_id": dataset.manifest["camera_calibration_id"],
+        "visual_history": dataset.manifest["visual_history"],
+    }
+    normalization = {
+        "relative_path": dataset.manifest["normalization_relative_path"],
+        "sha256": dataset.manifest["normalization_sha256"],
+    }
     return {
         "schema_version": "conveyorvla-waypoint-training-run-v1",
         "status": "initializing",
@@ -499,6 +514,9 @@ def _resolved_run(
         "dataset_manifest_sha256": common._sha256(dataset_root / "manifest.json"),
         "dataset_audit_manifest_sha256": audit["manifest_sha256"],
         "normalization_sha256": dataset.manifest["normalization_sha256"],
+        "normalization": normalization,
+        "camera_contract": camera_contract,
+        "dataset_action_contract": dataset.manifest["action_contract"],
         "config": str(config_path),
         "config_sha256": common._sha256(config_path),
         "model_root": str(args.model_root.expanduser().resolve()),
@@ -533,7 +551,8 @@ def _resolved_run(
         "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "visible_gpu_uuids": os.environ.get("CONVEYORVLA_GPU_UUIDS"),
         "conda_environment": os.environ.get("CONVEYORVLA_CONDA_ENV"),
-        "code_snapshot": os.environ.get("CONVEYORVLA_CODE_SNAPSHOT"),
+        "code_snapshot": code_snapshot,
+        "source_git": source_git,
         "rank_tmp_root": os.environ.get("CONVEYORVLA_RANK_TMP_ROOT"),
         "rank_tmpdir": (
             None if common.RANK_TMPDIR is None else str(common.RANK_TMPDIR)
@@ -581,6 +600,38 @@ def _qwen_base_identity(model_dir: Path) -> dict[str, Any]:
                 "sha256": common._sha256(path),
             }
             for path in paths
+        },
+    }
+
+
+def _source_git_identity(repo: Path) -> dict[str, Any]:
+    def run(*arguments: str) -> str:
+        try:
+            return subprocess.run(
+                ["git", "-C", str(repo), *arguments],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise M0MobileError(f"cannot record source Git identity: {error}") from error
+
+    commit = run("rev-parse", "HEAD").strip()
+    porcelain = tuple(
+        line
+        for line in run(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ).splitlines()
+        if line
+    )
+    return {
+        "commit": commit,
+        "dirty_state_artifact": {
+            "format": "git-status-porcelain-v1",
+            "is_dirty": bool(porcelain),
+            "entries": list(porcelain),
         },
     }
 
@@ -676,12 +727,17 @@ def _save_waypoint_checkpoint(
                 "dataset_schema_version": resolved["dataset_schema_version"],
                 "dataset_manifest_sha256": resolved["dataset_manifest_sha256"],
                 "normalization_sha256": resolved["normalization_sha256"],
+                "normalization": resolved["normalization"],
+                "camera_contract": resolved["camera_contract"],
+                "dataset_action_contract": resolved["dataset_action_contract"],
                 "special_token_ids": resolved["special_token_ids"],
                 "qwen_base": resolved["qwen_base"],
                 "action_contract": resolved["resolved_policy_config"]["action_model"],
                 "route_confidence_min": resolved["route_confidence_min"],
                 "processor_relative_path": "../../processor",
+                "resolved_policy_config_sha256": resolved["config_sha256"],
                 "resolved_run_sha256": common._sha256(resolved_path),
+                "source_git": resolved["source_git"],
                 "legacy_state_projection_present": False,
             },
         )
