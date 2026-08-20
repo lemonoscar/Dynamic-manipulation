@@ -13,6 +13,7 @@ from conveyor_bench.conveyorvla.waypoint import (
     canonical_solution,
 )
 from conveyor_bench.conveyorvla.waypoint_model import (
+    ConstrainedRouteDecision,
     ConstrainedWaypointRouter,
     ConveyorVLAWaypointPolicy,
     LayerwiseFlowMatchingActionHead,
@@ -98,11 +99,13 @@ class _OracleBackbone(nn.Module):
             [nn.Parameter(torch.randn(6, cross_dim) * 0.1) for _ in range(layer_count)]
         )
 
-    def forward(self, input_ids, labels, **_kwargs):
+    def forward(self, input_ids, labels=None, **_kwargs):
         batch_size = input_ids.shape[0]
         logits = self.logits[None].expand(batch_size, -1, -1)
-        supervised = labels != -100
-        loss = F.cross_entropy(logits[supervised], labels[supervised])
+        loss = None
+        if labels is not None:
+            supervised = labels != -100
+            loss = F.cross_entropy(logits[supervised], labels[supervised])
         hidden_states = tuple(value[None].expand(batch_size, -1, -1) for value in self.hidden)
         return SimpleNamespace(loss=loss, logits=logits, hidden_states=hidden_states)
 
@@ -113,7 +116,7 @@ class _OracleQwen(nn.Module):
         self.model = _OracleBackbone(cross_dim, layer_count)
         self.processor = SimpleNamespace(tokenizer=_Tokenizer())
 
-    def build_waypoint_inputs(self, examples, **_kwargs):
+    def build_waypoint_inputs(self, examples, *, supervise_solutions=True, **_kwargs):
         labels = torch.full((len(examples), 6), -100, dtype=torch.long)
         for index, example in enumerate(examples):
             route = WaypointRoute(example["route"])
@@ -124,11 +127,13 @@ class _OracleQwen(nn.Module):
                 labels[index, 2] = TOKEN_IDS[ROUTE_TOKENS[route]]
                 labels[index, 3] = TOKEN_IDS["<|subtask|>"]
                 labels[index, 4] = TOKEN_IDS["<|end_subtask|>"]
-        return {
+        result = {
             "input_ids": torch.zeros_like(labels),
             "attention_mask": torch.ones_like(labels),
-            "labels": labels,
         }
+        if supervise_solutions:
+            result["labels"] = labels
+        return result
 
     def forward(self, **kwargs):
         return self.model(**kwargs)
@@ -274,12 +279,68 @@ def test_oracle_loss_reaches_qwen_and_both_independent_experts():
         )
 
 
-def test_missing_expert_touches_every_parameter_without_fake_samples():
+def test_missing_expert_executes_zero_weight_forward_on_every_parameter():
     qwen = _OracleQwen(cross_dim=8, layer_count=2)
     nav, arm = _head(3), _head(7)
     policy = ConveyorVLAWaypointPolicy(qwen, nav, arm, route_confidence_min=0.55)
+    calls = []
+    handle = arm.transformer_blocks[0].register_forward_hook(
+        lambda *_args: calls.append(True)
+    )
     result = policy.oracle_loss([_example(WaypointRoute.NAV_TO_SOURCE)])
+    handle.remove()
     assert result["manipulation_samples"] == 0
+    assert calls == [True]
     result["loss"].backward()
+    assert all(parameter.grad is not None for parameter in arm.parameters())
+    assert all(torch.count_nonzero(parameter.grad) == 0 for parameter in arm.parameters())
+
+
+def test_self_conditioning_keeps_full_batch_and_masks_nonmatches():
+    qwen = _OracleQwen(cross_dim=8, layer_count=2)
+    nav, arm = _head(3), _head(7)
+    policy = ConveyorVLAWaypointPolicy(qwen, nav, arm, route_confidence_min=0.55)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE),
+        _example(WaypointRoute.PICK),
+    ]
+    decisions = (
+        ConstrainedRouteDecision(
+            route=WaypointRoute.NAV_TO_SOURCE,
+            assistant_prefix=canonical_solution(WaypointRoute.NAV_TO_SOURCE),
+            subtask_text="navigate",
+            route_confidence=0.9,
+            decision_probs={},
+            route_probs={},
+            valid=True,
+        ),
+        ConstrainedRouteDecision(
+            route=None,
+            assistant_prefix="",
+            subtask_text="",
+            route_confidence=0.1,
+            decision_probs={},
+            route_probs={},
+            valid=False,
+            recover_reason="low_confidence",
+        ),
+    )
+    policy.router = SimpleNamespace(decode=lambda _examples: decisions)
+    arm_calls = []
+    handle = arm.transformer_blocks[0].register_forward_hook(
+        lambda *_args: arm_calls.append(True)
+    )
+    result = policy.self_conditioned_loss(examples)
+    handle.remove()
+    assert result["navigation_samples"] == 1
+    assert result["manipulation_samples"] == 0
+    assert result["route_matches"] == 1
+    assert result["route_recovers"] == 1
+    assert arm_calls == [True]
+    result["loss"].backward()
+    assert any(
+        parameter.grad is not None and torch.count_nonzero(parameter.grad) > 0
+        for parameter in nav.parameters()
+    )
     assert all(parameter.grad is not None for parameter in arm.parameters())
     assert all(torch.count_nonzero(parameter.grad) == 0 for parameter in arm.parameters())

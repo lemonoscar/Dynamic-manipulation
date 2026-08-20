@@ -271,7 +271,14 @@ class ConstrainedWaypointRouter:
                 dim=-1,
             )
             decision_choice = decision_probs.argmax(dim=-1)
-            if bool((decision_choice == 0).any()):
+            # ZeRO-3 ranks must enter every sharded Qwen module in the same
+            # order.  A rank whose local batch is all DONE therefore follows
+            # the ACTION branch whenever any peer rank needs it; its result is
+            # ignored below.  synced_gpus keeps generation aligned afterwards.
+            if _distributed_any(
+                bool((decision_choice == 0).any()),
+                decision_probs.device,
+            ):
                 action_ids = torch.full(
                     (len(examples), 1),
                     self.token_ids.pred_action,
@@ -753,26 +760,17 @@ class ConveyorVLAWaypointPolicy(nn.Module):
             for index, decision in enumerate(decisions)
         )
         route_recovers = sum(not decision.valid for decision in decisions)
-        if not matched_indices:
-            zero = _parameter_touch(self.navigation_head) + _parameter_touch(
-                self.manipulation_head
-            )
-            return {
-                "loss": zero,
-                "self_conditioned_loss": zero,
-                "navigation_loss": _parameter_touch(self.navigation_head),
-                "manipulation_loss": _parameter_touch(self.manipulation_head),
-                "navigation_samples": 0,
-                "manipulation_samples": 0,
-                "route_matches": route_matches,
-                "route_mismatches": route_mismatches,
-                "route_recovers": route_recovers,
-            }
-        selected = [examples[index] for index in matched_indices]
+        # Every rank performs Pass 2 over its full local batch.  Only exact
+        # route matches contribute loss, but keeping Qwen and both heads in a
+        # fixed module order is required by ZeRO-3.  RECOVER has no model
+        # prefix, so PRED_DONE is an inert, zero-weight placeholder.
         inputs = dict(
             self.qwen.build_waypoint_inputs(
-                selected,
-                solutions=[decisions[index].assistant_prefix for index in matched_indices],
+                examples,
+                solutions=[
+                    decision.assistant_prefix or PRED_DONE_TOKEN
+                    for decision in decisions
+                ],
                 supervise_solutions=False,
             )
         )
@@ -789,18 +787,20 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         if attention_mask is None:
             raise RuntimeError("Qwen processor did not return an attention mask")
         nav_loss, nav_samples = self._domain_loss(
-            selected,
+            examples,
             layers,
             attention_mask,
             domain=WaypointActionDomain.NAVIGATION,
             head=self.navigation_head,
+            eligible_indices=set(matched_indices),
         )
         arm_loss, arm_samples = self._domain_loss(
-            selected,
+            examples,
             layers,
             attention_mask,
             domain=WaypointActionDomain.MANIPULATION,
             head=self.manipulation_head,
+            eligible_indices=set(matched_indices),
         )
         count = nav_samples + arm_samples
         combined = (
@@ -913,16 +913,18 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         *,
         domain: WaypointActionDomain,
         head: LayerwiseFlowMatchingActionHead,
+        eligible_indices: set[int] | None = None,
     ) -> tuple[torch.Tensor, int]:
         indices = [
             index
             for index, example in enumerate(examples)
-            if str(example["action_domain"]) == domain.value
+            if (eligible_indices is None or index in eligible_indices)
+            and str(example["action_domain"]) == domain.value
             and example.get("action") is not None
             and any(bool(value) for value in example["action_valid_mask"])
         ]
         if not indices:
-            return _parameter_touch(head), 0
+            return _zero_domain_loss(layers, attention_mask, head), 0
         index_tensor = torch.as_tensor(indices, device=layers[0].device)
         device = next(head.parameters()).device
         dtype = next(head.parameters()).dtype
@@ -1099,11 +1101,51 @@ def _label_position(labels: torch.Tensor, token_id: int) -> int:
     return position
 
 
-def _parameter_touch(module: nn.Module) -> torch.Tensor:
-    terms = [parameter.sum() * 0.0 for parameter in module.parameters()]
-    if not terms:
-        raise RuntimeError("waypoint action head unexpectedly has no parameters")
-    return torch.stack(terms).sum()
+def _zero_domain_loss(
+    layers: Sequence[torch.Tensor],
+    attention_mask: torch.Tensor,
+    head: LayerwiseFlowMatchingActionHead,
+) -> torch.Tensor:
+    """Enter every expert module while contributing an exact zero loss."""
+
+    if not layers or layers[0].shape[0] == 0:
+        raise RuntimeError("waypoint dummy expert pass needs one Qwen sample")
+    device = next(head.parameters()).device
+    dtype = next(head.parameters()).dtype
+    selected_layers = tuple(
+        layer[:1].to(device=device, dtype=dtype) for layer in layers
+    )
+    actions = torch.zeros(
+        (1, head.config.action_horizon, head.config.action_dim),
+        device=device,
+        dtype=dtype,
+    )
+    valid = torch.ones(
+        (1, head.config.action_horizon),
+        device=device,
+        dtype=torch.bool,
+    )
+    selected_attention = attention_mask[:1].to(device)
+    with _action_autocast(device, dtype):
+        loss = head(
+            selected_layers,
+            actions,
+            encoder_attention_mask=selected_attention,
+            action_valid_mask=valid,
+            noise=torch.zeros_like(actions),
+            time=torch.zeros(1, device=device, dtype=dtype),
+        )
+    return loss * 0.0
+
+
+def _distributed_any(value: bool, device: torch.device) -> bool:
+    if not (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    ):
+        return value
+    flag = torch.tensor(int(value), device=device, dtype=torch.int32)
+    torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+    return bool(flag.item())
 
 
 def _action_autocast(device: torch.device, dtype: torch.dtype) -> Any:
