@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from scripts.serve_waypoint_curobo import DirectPoseCuroboService
+from scripts.serve_waypoint_curobo import (
+    DirectPoseCuroboService,
+    build_parser as build_curobo_parser,
+)
 
 from conveyor_bench.conveyorvla.waypoint_execution import ArmPlan
 from conveyor_bench.conveyorvla.waypoint_planner_adapters import (
@@ -49,6 +52,19 @@ def _planner_scene(
         },
         "cuboids_base": list(cuboids),
     }
+
+
+def test_curobo_service_accepts_separate_runtime_workspace():
+    args = build_curobo_parser().parse_args(
+        [
+            "--reference-root",
+            "/clean/reference",
+            "--workspace-root",
+            "/runtime/assets",
+        ]
+    )
+    assert args.reference_root.as_posix() == "/clean/reference"
+    assert args.workspace_root.as_posix() == "/runtime/assets"
 
 
 @dataclass

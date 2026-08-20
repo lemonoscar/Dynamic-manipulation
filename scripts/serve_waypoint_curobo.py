@@ -36,6 +36,7 @@ MAX_START_JOINT_CLIP_RAD = 1.0e-3
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-root", required=True, type=Path)
+    parser.add_argument("--workspace-root", type=Path)
     parser.add_argument("--curobo-source-root", type=Path)
     parser.add_argument("--host", default="127.0.0.1", choices=("127.0.0.1", "::1"))
     parser.add_argument("--port", type=int, default=8766)
@@ -220,7 +221,14 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError(
             f"arm-vla reference must be {APPROVED_ARM_VLA_COMMIT}, got {commit}"
         )
-    os.environ["GO2_X5_WORKSPACE"] = str(reference_root)
+    workspace_root = (
+        reference_root
+        if args.workspace_root is None
+        else args.workspace_root.expanduser().resolve()
+    )
+    if not workspace_root.is_dir():
+        raise RuntimeError(f"arm-vla runtime workspace is missing: {workspace_root}")
+    os.environ["GO2_X5_WORKSPACE"] = str(workspace_root)
     if args.curobo_source_root is not None:
         os.environ["GO2_X5_CUROBO_SOURCE_ROOT"] = str(
             args.curobo_source_root.expanduser().resolve()
@@ -242,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
                         "host": args.host,
                         "port": args.port,
                         "arm_vla_reference_commit": commit,
+                        "workspace_root": str(workspace_root),
                     },
                     indent=2,
                 )

@@ -197,6 +197,7 @@ cuRobo 服务：
 ```bash
 python scripts/serve_waypoint_curobo.py \
   --reference-root "$ARM_VLA_ROOT" \
+  --workspace-root /path/to/arm-vla-runtime-assets \
   --curobo-source-root /path/to/clean/curobo-8726021 \
   --host 127.0.0.1 \
   --port 8766 \
