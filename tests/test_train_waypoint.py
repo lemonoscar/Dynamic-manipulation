@@ -1,5 +1,6 @@
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,8 @@ from scripts.train_waypoint import (
     _balanced_subset_indices,
     _load_config,
     _optimizer,
+    _validate_accumulation_config,
+    _validate_accumulation_runtime,
     _validate_args,
     build_parser,
 )
@@ -127,6 +130,34 @@ def test_domain_balanced_sampler_keeps_both_experts_in_every_batch():
             assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
             assert batch_routes.intersection({"PICK", "PLACE"})
             assert "DONE" in batch_routes
+
+
+def test_gradient_accumulation_has_one_runtime_source_of_truth():
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            deepspeed_plugin=SimpleNamespace(
+                deepspeed_config={"gradient_accumulation_steps": "auto"}
+            )
+        ),
+        gradient_accumulation_steps=2,
+    )
+    _validate_accumulation_config(accelerator, 2)
+    _validate_accumulation_runtime(
+        accelerator,
+        SimpleNamespace(gradient_accumulation_steps=lambda: 2),
+        2,
+    )
+    accelerator.state.deepspeed_plugin.deepspeed_config[
+        "gradient_accumulation_steps"
+    ] = 8
+    with pytest.raises(Exception, match="conflicts"):
+        _validate_accumulation_config(accelerator, 2)
+    with pytest.raises(Exception, match="engine resolved"):
+        _validate_accumulation_runtime(
+            accelerator,
+            SimpleNamespace(gradient_accumulation_steps=lambda: 8),
+            2,
+        )
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():

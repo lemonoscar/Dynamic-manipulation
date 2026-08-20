@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         mixed_precision="bf16",
         step_scheduler_with_optimizer=False,
     )
+    _validate_accumulation_config(accelerator, args.gradient_accumulation_steps)
     output_reserved = False
     try:
         audit = audit_waypoint_dataset(args.dataset_root)
@@ -161,12 +162,17 @@ def main(argv: list[str] | None = None) -> int:
         model, optimizer, loader, scheduler = accelerator.prepare(
             model, optimizer, loader, scheduler
         )
+        deepspeed_engine = common._deepspeed_engine(accelerator)
+        _validate_accumulation_runtime(
+            accelerator,
+            deepspeed_engine,
+            args.gradient_accumulation_steps,
+        )
         global_step = 0
         last_checkpoint_step = 0
         last_metrics: dict[str, Any] = {}
         _set_status(accelerator, output, "running", global_step)
         model.train()
-        deepspeed_engine = common._deepspeed_engine(accelerator)
         optimizer.zero_grad(set_to_none=True)
         while global_step < args.max_steps:
             for examples in loader:
@@ -632,6 +638,42 @@ def _nan_component_norms(device: torch.device) -> dict[str, torch.Tensor]:
 def _finite_losses(values: Mapping[str, Any], keys: Iterable[str]) -> None:
     for key in keys:
         common._finite(_tensor(values[key], key), key.replace("_", " "))
+
+
+def _validate_accumulation_config(
+    accelerator: Accelerator,
+    expected: int,
+) -> None:
+    plugin = getattr(accelerator.state, "deepspeed_plugin", None)
+    if plugin is None:
+        return
+    configured = plugin.deepspeed_config.get("gradient_accumulation_steps")
+    if configured not in ("auto", expected):
+        raise M0MobileError(
+            "DeepSpeed gradient accumulation conflicts with the training CLI: "
+            f"config={configured!r}, cli={expected}; use 'auto' in the launch config"
+        )
+
+
+def _validate_accumulation_runtime(
+    accelerator: Accelerator,
+    deepspeed_engine: Any,
+    expected: int,
+) -> None:
+    resolved = int(accelerator.gradient_accumulation_steps)
+    if resolved != expected:
+        raise M0MobileError(
+            "Accelerate resolved the wrong gradient accumulation: "
+            f"runtime={resolved}, cli={expected}"
+        )
+    if deepspeed_engine is None:
+        return
+    engine_resolved = int(deepspeed_engine.gradient_accumulation_steps())
+    if engine_resolved != expected:
+        raise M0MobileError(
+            "DeepSpeed engine resolved the wrong gradient accumulation: "
+            f"runtime={engine_resolved}, cli={expected}"
+        )
 
 
 def _tensor(value: Any, name: str) -> torch.Tensor:
