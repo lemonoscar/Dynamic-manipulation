@@ -1,8 +1,8 @@
 # step 001000 开环与真实 Isaac 闭环评测
 
-复核时间：2026-08-21 00:36 CST。被测 checkpoint 来自训练提交
+首次复核：2026-08-21 00:36 CST；追加复核截至 02:13 CST。被测 checkpoint 来自训练提交
 `724ead21be2c27d9b40c200375ee4ab49ccedc84`；评测与 runtime 修复截至
-`121512903667e16578525ec22dcfb2d0deca92e5`。
+`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`。
 
 ## 1. 结论
 
@@ -39,8 +39,10 @@ step 1000 四卡 load 报告：
 
 `aa064794e9352a855a558732b114a8e78dabb8ef` 已把 `train_waypoint.py` 的默认保存间隔和
 操作手册统一改为 500 effective optimizer steps。这个修改只影响后续新启动的命令，
-不会追溯生成 step 1181 checkpoint。现行训练入口没有 optimizer-resume CLI，不能把
-step 1000 描述为可直接续训点。
+不会追溯生成 step 1181 checkpoint。`22b186c35e36122a6fc8d876d4a45355ebf42172`
+随后实现了严格的同合同 ZeRO resume：父数据、配置、Qwen root、world size、batch、
+accumulation、max steps、warmup、seed、attention 和 subset 任一变化都拒绝；新 run 必须
+使用新输出目录并记录父 manifest/hash。第 8 节记录实际四卡恢复证据。
 
 ## 3. 四卡开环
 
@@ -121,6 +123,56 @@ r3 的第一个模型 request 只含任务、head/wrist 双时刻共四图和 ca
 `state_trace=[NAV_TO_SOURCE]`、`success=false`。安全门没有把 route 改写成其他阶段，也没有
 用 GT phase 或旧 state28 覆盖模型。
 
+### 5.1 waypoint 与 reference 实现复核
+
+训练集 63,350 个 NAV row 的原始标签在 0.8 m/45° 合同下 sample/segment violation 都为
+0；最大相邻平移为 0.2652 m，最大偏航为 19.881°，因此批准阈值与 GT 并不冲突。
+但只有 20,125 row 具有完整 20 点有效 horizon，前部位置有 60,506 row 有监督，尾部监督
+显著更少。q01/q99 clip 对环形 yaw 的极少数样本还会制造约 0.126% 的边界跳变，这是次要
+数据问题，不足以解释主要失败。
+
+对 64 个 NAV oracle row、4 个 diffusion seed 的逐段审计显示：首点 violation rate=0，
+完整 20 点 violation rate=0.96875；最早坏点为 index 4，累计 123 个 yaw 与 35 个 translation
+原因。即使把 yaw 临时放到 180°，完整 horizon 仍有 0.6875 失败。因此简单放宽安全阈值
+既不能解决主要质量问题，也会掩盖尾部欠训练。
+
+官方 StarVLA 的 QwenPI/Layerwise FM 路线同样使用 Qwen3-VL、逐层 cross-attention、
+Beta(1.5,1)、`noise_s=0.999` 和 4 个 Euler inference step；当前实现没有显著的 diffusion
+步数或噪声日程偏差。参考：
+[StarVLA](https://github.com/starVLA/starVLA)、
+[QwenPI_v3](https://github.com/starVLA/starVLA/blob/starVLA_dev/starVLA/model/framework/VLM4A/QwenPI_v3.py)、
+[LayerwiseFM_ActionHeader](https://github.com/starVLA/starVLA/blob/starVLA_dev/starVLA/model/modules/action_model/LayerwiseFM_ActionHeader.py)。
+本地 `arm-vla-grasp-sim` 的 `pct_multifloor` 初始姿态、腿/臂/夹爪 actuator、DWA 速度/
+加速度和 0.02 s control dt 也与 rollout 实际配置一致，没有发现动力学配置漂移。
+
+初始化同样不是首要原因：strict 与 staged run 都先完成对象 settle 和机器人初始化，模型
+query 在 control step 58；query 时 root z 约 0.1914 m，训练 query 约 0.1897 m，速度量级
+相当。不能把失败归因于“机器狗尚未落地就开始预测”。
+
+### 5.2 可执行 prefix 诊断与 executor 修复
+
+`22b186c` 增加显式 `executable-prefix-diagnostic` profile。它仍先检查完整 horizon 并记录
+原始 violation，只有选中的第一个非退化 prefix 自身合法时才执行；默认 `contract` 行为
+不变，0.8 m/45° 等阈值也没有改变。
+
+前两次 staged run 依次暴露了执行器语义问题，而不是新的模型非法点：
+
+1. r1 的首点和 PCT plan 合法，但目标平移已在 0.12 m 到达容差内，DWA 返回零平移；旧逻辑
+   仍等待距离进展并触发 stall；
+2. r2 的首点平移约 0.033 m，却仍送进 0.2 m PCT 栅格，最近端点 snap 因数值波动越过
+   0.10 m 门禁；放宽 snap 会破坏合同，正确处理是跳过不需要的 PCT；
+3. `92ba25f` 让 PCT/DWA 行进后进入位置容差的终段使用限幅 terminal-yaw；`a8d57a2`
+   让诊断 run 中一开始就位于 0.12 m 到达容差内的目标绕过不需要的栅格 snap。最终合同
+   复核 `0deec5e` 把后一旁路限定为 diagnostic；production 仍只在平移 `<0.03 m` 时
+   绕过 PCT。
+
+修复后的 r3 在完整空间指令、无 state/phase/FSM、同一 step 1000 模型下成功完成单 route
+staged gate。模型首点为 `[-0.03717,-0.00095,0.23649]`，完整 horizon 仍明确记录
+`segment 18 exceeds yaw limit`；executor 选择 `planner=terminal_yaw`，在 control step 75
+达到 `first_waypoint_reached`。summary 为 `success=true`、`query_count=1`、
+`state_trace=[NAV_TO_SOURCE]`。这是“合法首点可执行”的诊断证据，不是完整自主 episode 或
+完整 horizon 通过。
+
 ## 6. 视频与证据隔离
 
 | stream | 分辨率 | 帧数 | 时长 | SHA-256 |
@@ -134,9 +186,27 @@ r3 的第一个模型 request 只含任务、head/wrist 双时刻共四图和 ca
 JSON report、trace、日志和派生场景只保存在
 `artifacts/evaluation/waypoint_step001000_20260820T231424/` 等 Git 忽略目录，不加入仓库。
 
+staged r3 新视频也已下载到同一忽略目录的 `prefix_diagnostic_r3/videos/`：overview/
+front/wrist 为 37/38/38 帧，SHA-256 分别为 `650bcf51…`、`9b03e8f6…`、`19cef1a6…`；
+summary 与完整 trace 同步保存，但不加入 Git。
+
 ## 7. 后续门禁
 
-若后续恢复研发，应先改善或继续训练 waypoint head，再重跑同一 40-row/四 seed 开环。
-只有 NAV segment/方向/ADE/FDE 与 ARM pose/step 指标达到批准阈值后，才值得依次重跑
-oracle-route planner、四阶段 staged rollout 和完整自主 episode。当前证据不能支持绕过
-yaw/workspace/rate gate 来换取更长视频。
+已选择从 step 1000 严格恢复正式长训。后续应在更新 checkpoint 上重跑同一 40-row/四
+seed 开环；只有 NAV segment/方向/ADE/FDE 与 ARM pose/step 指标改善后，才依次重跑
+oracle-route planner、ARM staged route 和完整自主 episode。诊断 profile 不支持绕过
+yaw/workspace/rate gate 来宣称 production 通过。
+
+## 8. 四卡恢复结果
+
+resume run 为
+`conveyorvla-waypoint-v1-resume-step1000-a8d57a2-s10000-20260821T015929`，source 固定
+在 clean `a8d57a2`，父 checkpoint 为本报告的 step 1000。实际恢复了 Qwen、双 FM head、
+AdamW、scheduler 和随机状态；scheduler `loaded_step=1000, repaired=false`，sampler 跳过
+2,000 个已消费 micro-batch。
+
+step 1001–1020 共 20 个连续 event 全部 `valid_optimizer_step=true`。total/NAV/ARM loss
+均值为 `1.0809/0.3959/0.4396`；VLM/NAV/ARM gradient norm 最小值为
+`88.02/8.01/6.54`，四组 learning rate 全部有限且为正。四 rank 存活，四卡均有真实计算，
+日志没有 traceback、OOM、NCCL error 或 NaN/Inf。训练在完成该健康门禁后继续运行，下一
+个新 checkpoint 按 500-step 合同写在 step 1500。

@@ -1,7 +1,7 @@
 # 数据、训练与测评操作
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`121512903667e16578525ec22dcfb2d0deca92e5`。正式 step 1000 checkpoint 的训练 source
+`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`。正式 step 1000 checkpoint 的训练 source
 仍为 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。所有命令从干净仓库根目录执行，输出必须
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
@@ -91,17 +91,48 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   --seed 20260820
 ```
 
-四卡 effective global batch 为 `3 × 4 × 2 = 24`。训练从本地干净
-Qwen3-VL-4B-Instruct 和两个全新随机 Layerwise FM head 开始：
+四卡 effective global batch 为 `3 × 4 × 2 = 24`。不带 `--resume-from` 的新训练从本地
+干净 Qwen3-VL-4B-Instruct 和两个全新随机 Layerwise FM head 开始：
 
 - 不载入旧 action checkpoint；
-- 不 resume 旧 optimizer/scheduler；
+- 不 resume 旧 direct-action optimizer/scheduler；
 - 不使用 `scripts/train_hierarchical.py`；
 - `--limit-train-rows` 只能用于明确标记的诊断/overfit run，正式 run 必须为 0。
 
 训练入口会在 `resolved_run.json` 中绑定 commit/dirty state、完整 argv、配置 hash、
 数据/normalizer hash、模型文件 hash、special token ID、batch 和环境。ZeRO checkpoint
 另有 `waypoint_checkpoint_manifest.json`，不满足绑定时加载器必须拒绝。
+
+同一 Waypoint v1 合同的 ZeRO checkpoint 可在全新输出目录严格续训：
+
+```bash
+WAYPOINT_CHECKPOINT=/path/to/parent/output/checkpoints/step_001000
+WAYPOINT_RESUME_RUN=/new/path/to/resume-run
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
+  --config_file configs/accelerate_zero3_4gpu_waypoint.yaml \
+  scripts/train_waypoint.py \
+  --dataset-root "$WAYPOINT_DATASET" \
+  --output-dir "$WAYPOINT_RESUME_RUN/output" \
+  --model-root /diff/wallx_workspace/dzb/models/base \
+  --config configs/waypoint_v1.json \
+  --resume-from "$WAYPOINT_CHECKPOINT" \
+  --max-steps 10000 \
+  --batch-size 3 \
+  --gradient-accumulation-steps 2 \
+  --warmup-steps 200 \
+  --save-first-checkpoint-step 0 \
+  --save-interval-steps 500 \
+  --log-interval-steps 1 \
+  --num-workers 0 \
+  --attention-implementation sdpa \
+  --seed 20260820
+```
+
+resume gate 精确绑定 dataset/config/Qwen root/world size/max steps/batch/accumulation/seed/
+warmup/attention/subset，拒绝复用父输出目录。它恢复 Qwen、双 head、optimizer、scheduler
+和随机状态，按 sampler 位置跳过已消费 micro-batch，并在 `resolved_run.json` 与
+`events.jsonl` 记录父 manifest/hash、scheduler 和 data alignment。
 
 ## 4. 健康启动判定
 
@@ -111,8 +142,8 @@ Qwen3-VL-4B-Instruct 和两个全新随机 Layerwise FM head 开始：
 - total、answer、decision、active-route、NAV、ARM loss 和全部 learning rate 有限；
 - Qwen、Navigation head、Manipulation head gradient norm 均有限且大于 0；
 - 四个 rank 存活，四张 H20 均有真实计算利用率；
-- checkpoint 已完整 commit，trainer state、四个 ZeRO model/optimizer shard 和 manifest
-  都存在；
+- fresh run 的 first checkpoint，或 resume run 的父 checkpoint 已完整 commit；resume 后
+  新 checkpoint 在下一个 500-step 边界生成；
 - 日志没有 traceback、OOM、NCCL、NaN/Inf 或提前退出。
 
 `scripts/audit_training_events.py` 目前仍读取 legacy
@@ -120,8 +151,9 @@ Qwen3-VL-4B-Instruct 和两个全新随机 Layerwise FM head 开始：
 v1 event 的自动门禁。2026-08-20 正式启动使用独立的严格 JSONL 检查完成 1–20 step
 验证；后续若恢复自动化，应先扩展该脚本并加测试。
 
-健康启动只说明训练过程正常。前 5% 进度 `lambda_self=0`，因此前 20 step 还没有
-验证 self-conditioned route。
+健康启动只说明训练过程正常。fresh run 前 5% 进度 `lambda_self=0`，因此 fresh step
+1–20 不验证 self-conditioned route；resume 窗口按全局进度计算。当前 step 1001–1020
+的 `lambda_self=0.0714–0.0741`，已经真实执行 self-conditioned 分支。
 
 ## 5. Checkpoint 与开环
 
@@ -236,14 +268,34 @@ python scripts/run_waypoint_rollout.py \
 `--remote-vla-eval`、dry-run/navigation-smoke 重写和额外 FSM。分阶段诊断可用
 `--stop-after-route` / `--required-first-route`，但不能当作完整自主闭环。
 
+production 默认 `--navigation-safety-profile contract`，完整 20 点任一 segment 违规都
+fail-closed。为了区分“首个 receding-horizon 目标是否可执行”和“远端 horizon 尾部是否
+已学好”，可在明确标记的 staged run 使用：
+
+```bash
+python scripts/run_waypoint_rollout.py \
+  --navigation-safety-profile executable-prefix-diagnostic \
+  --required-first-route NAV_TO_SOURCE \
+  --stop-after-route NAV_TO_SOURCE \
+  <其余服务与批准 reference pipeline 参数>
+```
+
+该 profile 仍先审计完整 horizon，并把 `full_horizon_contract_passed=false` 和原始 violation
+写入 trace；仅在第一个选中 prefix 独立合法时执行。它不放宽 0.8 m/45°、PCT snap、DWA
+速度或 workspace 阈值；若首点平移已经在 0.12 m 执行到达容差内，可直接检验限幅
+terminal-yaw。production `contract` 仍只对平移 `<0.03 m` 的纯旋转目标绕过 PCT。诊断
+profile 不能替代 contract profile 的完整自主闭环门禁。
+
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
 ready 的 Waypoint 服务，并逐项校验 capability；身份或 frame 不匹配立即 fail-closed。
 
-step 1000 的真实 cuRobo known-pose 已通过；完整自主 Isaac 测试也已执行并生成三路视频，
-但首个预测 NAV chunk 因 yaw segment 超限而安全失败。oracle-route 与四阶段 staged
-rollout 仍未完成。测试链可运行不等于完整 episode 成功。
+step 1000 的真实 cuRobo known-pose 已通过；strict 完整自主 Isaac 测试也已执行并生成
+三路视频，但首个预测 NAV chunk 因尾部 yaw segment 超限而安全失败。随后
+`executable-prefix-diagnostic` staged run 证明首点可安全执行并在 step 75 达到
+`first_waypoint_reached`；完整 horizon 仍明确记为失败。oracle-route、ARM route 和完整
+自主 episode 仍未通过。测试链或单 route staged 成功不等于完整 episode 成功。
 
-## 8. 2026-08-20 正式 run 记录
+## 8. 正式 run 记录
 
 | 项目 | 值 |
 |---|---|
@@ -256,14 +308,25 @@ rollout 仍未完成。测试链可运行不等于完整 episode 成功。
 | GPUs | 4 × NVIDIA H20 |
 | environment | `.conda-envs/conveyorvla-al0-lerobot044` |
 
-step 1–1181 均产生有效训练事件；最后完整 checkpoint 为 step 1000。2026-08-20
+父 run 的 step 1–1181 均产生有效训练事件；最后完整 checkpoint 为 step 1000。2026-08-20
 23:07:20 CST 后由用户授权 Ctrl-C 暂停，日志尾部 `KeyboardInterrupt`/signal 2 是主动
-停止证据。当前远端没有训练、模型服务、cuRobo 服务或 rollout 进程占用 GPU。
+停止证据。
 
-step 1001–1181 没有 checkpoint。现行 `train_waypoint.py` 没有 optimizer-resume CLI；
-不要把 load/eval 通过描述为续训已验证。若以后新增 resume，必须保持相同数据、batch、
-ZeRO 和 scheduler binding，并用新目录记录 parent checkpoint。后续新训练的 checkpoint
-默认/显式间隔均为 500 effective optimizer steps。
+step 1001–1181 没有 checkpoint，不能从内存状态恢复；实际 resume 从 durable step 1000
+开始。当前 run：
+
+| 项目 | 值 |
+|---|---|
+| source | `feature/conveyorvla-waypoint-v1@a8d57a22c515e46a9ad20be6f6892a067e02b3c3`，clean |
+| parent | 上表 run 的 `output/checkpoints/step_001000` |
+| run | `runs/conveyorvla-waypoint-v1-resume-step1000-a8d57a2-s10000-20260821T015929` |
+| tmux | `codex_cvla_wp_resume_a8d57a2_20260821` |
+| contract | 4×H20、bf16 ZeRO-3、micro 3、accumulation 2、global batch 24、max step 10000 |
+| save | 每 500 effective optimizer step；下一个新 checkpoint 为 step 1500 |
+
+resume 实测记录了 `scheduler loaded_step=1000, repaired=false`，sampler 在 9,050 个
+micro-batch/loader pass 中跳过 2,000 个，随后从 optimizer step 1001 连续训练。当前健康
+窗口和进度以 [status.md](status.md) 为准；训练期间不要 fast-forward 远端 worktree。
 
 ## 9. ConveyorBench 采集链
 
@@ -277,8 +340,10 @@ check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生
 
 - 不覆盖已有 run、checkpoint、dataset 或 export；
 - 失败/中断后保留日志、events、resolved run 和已 commit checkpoint；
-- 当前 Waypoint 训练入口不支持 optimizer resume；新增该能力前不得用手工 state 拼接冒充；
-- 若将来实现 resume，先运行 checkpoint binding/load gate，并记录 parent run；
+- Waypoint resume 必须使用 `--resume-from` 和全新输出目录；不得手工拼接 model/optimizer
+  state 或从没有 checkpoint 的 step 恢复；
+- 保持父 run 的 dataset/config/Qwen/world size/batch/accumulation/max steps/warmup/seed/
+  attention/subset 合同，并保留自动生成的 parent hash 与 alignment event；
 - 不删除 source raw、已发布 episode 或远端 evidence；
 - 不用 `git reset`、`git clean`、stash 或 force-push 处理远端差异；
 - 只停止可精确识别为本任务启动的进程/tmux，其他进程不得控制。

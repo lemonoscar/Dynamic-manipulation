@@ -1,7 +1,7 @@
 # 架构说明
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`121512903667e16578525ec22dcfb2d0deca92e5`；正式 checkpoint 的模型实现绑定
+`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`；正式 step 1000 checkpoint 的模型实现绑定
 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。批准语义以
 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为准；本页说明
 合同在仓库中的落点。旧 `state28 + 20×10 direct action` 结构只作为历史兼容面保留。
@@ -126,14 +126,23 @@ ID、normalizer hash 和 checkpoint step。
 
 Navigation executor：
 
-1. 校验完整 `[20,3]` 与 prefix mask；
+1. production 默认校验完整 `[20,3]` 与 prefix mask；
 2. 选择第一个平移至少 0.03 m 或偏航至少 3° 的有效 waypoint；
-3. body→world 后交给启用 PCT 且显式禁止 fallback 的 planner；
-4. DWA 每个控制 tick 基于测量速度和局部地图输出有界 `[vx,vy,wz]`；
-5. 首 waypoint 到达、超时、stall 或失败后停止并要求新 query。
+3. 平移小于 0.03 m 的纯旋转目标直接执行限幅 terminal-yaw；
+4. 其余目标 body→world 后交给启用 PCT 且显式禁止 fallback 的 planner；
+5. DWA 每个控制 tick 基于测量速度和局部地图输出有界 `[vx,vy,wz]`；
+6. 首 waypoint 到达、超时、stall 或失败后停止并要求新 query。
 
-纯旋转 waypoint 走限幅 terminal-yaw controller。导航时执行器可分别维持
-`stow_open` 或 `carry_closed`，但 route 仍来自模型。
+纯旋转 waypoint，以及 PCT/DWA 行进后进入位置容差但仍有偏航误差的终段，都走同一个
+限幅 terminal-yaw controller。production 仍严格使用合同的 0.03 m 纯旋转边界和 0.10 m
+PCT snap 门禁。导航时执行器可分别维持 `stow_open` 或 `carry_closed`，但 route 仍来自
+模型。
+
+显式诊断 profile `executable-prefix-diagnostic` 仍会先审计完整 horizon，并记录完整合同
+失败原因；只有第一个可执行 prefix 自身合法时才允许执行。它不修改 0.8 m/45° 等合同
+阈值；为检验已经落在 0.12 m 执行到达容差内的首点，它可以直接使用 terminal-yaw 而不
+要求 0.2 m 栅格 snap。该行为不能用于声明 production 完整 horizon/PCT 通过。默认
+`contract` profile 对任意尾部违规继续 fail-closed。
 
 Manipulation executor：
 

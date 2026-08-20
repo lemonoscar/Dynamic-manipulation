@@ -12,8 +12,8 @@
 
 公开开发分支为 `feature/conveyorvla-waypoint-v1`，批准起点为
 `7d7617d8c4225ff6105497c2e3dcce252fb6cd92`。2026-08-20 正式训练 source 为
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`；2026-08-21 runtime/eval 基线推进到
-`121512903667e16578525ec22dcfb2d0deca92e5`，没有改写 checkpoint 的 source 身份。
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`；2026-08-21 runtime/eval 与严格 resume 基线
+推进到 `0deec5ec60f771826b4c5d2ff47fe731dfa7e477`，没有改写 checkpoint 的 source 身份。
 
 主要历史节点：
 
@@ -34,6 +34,10 @@
 | `23afff4` | 分离 cuRobo code root 与 arm-vla runtime asset root |
 | `13f6e87` | 正确处理 Qwen tied weights 的 inference export |
 | `1215129` | 复用并 capability-gate 外部 Waypoint cuRobo 服务 |
+| `22b186c` | 严格同合同 ZeRO resume 与显式 executable-prefix 诊断 profile |
+| `92ba25f` | PCT/DWA 行进后在位置容差内完成 terminal-yaw |
+| `a8d57a2` | 位置已到的首目标直接绕过 PCT 栅格 snap，保留原 snap 门禁 |
+| `0deec5e` | 把 0.03–0.12 m 近目标旁路限定为 diagnostic；production 保持合同边界 |
 
 这些 commit 记录实现演化；最终结果仍须读取 checkpoint、数据和运行 manifest，不能只靠
 branch 名或最新 commit 猜测。
@@ -85,7 +89,8 @@ stride 和 SHA-256 显式拒绝错误组合。
 - 普通 push 必须是非 force；共享历史不为美观重写；
 - 数据、checkpoint、日志、视频、cache、sidecar 和 `handoff_private/` 永不加入 Git；
 - 训练正在运行时，远端 worktree 必须固定在 source commit，文档或后续代码 push 不得
-  在运行中 fast-forward 它；当前正式训练已暂停，但 checkpoint 的 source 身份不变；
+  在运行中 fast-forward 它；当前 resume run 固定为 `a8d57a2`，父 checkpoint 的 source
+  身份仍为 `724ead2`；
 - 有可复现价值的训练状态后续应由 annotated tag/release + manifest 保存，而不是永久
   保留实验 branch。
 

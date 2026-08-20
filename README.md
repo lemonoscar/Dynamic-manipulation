@@ -8,13 +8,15 @@ ConveyorVLA AL0 是面向 Go2-X5 移动操作机器人的视觉语言 waypoint �
 
 截至 2026-08-21，Waypoint Policy v1 的 runtime/eval 基线为分支
 `feature/conveyorvla-waypoint-v1` 的提交
-`121512903667e16578525ec22dcfb2d0deca92e5`；正式训练 checkpoint 仍绑定干净提交
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`。4×H20 长训已按用户指令暂停在最后有效
-step 1181，最后完整 checkpoint 为 step 1000，后续新训练默认每 500 step 保存。
+`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`；父 step 1000 checkpoint 仍绑定干净提交
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`。4×H20 resume source 固定为 clean
+`a8d57a22c515e46a9ad20be6f6892a067e02b3c3`，step 1001–1020 连续健康后继续运行；新
+checkpoint 每 500 step 保存。
 
 step 1000 的四卡 load、route/格式开环、inference service 和真实 cuRobo known-pose
-已经通过；NAV/ARM 动作质量仍差，完整自主 Isaac 测试在首个 NAV chunk 的 yaw 安全门
-失败。三路视频已生成并下载，但不能据此声明闭环成功。准确边界见
+已经通过；NAV/ARM 完整 horizon 动作质量仍差，strict 自主 Isaac 测试在首个 NAV chunk
+的尾部 yaw 安全门失败。显式 staged 诊断已证明合法首点和 terminal-yaw 执行链可用，
+但不能据此声明完整闭环成功。两组三路视频均已下载。准确边界见
 [当前状态](docs/status.md)和 [step 001000 评测](docs/checkpoint_step1000_evaluation_20260821.md)。
 
 ## 现行合同
