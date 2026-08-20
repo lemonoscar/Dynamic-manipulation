@@ -49,6 +49,7 @@ kit/logs/
 
 # Generated benchmark datasets, recordings, exports, and reports
 outputs/
+/artifacts/
 # Legacy local outputs left by the pre-flattening layout
 conveyor_bench/outputs/
 

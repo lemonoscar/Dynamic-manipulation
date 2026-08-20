@@ -1,5 +1,10 @@
 # 架构说明
 
+> 版本范围：本文主要描述 2026-08-13 的采集/runtime 架构。第 4～5 节的
+> `state28 + 20×10 直接动作` 模型是当前旧实现，不是下一代目标。2026-08-20 已批准的
+> 目标架构以 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为唯一依据；
+> 合同尚未实现，二者不得混称。
+
 ## 1. 仓库分层
 
 ```text

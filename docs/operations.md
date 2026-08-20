@@ -1,5 +1,10 @@
 # 采集、训练与测评操作
 
+> 版本范围：本文训练/服务命令属于旧的 `state28 + velocity/TCP-delta` 合同。
+> 它们可复现历史 dense-view7 训练，但不得用于启动已批准的 waypoint v1 长训。
+> Waypoint v1 必须先完成新数据、模型、planner adapter、测试和 resolved config，合同见
+> [conveyorvla_waypoint_policy_contract_v1.md](conveyorvla_waypoint_policy_contract_v1.md)。
+
 本文命令默认从仓库根目录执行。远端工作根为
 `/diff/wallx_workspace/dzb`，本项目实验只允许使用物理 GPU 2/3。
 

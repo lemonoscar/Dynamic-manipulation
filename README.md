@@ -67,6 +67,11 @@ python scripts/collect.py \
 
 ## 当前边界
 
+> 2026-08-20 架构转换说明：用户已批准
+> [`qwen3vl-layerwise-dual-fm-waypoint-v1`](docs/conveyorvla_waypoint_policy_contract_v1.md)
+> 作为下一代模型、训练与推理合同。当前代码和正在运行的 dense-view7 训练仍属于旧的
+> `state28 + velocity/TCP-delta` 合同，不能视为 waypoint v1 已实现。
+
 - PCT 对齐的 Go2-X5、head/wrist 标定和第三视角已经接入；
 - 目标从环境初始化开始连续运动；完整移动教师已通过单条成功 smoke；
 - 抓取后必须先垂直抬升并锁底盘收回标准携带位，之后才允许底盘运动；
@@ -78,6 +83,8 @@ python scripts/collect.py \
 
 ## 文档
 
+- [文档索引与权威性说明](docs/README.md)
+- [已批准的 Waypoint Policy v1 合同](docs/conveyorvla_waypoint_policy_contract_v1.md)
 - [Benchmark 规范](docs/benchmark.md)
 - [模型与代码架构](docs/architecture.md)
 - [数据格式与质量门禁](docs/data.md)
@@ -85,7 +92,7 @@ python scripts/collect.py \
 - [当前状态与下一步](docs/status.md)
 - [版本迁移与兼容策略](docs/history.md)
 - [Liangzhu seen dense-transition 合同](docs/liangzhu_seen_dense_transition_contract.md)
-- [最近工作交接](HANDOFF.md)
+- [Seen 子任务数据问题分析与修正](docs/seen_subtask_data_analysis_and_remediation.md)
 
 `assets/policies/go2_x5_pct_dog_only/policy.pt` 的再分发许可证尚未确认；公开发布前
 必须取得授权或替换为许可证明确的权重。
