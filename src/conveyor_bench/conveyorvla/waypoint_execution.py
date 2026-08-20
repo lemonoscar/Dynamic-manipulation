@@ -316,12 +316,19 @@ class PCTDWARecedingHorizonExecutor:
             return self._finish("navigation_chunk_timeout", failed=True)
         if distance <= self.config.goal_tolerance_m and yaw_error <= self.config.yaw_tolerance_rad:
             return self._finish("first_waypoint_reached", failed=False)
+        terminal_yaw_active = bool(
+            active["mode"] == "terminal_yaw"
+            or distance <= self.config.goal_tolerance_m
+        )
         if distance + self.config.stall_progress_m < active["best_distance_m"]:
             active["best_distance_m"] = distance
             active["last_progress_s"] = now
-        elif active["mode"] == "pct_dwa" and now - active["last_progress_s"] > self.config.stall_timeout_s:
+        elif (
+            not terminal_yaw_active
+            and now - active["last_progress_s"] > self.config.stall_timeout_s
+        ):
             return self._finish("navigation_stall", failed=True)
-        if active["mode"] == "terminal_yaw":
+        if terminal_yaw_active:
             command = (
                 0.0,
                 0.0,
@@ -345,7 +352,7 @@ class PCTDWARecedingHorizonExecutor:
                 return self._finish(
                     f"dwa_command_failed:{type(error).__name__}:{error}", failed=True
                 )
-        if active["mode"] == "terminal_yaw":
+        if terminal_yaw_active:
             raw = command
             dwa_elapsed_ms = 0.0
         arm_target, gripper_target = self._posture()
@@ -358,6 +365,9 @@ class PCTDWARecedingHorizonExecutor:
                 **self.status(),
                 "distance_m": distance,
                 "yaw_error_rad": yaw_error,
+                "control_mode": (
+                    "terminal_yaw" if terminal_yaw_active else "pct_dwa"
+                ),
                 "dwa_raw_command": [float(value) for value in raw],
                 "bounded_base_velocity": list(command),
                 "dwa_elapsed_ms": dwa_elapsed_ms,
