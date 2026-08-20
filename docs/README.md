@@ -1,7 +1,8 @@
 # ConveyorVLA 文档索引
 
-更新时间：2026-08-20。现行实现基线：
-`feature/conveyorvla-waypoint-v1@724ead21be2c27d9b40c200375ee4ab49ccedc84`。
+更新时间：2026-08-21。现行 runtime/eval 实现基线：
+`feature/conveyorvla-waypoint-v1@121512903667e16578525ec22dcfb2d0deca92e5`；正式
+step 1000 checkpoint 的训练 source 为 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。
 
 ## 权威性顺序
 
@@ -25,7 +26,9 @@
   和 legacy canonical 数据边界。
 - [操作手册](operations.md)：数据构建、四卡训练、checkpoint/open-loop、单卡服务、
   PCT/DWA、cuRobo 和 rollout 命令。
-- [当前状态](status.md)：正式长训、已验证证据、80-step overfit 结果和未完成门禁。
+- [当前状态](status.md)：训练暂停点、step 1000 开环/闭环证据和未完成门禁。
+- [step 001000 开环与真实 Isaac 闭环评测](checkpoint_step1000_evaluation_20260821.md)：
+  四卡 load、动作质量、真实 cuRobo、闭环失败原因及三路视频 hash。
 - [Benchmark 规范](benchmark.md)：任务、场景、时钟与成功定义；不等同于模型闭环结果。
 - [版本迁移与兼容策略](history.md)：旧 `state28 + direct action` 到 Waypoint v1 的
   不兼容边界和 Git 历史。

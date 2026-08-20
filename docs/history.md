@@ -12,7 +12,8 @@
 
 公开开发分支为 `feature/conveyorvla-waypoint-v1`，批准起点为
 `7d7617d8c4225ff6105497c2e3dcce252fb6cd92`。2026-08-20 正式训练 source 为
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`。
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`；2026-08-21 runtime/eval 基线推进到
+`121512903667e16578525ec22dcfb2d0deca92e5`，没有改写 checkpoint 的 source 身份。
 
 主要历史节点：
 
@@ -29,6 +30,10 @@
 | `9562c05` | 绑定的单卡 inference export/service |
 | `3cc16ec` | query-base 到 cuRobo planner-base 变换 |
 | `724ead2` | 模型自主管理 route 的 arm-vla Isaac rollout loop |
+| `aa06479` | 后续 Waypoint checkpoint 默认每 500 effective step 保存 |
+| `23afff4` | 分离 cuRobo code root 与 arm-vla runtime asset root |
+| `13f6e87` | 正确处理 Qwen tied weights 的 inference export |
+| `1215129` | 复用并 capability-gate 外部 Waypoint cuRobo 服务 |
 
 这些 commit 记录实现演化；最终结果仍须读取 checkpoint、数据和运行 manifest，不能只靠
 branch 名或最新 commit 猜测。
@@ -79,8 +84,8 @@ stride 和 SHA-256 显式拒绝错误组合。
   hash、环境、GPU、checkpoint 和评测协议；
 - 普通 push 必须是非 force；共享历史不为美观重写；
 - 数据、checkpoint、日志、视频、cache、sidecar 和 `handoff_private/` 永不加入 Git；
-- 正在运行的训练 worktree 固定在 source commit，文档或后续代码 push 不在运行中
-  fast-forward 它；
+- 训练正在运行时，远端 worktree 必须固定在 source commit，文档或后续代码 push 不得
+  在运行中 fast-forward 它；当前正式训练已暂停，但 checkpoint 的 source 身份不变；
 - 有可复现价值的训练状态后续应由 annotated tag/release + manifest 保存，而不是永久
   保留实验 branch。
 

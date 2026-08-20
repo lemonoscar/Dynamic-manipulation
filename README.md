@@ -6,12 +6,16 @@ ConveyorVLA AL0 是面向 Go2-X5 移动操作机器人的视觉语言 waypoint �
 模型只读取完整指令和 head/wrist 双帧图像，自主决定四阶段 route，并预测空间目标；
 机器人状态只允许留在模型外部的规划与控制侧。
 
-截至 2026-08-20，Waypoint Policy v1 已在分支
+截至 2026-08-21，Waypoint Policy v1 的 runtime/eval 基线为分支
 `feature/conveyorvla-waypoint-v1` 的提交
-`724ead21be2c27d9b40c200375ee4ab49ccedc84` 实现。4×H20 正式长训已从该干净提交启动，
-通过前 20 个连续有效 optimizer step 和首个 checkpoint 门禁后继续运行。这里的“健康启动”
-不等于 overfit、开环、planner 或 Isaac 闭环已经通过；准确边界见
-[当前状态](docs/status.md)。
+`121512903667e16578525ec22dcfb2d0deca92e5`；正式训练 checkpoint 仍绑定干净提交
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`。4×H20 长训已按用户指令暂停在最后有效
+step 1181，最后完整 checkpoint 为 step 1000，后续新训练默认每 500 step 保存。
+
+step 1000 的四卡 load、route/格式开环、inference service 和真实 cuRobo known-pose
+已经通过；NAV/ARM 动作质量仍差，完整自主 Isaac 测试在首个 NAV chunk 的 yaw 安全门
+失败。三路视频已生成并下载，但不能据此声明闭环成功。准确边界见
+[当前状态](docs/status.md)和 [step 001000 评测](docs/checkpoint_step1000_evaluation_20260821.md)。
 
 ## 现行合同
 
@@ -63,7 +67,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 python -m pytest -p no:cacheprovider
 ```
 
-只验证 Waypoint v1 的 49 项静态门禁：
+训练 source 曾在下列文件中验证 49 项静态门禁；现行 runtime/eval commit 还增加了后续
+export 与 cuRobo lifecycle 回归测试，因此不要把 49 当作当前固定收集数：
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
@@ -88,6 +93,7 @@ python -m pytest -p no:cacheprovider \
 - [文档索引与权威性](docs/README.md)
 - [已批准且冻结的 Waypoint Policy v1 合同](docs/conveyorvla_waypoint_policy_contract_v1.md)
 - [当前状态、证据和未通过门禁](docs/status.md)
+- [step 001000 开环与真实 Isaac 闭环评测](docs/checkpoint_step1000_evaluation_20260821.md)
 - [模型、协议与执行架构](docs/architecture.md)
 - [Waypoint 数据 schema 与质量门禁](docs/data.md)
 - [数据、训练、评测和部署操作](docs/operations.md)

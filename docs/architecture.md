@@ -1,6 +1,7 @@
 # 架构说明
 
-版本范围：Waypoint Policy v1，代码基线
+版本范围：Waypoint Policy v1，runtime/eval 代码基线
+`121512903667e16578525ec22dcfb2d0deca92e5`；正式 checkpoint 的模型实现绑定
 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。批准语义以
 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为准；本页说明
 合同在仓库中的落点。旧 `state28 + 20×10 direct action` 结构只作为历史兼容面保留。
@@ -144,7 +145,7 @@ Manipulation executor：
 
 PCT/DWA 适配器绑定批准的 `arm-vla-grasp-sim@388b6818f4c605a707d13c519fbb58b1d07acd92`。
 当前 cuRobo 参考 checkout 为
-`87260212b891aaae8c157a1d9a3277439f602a65`；真实运行仍须记录干净状态与环境。实际
+`87260212b9ad5ebe486427cbf168611145232884`；真实运行仍须记录干净状态与环境。实际
 planner/Isaac 门禁状态见 [status.md](status.md)，不能从“代码已接线”推断为“闭环已通过”。
 
 ## 7. 旧采集与模型边界

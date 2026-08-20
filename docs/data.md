@@ -142,7 +142,8 @@ train 最大单侧饱和率为 0.9982%，双侧合计为 1.9964%。val/test 只�
 
 `scripts/extract_waypoint_videos.py` 可生成 train/val/test × 五 route 的 head+wrist
 并排片段，并叠加首个有效 GT waypoint/TCP target。0815 source 没有外部第三视角，因此
-这些片段不能标为 three-view 证据；合同要求的三视角闭环视频门禁仍未完成。
+这些数据 review 片段不能标为 three-view 证据。step 1000 的真实 Isaac 测试后来另行
+生成了 overview/front/wrist 三路视频；两类证据不得混用，且该自主 episode 本身未成功。
 
 ## 7. 构建原则
 

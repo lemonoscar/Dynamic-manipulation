@@ -1,7 +1,8 @@
 # 数据、训练与测评操作
 
-版本范围：Waypoint Policy v1，代码基线
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`。所有命令从干净仓库根目录执行，输出必须
+版本范围：Waypoint Policy v1，runtime/eval 代码基线
+`121512903667e16578525ec22dcfb2d0deca92e5`。正式 step 1000 checkpoint 的训练 source
+仍为 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。所有命令从干净仓库根目录执行，输出必须
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
 
@@ -26,8 +27,9 @@ python -m pytest -p no:cacheprovider \
   tests/test_waypoint_rollout.py
 ```
 
-2026-08-20 的远端基线在上述九个文件中收集 49 项测试并全部通过。测试通过证明静态
-合同和接线，不证明模型收敛或 Isaac episode 成功。
+2026-08-20 的训练基线在上述九个文件中收集 49 项测试并全部通过；后续 runtime commit
+另增加 export 和外部 cuRobo lifecycle 回归测试。测试通过证明静态合同和接线，不证明
+模型收敛或 Isaac episode 成功。
 
 4×H20 的工作根固定为 `/diff/wallx_workspace/dzb`。远端操作前必须先做非交互 SSH
 探测，确认目标 worktree 干净、commit 精确一致、磁盘和四卡状态可用；不得 reset/clean
@@ -154,6 +156,11 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
 route、RECOVER、ADE/FDE、方向、ARM pose、夹爪和 safety 阈值；失败报告必须保留，不能
 改用 diagnostic 结果宣称通过。
 
+正式全量 checkpoint 没有 `training_subset_indices`，因此不能伪装成 32-row overfit
+checkpoint 运行 `--profile overfit`。step 1000 的实际协议是 val/diagnostic/40 rows/
+四 diffusion seeds；它通过结构门禁，但动作误差和 violation rate 不具备闭环可用性。
+准确数字见 [step 001000 评测](checkpoint_step1000_evaluation_20260821.md)。
+
 ## 6. 单卡 inference export 与服务
 
 先把已绑定 ZeRO checkpoint 合并成不可变 inference export：
@@ -173,8 +180,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/serve_waypoint.py \
 
 服务只监听 loopback，校验 export、processor、token ID、checkpoint、normalizer 和模型
 合同。request 只能含完整指令、两路双帧图像和序列/标定身份；任何 state、phase、pose
-truth 或 history 都应被拒绝。当前代码与静态测试已完成，但正式 checkpoint 的实际
-consolidation + 单卡 request smoke 尚未通过，见 [status.md](status.md)。
+truth 或 history 都应被拒绝。step 1000 已完成真实 consolidation 和单卡四图 request。
+Qwen tied weights 必须由 Transformers 的 tied-weight 声明去重；不要手工复制或删除
+共享 tensor key。
 
 ## 7. PCT/DWA、cuRobo 与 rollout
 
@@ -204,6 +212,12 @@ python scripts/serve_waypoint_curobo.py \
   --ready-json /new/run/curobo_ready.json
 ```
 
+`--reference-root` 是干净 arm-vla 代码 checkout；`--workspace-root` 是 robot/scene/config
+运行资产根；`--curobo-source-root` 是干净 cuRobo checkout。三者不得再指向同一路径来
+碰巧通过 import。服务 ready 后应先跑 known-pose gate，核对 reference commit、direct
+absolute TCP capability、两个 frame、world collision、orientation fallback=false、
+reachable/collision-free 和终端 pose error。
+
 模型服务与 cuRobo 服务均 ready 后，`run_waypoint_rollout.py` 接管批准的 arm-vla
 full-physics pipeline：
 
@@ -222,8 +236,12 @@ python scripts/run_waypoint_rollout.py \
 `--remote-vla-eval`、dry-run/navigation-smoke 重写和额外 FSM。分阶段诊断可用
 `--stop-after-route` / `--required-first-route`，但不能当作完整自主闭环。
 
-真实 cuRobo known-pose、oracle-route planner rollout、分阶段/完整 Isaac 闭环和三视角
-视频门禁当前均未完成。不要仅因脚本存在就启动未满足环境/安全前提的执行。
+rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
+ready 的 Waypoint 服务，并逐项校验 capability；身份或 frame 不匹配立即 fail-closed。
+
+step 1000 的真实 cuRobo known-pose 已通过；完整自主 Isaac 测试也已执行并生成三路视频，
+但首个预测 NAV chunk 因 yaw segment 超限而安全失败。oracle-route 与四阶段 staged
+rollout 仍未完成。测试链可运行不等于完整 episode 成功。
 
 ## 8. 2026-08-20 正式 run 记录
 
@@ -234,16 +252,18 @@ python scripts/run_waypoint_rollout.py \
 | worktree | `worktrees/ConveyorVLA-waypoint-v1-fe2b4ea` |
 | dataset | `datasets/derived/conveyorvla-waypoint-v1-full-8fcccd9` |
 | run | `runs/conveyorvla-waypoint-v1-formal-724ead2-s10000-20260820T1813` |
-| tmux | `cvla-wp-formal-724ead2-s10000` |
+| tmux | 已按用户指令停止；原 session `cvla-wp-formal-724ead2-s10000` 不再存在 |
 | GPUs | 4 × NVIDIA H20 |
 | environment | `.conda-envs/conveyorvla-al0-lerobot044` |
 
-step 1–20 全部有效，step 20 checkpoint 完整提交，训练随后继续推进。Torch 曾报告
-run-local kernel cache 目录不可创建并自动禁用 kernel cache；这没有中断训练，但应作为
-非致命性能警告保留。
+step 1–1181 均产生有效训练事件；最后完整 checkpoint 为 step 1000。2026-08-20
+23:07:20 CST 后由用户授权 Ctrl-C 暂停，日志尾部 `KeyboardInterrupt`/signal 2 是主动
+停止证据。当前远端没有训练、模型服务、cuRobo 服务或 rollout 进程占用 GPU。
 
-正在运行的远端 worktree 必须继续固定在训练 source commit。文档提交只推送 Git
-`origin`，不得在训练过程中 fast-forward、checkout 或改写该 worktree。
+step 1001–1181 没有 checkpoint。现行 `train_waypoint.py` 没有 optimizer-resume CLI；
+不要把 load/eval 通过描述为续训已验证。若以后新增 resume，必须保持相同数据、batch、
+ZeRO 和 scheduler binding，并用新目录记录 parent checkpoint。后续新训练的 checkpoint
+默认/显式间隔均为 500 effective optimizer steps。
 
 ## 9. ConveyorBench 采集链
 
@@ -257,7 +277,8 @@ check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生
 
 - 不覆盖已有 run、checkpoint、dataset 或 export；
 - 失败/中断后保留日志、events、resolved run 和已 commit checkpoint；
-- resume 前先运行 checkpoint binding/load gate，并记录 parent run；
+- 当前 Waypoint 训练入口不支持 optimizer resume；新增该能力前不得用手工 state 拼接冒充；
+- 若将来实现 resume，先运行 checkpoint binding/load gate，并记录 parent run；
 - 不删除 source raw、已发布 episode 或远端 evidence；
 - 不用 `git reset`、`git clean`、stash 或 force-push 处理远端差异；
 - 只停止可精确识别为本任务启动的进程/tmux，其他进程不得控制。
