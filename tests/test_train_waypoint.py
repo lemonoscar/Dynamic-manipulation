@@ -2,7 +2,10 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("accelerate")
+pytest.importorskip("safetensors")
 from torch import nn
 
 from scripts.train_waypoint import (
