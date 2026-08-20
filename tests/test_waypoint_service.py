@@ -1,9 +1,11 @@
 import base64
 import io
+import json
 
 import pytest
 
 Image = pytest.importorskip("PIL.Image")
+torch = pytest.importorskip("torch")
 
 from scripts import export_waypoint_inference as exporter
 from scripts import serve_waypoint as service
@@ -62,3 +64,34 @@ def test_inference_export_is_outside_git_and_requires_sharded_safe_weights(tmp_p
         "model.safetensors.index.json",
         "model-00001-of-00001.safetensors",
     }
+
+
+def test_inference_export_clones_tied_weights_before_safetensors(tmp_path):
+    from safetensors.torch import load_file
+
+    source = tmp_path / "pytorch"
+    destination = tmp_path / "safe"
+    source.mkdir()
+    tied = torch.arange(8, dtype=torch.float32).reshape(4, 2)
+    torch.save(
+        {"embed_tokens.weight": tied, "lm_head.weight": tied},
+        source / "pytorch_model-00001-of-00001.bin",
+    )
+    (source / "pytorch_model.bin.index.json").write_text(
+        json.dumps(
+            {
+                "metadata": {"total_size": tied.numel() * tied.element_size() * 2},
+                "weight_map": {
+                    "embed_tokens.weight": "pytorch_model-00001-of-00001.bin",
+                    "lm_head.weight": "pytorch_model-00001-of-00001.bin",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exporter._convert_pytorch_shards_to_safetensors(source, destination)
+    loaded = load_file(destination / "model-00001-of-00001.safetensors")
+    torch.testing.assert_close(loaded["embed_tokens.weight"], tied)
+    torch.testing.assert_close(loaded["lm_head.weight"], tied)
+    assert loaded["embed_tokens.weight"].data_ptr() != loaded["lm_head.weight"].data_ptr()

@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     output = args.output_dir.expanduser().resolve()
     _reserve_export(output)
     weights = output / "weights"
+    pytorch_weights = output / ".pytorch-weights"
     converter = checkpoint / "zero_to_fp32.py"
     if not converter.is_file():
         raise M0MobileError("checkpoint has no generated ZeRO consolidation script")
@@ -51,8 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.executable,
             str(converter),
             str(checkpoint),
-            str(weights),
-            "--safe_serialization",
+            str(pytorch_weights),
             "--max_shard_size",
             str(args.max_shard_size),
         ],
@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
         cwd=PROJECT_ROOT,
         env=environment,
     )
+    _convert_pytorch_shards_to_safetensors(pytorch_weights, weights)
+    shutil.rmtree(pytorch_weights)
     weight_files = _safe_weight_identity(weights)
     config_source = Path(str(resolved["config"])).resolve()
     normalization = checkpoint_gate._mapping(
@@ -158,6 +160,54 @@ def _safe_weight_identity(root: Path) -> dict[str, dict[str, Any]]:
         }
         for path in paths
     }
+
+
+def _convert_pytorch_shards_to_safetensors(source: Path, destination: Path) -> None:
+    import torch
+    from safetensors.torch import save_file
+
+    index_path = source / "pytorch_model.bin.index.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        weight_map = index["weight_map"]
+    except (OSError, KeyError, json.JSONDecodeError) as error:
+        raise M0MobileError("ZeRO consolidation did not produce a valid PyTorch index") from error
+    if not isinstance(weight_map, dict) or not weight_map:
+        raise M0MobileError("ZeRO PyTorch weight map is empty")
+
+    destination.mkdir()
+    safe_weight_map: dict[str, str] = {}
+    for shard_name in sorted(set(weight_map.values())):
+        if not isinstance(shard_name, str) or not shard_name.endswith(".bin"):
+            raise M0MobileError("ZeRO PyTorch shard name is invalid")
+        shard_path = source / shard_name
+        expected = {name for name, value in weight_map.items() if value == shard_name}
+        state = torch.load(shard_path, map_location="cpu", weights_only=True)
+        if not isinstance(state, dict) or set(state) != expected:
+            raise M0MobileError(f"ZeRO PyTorch shard index mismatch: {shard_name}")
+        safe_state = {}
+        for name, tensor in state.items():
+            if not isinstance(tensor, torch.Tensor):
+                raise M0MobileError(f"ZeRO weight is not a tensor: {name}")
+            if tensor.is_floating_point() and tensor.dtype != torch.float32:
+                raise M0MobileError(f"ZeRO consolidated weight is not fp32: {name}")
+            # Qwen ties embed_tokens and lm_head. Clone every tensor so the
+            # safetensors writer receives independent, contiguous storage.
+            safe_state[name] = tensor.detach().contiguous().clone()
+        safe_name = shard_name.replace("pytorch_model", "model", 1).replace(
+            ".bin", ".safetensors"
+        )
+        save_file(safe_state, destination / safe_name, metadata={"format": "pt"})
+        safe_weight_map.update({name: safe_name for name in expected})
+        del state, safe_state
+
+    training.common._write_json_atomic(
+        destination / "model.safetensors.index.json",
+        {
+            "metadata": index.get("metadata", {}),
+            "weight_map": safe_weight_map,
+        },
+    )
 
 
 def _directory_identity(root: Path) -> dict[str, dict[str, Any]]:
