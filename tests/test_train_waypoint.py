@@ -13,7 +13,6 @@ from scripts.train_waypoint import (
     _balanced_subset_indices,
     _load_config,
     _optimizer,
-    _route_class_weights,
     _validate_args,
     build_parser,
 )
@@ -71,20 +70,6 @@ def test_production_config_is_fixed_and_validated(tmp_path: Path):
     changed = {**config, "action_model": {**config["action_model"], "hidden_size": 768}}
     with pytest.raises(Exception, match="contract was modified"):
         _validate_args(_args(tmp_path), changed)
-
-
-def test_route_weights_are_inverse_frequency_and_require_all_routes():
-    routes = (
-        ["NAV_TO_SOURCE"] * 2
-        + ["PICK"] * 4
-        + ["NAV_TO_TARGET"] * 5
-        + ["PLACE"] * 10
-        + ["DONE"] * 20
-    )
-    weights = _route_class_weights(routes)
-    assert weights["NAV_TO_SOURCE"] / weights["DONE"] == pytest.approx(10.0)
-    with pytest.raises(Exception, match="missing"):
-        _route_class_weights(routes[:-20])
 
 
 def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():

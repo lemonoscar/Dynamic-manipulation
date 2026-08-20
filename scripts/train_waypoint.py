@@ -127,7 +127,6 @@ def main(argv: list[str] | None = None) -> int:
         model, token_ids = _build_model(
             config,
             args.model_root,
-            dataset,
             args.attention_implementation,
         )
         optimizer, parameter_groups = _optimizer(model, config)
@@ -175,7 +174,18 @@ def main(argv: list[str] | None = None) -> int:
                 self_weight = lambda_self_schedule(progress)
                 with accelerator.accumulate(model):
                     oracle = model(examples, objective="oracle")
-                    _finite_losses(oracle, ("loss", "answer_loss", "route_loss", "navigation_loss", "manipulation_loss"))
+                    _finite_losses(
+                        oracle,
+                        (
+                            "loss",
+                            "answer_loss",
+                            "route_loss",
+                            "decision_loss",
+                            "active_route_loss",
+                            "navigation_loss",
+                            "manipulation_loss",
+                        ),
+                    )
                     oracle_loss = _tensor(oracle["loss"], "oracle loss")
                     common._backward_loss(
                         accelerator,
@@ -272,7 +282,6 @@ def main(argv: list[str] | None = None) -> int:
 def _build_model(
     config: Mapping[str, Any],
     model_root: Path,
-    dataset: ConveyorVLAWaypointDataset,
     attention_implementation: str,
 ) -> tuple[ConveyorVLAWaypointPolicy, Mapping[str, int | list[int]]]:
     root = model_root.expanduser().resolve()
@@ -324,7 +333,6 @@ def _build_model(
             lambda_arm=float(loss["lambda_manipulation"]),
             repeated_diffusion_steps=int(loss["repeated_diffusion_steps"]),
         ),
-        route_class_weights=_route_class_weights(dataset.routes),
     )
     policy.enable_full_finetuning()
     if not all(parameter.requires_grad for parameter in policy.parameters()):
@@ -382,19 +390,6 @@ def _optimizer(
         for name, parameters, learning_rate in groups
     ]
     return optimizer, report
-
-
-def _route_class_weights(routes: Iterable[str]) -> dict[str, float]:
-    counts = {route.value: 0 for route in WaypointRoute}
-    for value in routes:
-        counts[WaypointRoute(value).value] += 1
-    if any(count <= 0 for count in counts.values()):
-        raise M0MobileError("train split is missing a waypoint route class")
-    total = sum(counts.values())
-    return {
-        route: total / (len(counts) * count)
-        for route, count in counts.items()
-    }
 
 
 class DomainBalancedSampler(Sampler[int]):
@@ -565,6 +560,12 @@ def _step_metrics(
         ),
         "answer_loss": common._distributed_mean(accelerator, oracle["answer_loss"]),
         "route_loss": common._distributed_mean(accelerator, oracle["route_loss"]),
+        "decision_loss": common._distributed_mean(
+            accelerator, oracle["decision_loss"]
+        ),
+        "active_route_loss": common._distributed_mean(
+            accelerator, oracle["active_route_loss"]
+        ),
         "navigation_loss": common._distributed_mean(
             accelerator, oracle["navigation_loss"]
         ),

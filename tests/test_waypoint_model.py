@@ -279,6 +279,31 @@ def test_oracle_loss_reaches_qwen_and_both_independent_experts():
         )
 
 
+def test_route_objective_balances_decision_and_active_route_separately():
+    qwen = _OracleQwen(cross_dim=8, layer_count=2)
+    policy = ConveyorVLAWaypointPolicy(
+        qwen,
+        _head(3),
+        _head(7),
+        route_confidence_min=0.55,
+    )
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE),
+        _example(WaypointRoute.PICK),
+        _example(WaypointRoute.DONE),
+    ]
+    inputs = qwen.build_waypoint_inputs(examples)
+    outputs = qwen(**inputs)
+    route_loss, decision_loss, active_route_loss = policy._route_token_loss(
+        examples, inputs["labels"], outputs.logits
+    )
+    assert decision_loss.item() == pytest.approx(torch.log(torch.tensor(2.0)).item())
+    assert active_route_loss.item() == pytest.approx(torch.log(torch.tensor(4.0)).item())
+    assert route_loss.item() == pytest.approx(
+        decision_loss.item() + active_route_loss.item()
+    )
+
+
 def test_missing_expert_executes_zero_weight_forward_on_every_parameter():
     qwen = _OracleQwen(cross_dim=8, layer_count=2)
     nav, arm = _head(3), _head(7)

@@ -632,7 +632,6 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         route_confidence_min: float,
         max_subtask_tokens: int = 24,
         loss_config: WaypointLossConfig = WaypointLossConfig(),
-        route_class_weights: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
         if navigation_head.config.action_dim != 3:
@@ -650,15 +649,6 @@ class ConveyorVLAWaypointPolicy(nn.Module):
             max_subtask_tokens=max_subtask_tokens,
         )
         self.loss_config = loss_config
-        self.route_class_weights = {
-            route.value: float((route_class_weights or {}).get(route.value, 1.0))
-            for route in WaypointRoute
-        }
-        if any(
-            not math.isfinite(value) or value <= 0.0
-            for value in self.route_class_weights.values()
-        ):
-            raise ValueError("route class weights must be finite and positive")
 
     def enable_full_finetuning(self) -> None:
         self.qwen.enable_full_finetuning()
@@ -698,7 +688,9 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         )
         if outputs.loss is None or outputs.hidden_states is None:
             raise RuntimeError("Qwen did not return oracle CE and hidden states")
-        route_loss = self._route_token_loss(examples, inputs["labels"], outputs.logits)
+        route_loss, decision_loss, active_route_loss = self._route_token_loss(
+            examples, inputs["labels"], outputs.logits
+        )
         layers = self._last_action_layers(outputs.hidden_states)
         attention_mask = inputs.get("attention_mask")
         if attention_mask is None:
@@ -728,6 +720,8 @@ class ConveyorVLAWaypointPolicy(nn.Module):
             "loss": total,
             "answer_loss": outputs.loss,
             "route_loss": route_loss,
+            "decision_loss": decision_loss,
+            "active_route_loss": active_route_loss,
             "navigation_loss": nav_loss,
             "manipulation_loss": arm_loss,
             "navigation_samples": nav_samples,
@@ -1003,15 +997,15 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         examples: Sequence[Mapping[str, Any]],
         labels: torch.Tensor,
         logits: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         token_ids = self.router.token_ids
         decision_candidates = torch.tensor(
             [token_ids.pred_action, token_ids.pred_done],
             device=logits.device,
         )
         route_candidates = torch.tensor(token_ids.route_ids, device=logits.device)
-        losses = []
-        weights = []
+        decision_losses = []
+        active_route_losses = []
         for row_index, example in enumerate(examples):
             route = WaypointRoute(str(example["route"]))
             decision_target = (
@@ -1020,7 +1014,7 @@ class ConveyorVLAWaypointPolicy(nn.Module):
                 else token_ids.pred_action
             )
             decision_position = _label_position(labels[row_index], decision_target)
-            losses.append(
+            decision_losses.append(
                 F.cross_entropy(
                     logits[row_index, decision_position - 1]
                     .index_select(0, decision_candidates)
@@ -1032,13 +1026,12 @@ class ConveyorVLAWaypointPolicy(nn.Module):
                     reduction="none",
                 )[0]
             )
-            weights.append(self.route_class_weights[route.value])
             if route is not WaypointRoute.DONE:
                 route_index = _ACTIVE_ROUTES.index(route)
                 route_position = _label_position(
                     labels[row_index], token_ids.route_ids[route_index]
                 )
-                losses.append(
+                active_route_losses.append(
                     F.cross_entropy(
                         logits[row_index, route_position - 1]
                         .index_select(0, route_candidates)
@@ -1047,9 +1040,12 @@ class ConveyorVLAWaypointPolicy(nn.Module):
                         reduction="none",
                     )[0]
                 )
-                weights.append(self.route_class_weights[route.value])
-        weight_tensor = torch.as_tensor(weights, device=logits.device, dtype=losses[0].dtype)
-        return (torch.stack(losses) * weight_tensor).sum() / weight_tensor.sum()
+        decision_loss = torch.stack(decision_losses).mean()
+        if active_route_losses:
+            active_route_loss = torch.stack(active_route_losses).mean()
+        else:
+            active_route_loss = logits.sum() * 0.0
+        return decision_loss + active_route_loss, decision_loss, active_route_loss
 
 
 def waypoint_token_ids(interface: Qwen3VLInterface) -> WaypointTokenIds:
