@@ -9,6 +9,7 @@ pytest.importorskip("safetensors")
 from torch import nn
 
 from scripts.train_waypoint import (
+    _balanced_subset_indices,
     _load_config,
     _optimizer,
     _route_class_weights,
@@ -47,6 +48,7 @@ def _args(tmp_path: Path) -> Namespace:
         save_first_checkpoint_step=20,
         log_interval_steps=1,
         num_workers=0,
+        limit_train_rows=0,
         attention_implementation="sdpa",
         seed=1,
     )
@@ -82,6 +84,38 @@ def test_route_weights_are_inverse_frequency_and_require_all_routes():
     assert weights["NAV_TO_SOURCE"] / weights["DONE"] == pytest.approx(10.0)
     with pytest.raises(Exception, match="missing"):
         _route_class_weights(routes[:-20])
+
+
+def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():
+    routes = [
+        "NAV_TO_SOURCE",
+        "PICK",
+        "NAV_TO_TARGET",
+        "PLACE",
+        "DONE",
+    ] * 8
+    boundaries = [None] * len(routes)
+    for index, name in enumerate(("NAV_PICK", "PICK_NAV", "NAV_PLACE", "PLACE_DONE")):
+        boundaries[index + 5] = name
+    dataset = type(
+        "Dataset",
+        (),
+        {
+            "routes": routes,
+            "boundaries": boundaries,
+            "__len__": lambda self: len(routes),
+        },
+    )()
+    selected = _balanced_subset_indices(dataset, 32)
+    assert selected == _balanced_subset_indices(dataset, 32)
+    assert len(selected) == len(set(selected)) == 32
+    assert {routes[index] for index in selected} == set(routes)
+    assert {boundaries[index] for index in selected if boundaries[index]} == {
+        "NAV_PICK",
+        "PICK_NAV",
+        "NAV_PLACE",
+        "PLACE_DONE",
+    }
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():

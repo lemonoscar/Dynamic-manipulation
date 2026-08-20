@@ -26,7 +26,7 @@ from scripts import train_hierarchical as common  # noqa: E402
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
 from accelerate.utils import set_seed  # noqa: E402
-from torch.utils.data import DataLoader, WeightedRandomSampler  # noqa: E402
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint import (  # noqa: E402
@@ -65,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-first-checkpoint-step", type=int, default=20)
     parser.add_argument("--log-interval-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--limit-train-rows", type=int, default=0)
     parser.add_argument(
         "--attention-implementation",
         choices=("sdpa", "flash_attention_2", "eager"),
@@ -95,14 +96,22 @@ def main(argv: list[str] | None = None) -> int:
         output_reserved = True
         set_seed(args.seed, device_specific=True)
         dataset = ConveyorVLAWaypointDataset(args.dataset_root, split="train")
+        train_indices = _balanced_subset_indices(dataset, args.limit_train_rows)
+        loader_dataset = dataset if train_indices is None else Subset(dataset, train_indices)
+        base_weights = dataset.sample_weights()
+        loader_weights = (
+            base_weights
+            if train_indices is None
+            else tuple(base_weights[index] for index in train_indices)
+        )
         sampler = WeightedRandomSampler(
-            torch.as_tensor(dataset.sample_weights(), dtype=torch.double),
-            num_samples=len(dataset),
+            torch.as_tensor(loader_weights, dtype=torch.double),
+            num_samples=len(loader_dataset),
             replacement=True,
             generator=torch.Generator().manual_seed(args.seed),
         )
         loader = DataLoader(
-            dataset,
+            loader_dataset,
             batch_size=args.batch_size,
             sampler=sampler,
             num_workers=args.num_workers,
@@ -142,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
                     parameter_groups,
                     accelerator,
                     warmup_steps,
+                    train_indices,
                 ),
             )
         accelerator.wait_for_everyone()
@@ -383,6 +393,52 @@ def _route_class_weights(routes: Iterable[str]) -> dict[str, float]:
     }
 
 
+def _balanced_subset_indices(
+    dataset: ConveyorVLAWaypointDataset,
+    limit: int,
+) -> list[int] | None:
+    if limit == 0:
+        return None
+    if limit < len(WaypointRoute) or limit > len(dataset):
+        raise M0MobileError(
+            "waypoint training subset must cover every route and fit the train split"
+        )
+    selected: list[int] = []
+    selected_set: set[int] = set()
+
+    def add(index: int) -> None:
+        if index not in selected_set and len(selected) < limit:
+            selected.append(index)
+            selected_set.add(index)
+
+    for route in WaypointRoute:
+        add(next(index for index, value in enumerate(dataset.routes) if value == route.value))
+    for boundary in sorted(value for value in set(dataset.boundaries) if value is not None):
+        add(next(index for index, value in enumerate(dataset.boundaries) if value == boundary))
+    route_candidates = {
+        route.value: [
+            index
+            for index, value in enumerate(dataset.routes)
+            if value == route.value and index not in selected_set
+        ]
+        for route in WaypointRoute
+    }
+    while len(selected) < limit:
+        progressed = False
+        for route in WaypointRoute:
+            candidates = route_candidates[route.value]
+            while candidates and candidates[0] in selected_set:
+                candidates.pop(0)
+            if candidates:
+                add(candidates.pop(0))
+                progressed = True
+            if len(selected) == limit:
+                break
+        if not progressed:
+            raise M0MobileError("cannot construct the requested waypoint training subset")
+    return selected
+
+
 def _step_metrics(
     accelerator: Accelerator,
     oracle: Mapping[str, Any],
@@ -483,6 +539,7 @@ def _resolved_run(
     parameter_groups: list[dict[str, Any]],
     accelerator: Accelerator,
     warmup_steps: int,
+    train_indices: list[int] | None,
 ) -> dict[str, Any]:
     effective_batch = (
         args.batch_size
@@ -539,12 +596,16 @@ def _resolved_run(
         "batch_size_per_process": args.batch_size,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "effective_batch_size": effective_batch,
-        "train_rows": len(dataset),
+        "train_rows": len(dataset) if train_indices is None else len(train_indices),
+        "training_subset": train_indices is not None,
+        "training_subset_indices": train_indices,
         "optimizer_steps_per_equivalent_sampling_epoch": len(dataset)
-        / effective_batch,
+        / effective_batch
+        if train_indices is None
+        else len(train_indices) / effective_batch,
         "equivalent_sampling_epochs_at_max_steps": args.max_steps
         * effective_batch
-        / len(dataset),
+        / (len(dataset) if train_indices is None else len(train_indices)),
         "max_steps": args.max_steps,
         "warmup_steps": warmup_steps,
         "mixed_precision": accelerator.mixed_precision,
@@ -648,6 +709,8 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         raise M0MobileError("waypoint step, batch, accumulation, and intervals must be positive")
     if args.num_workers < 0:
         raise M0MobileError("waypoint num workers cannot be negative")
+    if args.limit_train_rows < 0:
+        raise M0MobileError("waypoint train-row limit cannot be negative")
     if not 0 <= args.save_first_checkpoint_step <= args.max_steps:
         raise M0MobileError("first waypoint checkpoint step is outside the run")
     warmup = (
