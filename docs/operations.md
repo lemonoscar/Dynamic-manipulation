@@ -82,7 +82,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   --gradient-accumulation-steps 2 \
   --warmup-steps 200 \
   --save-first-checkpoint-step 20 \
-  --save-interval-steps 1000 \
+  --save-interval-steps 500 \
   --log-interval-steps 1 \
   --num-workers 0 \
   --attention-implementation sdpa \

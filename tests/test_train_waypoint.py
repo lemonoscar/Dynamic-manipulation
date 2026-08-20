@@ -58,10 +58,12 @@ def _args(tmp_path: Path) -> Namespace:
 
 
 def test_waypoint_training_cli_has_no_legacy_checkpoint_or_state_argument():
-    destinations = {action.dest for action in build_parser()._actions}
+    parser = build_parser()
+    destinations = {action.dest for action in parser._actions}
     assert "initial_action_checkpoint" not in destinations
     assert "state" not in destinations
     assert {"dataset_root", "output_dir", "model_root", "config"} <= destinations
+    assert parser.get_default("save_interval_steps") == 500
 
 
 def test_production_config_is_fixed_and_validated(tmp_path: Path):

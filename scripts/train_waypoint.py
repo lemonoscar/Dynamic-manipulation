@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
     parser.add_argument("--warmup-steps", type=int)
-    parser.add_argument("--save-interval-steps", type=int, default=1_000)
+    parser.add_argument("--save-interval-steps", type=int, default=500)
     parser.add_argument("--save-first-checkpoint-step", type=int, default=20)
     parser.add_argument("--log-interval-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
