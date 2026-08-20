@@ -11,7 +11,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ from scripts import train_hierarchical as common  # noqa: E402
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
 from accelerate.utils import set_seed  # noqa: E402
-from torch.utils.data import DataLoader, Subset, WeightedRandomSampler  # noqa: E402
+from torch.utils.data import DataLoader, Sampler, Subset  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint import (  # noqa: E402
@@ -98,17 +98,21 @@ def main(argv: list[str] | None = None) -> int:
         dataset = ConveyorVLAWaypointDataset(args.dataset_root, split="train")
         train_indices = _balanced_subset_indices(dataset, args.limit_train_rows)
         loader_dataset = dataset if train_indices is None else Subset(dataset, train_indices)
-        base_weights = dataset.sample_weights()
-        loader_weights = (
-            base_weights
+        loader_routes = (
+            dataset.routes
             if train_indices is None
-            else tuple(base_weights[index] for index in train_indices)
+            else [dataset.routes[index] for index in train_indices]
         )
-        sampler = WeightedRandomSampler(
-            torch.as_tensor(loader_weights, dtype=torch.double),
-            num_samples=len(loader_dataset),
-            replacement=True,
-            generator=torch.Generator().manual_seed(args.seed),
+        loader_boundaries = (
+            dataset.boundaries
+            if train_indices is None
+            else [dataset.boundaries[index] for index in train_indices]
+        )
+        sampler = DomainBalancedSampler(
+            loader_routes,
+            _row_sample_weights(loader_routes, loader_boundaries),
+            batch_size=args.batch_size,
+            seed=args.seed,
         )
         loader = DataLoader(
             loader_dataset,
@@ -391,6 +395,104 @@ def _route_class_weights(routes: Iterable[str]) -> dict[str, float]:
         route: total / (len(counts) * count)
         for route, count in counts.items()
     }
+
+
+class DomainBalancedSampler(Sampler[int]):
+    """Replacement sampler with NAV and ARM in every micro-batch."""
+
+    def __init__(
+        self,
+        routes: Sequence[str],
+        weights: Sequence[float],
+        *,
+        batch_size: int,
+        seed: int,
+    ) -> None:
+        if len(routes) != len(weights) or not routes:
+            raise M0MobileError("domain-balanced sampler rows and weights do not align")
+        if batch_size < 2 or len(routes) < batch_size:
+            raise M0MobileError("domain-balanced waypoint batches need at least two rows")
+        self.routes = tuple(str(value) for value in routes)
+        self.weights = torch.as_tensor(weights, dtype=torch.double)
+        if not bool(torch.isfinite(self.weights).all()) or bool((self.weights <= 0).any()):
+            raise M0MobileError("domain-balanced waypoint weights must be finite and positive")
+        self.batch_size = int(batch_size)
+        self.seed = int(seed)
+        self._iteration = 0
+        self.num_samples = (len(routes) // batch_size) * batch_size
+        self.navigation = tuple(
+            index
+            for index, route in enumerate(self.routes)
+            if route in {
+                WaypointRoute.NAV_TO_SOURCE.value,
+                WaypointRoute.NAV_TO_TARGET.value,
+            }
+        )
+        self.manipulation = tuple(
+            index
+            for index, route in enumerate(self.routes)
+            if route in {WaypointRoute.PICK.value, WaypointRoute.PLACE.value}
+        )
+        if not self.navigation or not self.manipulation:
+            raise M0MobileError("domain-balanced sampler requires NAV and ARM rows")
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __iter__(self) -> Iterator[int]:
+        generator = torch.Generator().manual_seed(self.seed + self._iteration)
+        self._iteration += 1
+        all_indices = tuple(range(len(self.routes)))
+        for _batch in range(self.num_samples // self.batch_size):
+            batch = [
+                self._draw(self.navigation, generator),
+                self._draw(self.manipulation, generator),
+            ]
+            batch.extend(
+                self._draw(all_indices, generator)
+                for _ in range(self.batch_size - 2)
+            )
+            order = torch.randperm(self.batch_size, generator=generator).tolist()
+            yield from (batch[index] for index in order)
+
+    def _draw(
+        self,
+        candidates: Sequence[int],
+        generator: torch.Generator,
+    ) -> int:
+        candidate_tensor = torch.as_tensor(candidates, dtype=torch.long)
+        candidate_weights = self.weights.index_select(0, candidate_tensor)
+        selected = int(
+            torch.multinomial(
+                candidate_weights,
+                1,
+                replacement=True,
+                generator=generator,
+            ).item()
+        )
+        return int(candidates[selected])
+
+
+def _row_sample_weights(
+    routes: Sequence[str],
+    boundaries: Sequence[str | None],
+) -> tuple[float, ...]:
+    if len(routes) != len(boundaries) or not routes:
+        raise M0MobileError("waypoint sampler routes and boundaries do not align")
+    from collections import Counter
+
+    route_counts = Counter(routes)
+    boundary_counts = Counter(value for value in boundaries if value is not None)
+    total = len(routes)
+    return tuple(
+        total / (len(route_counts) * route_counts[route])
+        + (
+            total / (len(boundary_counts) * boundary_counts[boundary])
+            if boundary is not None and boundary_counts
+            else 0.0
+        )
+        for route, boundary in zip(routes, boundaries, strict=True)
+    )
 
 
 def _balanced_subset_indices(

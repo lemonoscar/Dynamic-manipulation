@@ -9,6 +9,7 @@ pytest.importorskip("safetensors")
 from torch import nn
 
 from scripts.train_waypoint import (
+    DomainBalancedSampler,
     _balanced_subset_indices,
     _load_config,
     _optimizer,
@@ -116,6 +117,30 @@ def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():
         "NAV_PLACE",
         "PLACE_DONE",
     }
+
+
+def test_domain_balanced_sampler_keeps_both_experts_in_every_batch():
+    routes = [
+        "NAV_TO_SOURCE",
+        "PICK",
+        "NAV_TO_TARGET",
+        "PLACE",
+        "DONE",
+    ] * 6
+    sampler = DomainBalancedSampler(
+        routes,
+        [1.0] * len(routes),
+        batch_size=3,
+        seed=9,
+    )
+    indices = list(sampler)
+    next_indices = list(sampler)
+    assert indices != next_indices
+    for epoch_indices in (indices, next_indices):
+        for start in range(0, len(epoch_indices), 3):
+            batch_routes = {routes[index] for index in epoch_indices[start : start + 3]}
+            assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
+            assert batch_routes.intersection({"PICK", "PLACE"})
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():
