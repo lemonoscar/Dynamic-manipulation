@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -186,7 +187,22 @@ def _validate_binding(
         raise M0MobileError("checkpoint source Git state was dirty")
     current_git = training._source_git_identity(PROJECT_ROOT)
     if source_git["commit"] != current_git["commit"]:
-        raise M0MobileError("checkpoint source commit differs from the current checkout")
+        ancestor = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(PROJECT_ROOT),
+                "merge-base",
+                "--is-ancestor",
+                str(source_git["commit"]),
+                str(current_git["commit"]),
+            ],
+            check=False,
+        )
+        if ancestor.returncode != 0:
+            raise M0MobileError(
+                "checkpoint source commit is not an ancestor of the validator"
+            )
     if current_git["dirty_state_artifact"]["is_dirty"]:
         raise M0MobileError("current checkpoint-validation checkout is dirty")
     processor = (checkpoint / str(manifest["processor_relative_path"])).resolve()
