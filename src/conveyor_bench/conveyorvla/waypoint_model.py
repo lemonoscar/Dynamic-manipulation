@@ -832,12 +832,18 @@ class ConveyorVLAWaypointPolicy(nn.Module):
             and decision.route is not WaypointRoute.DONE
         ]
         actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
-        if active_indices:
-            selected = [examples[index] for index in active_indices]
+        device = next(self.qwen.parameters()).device
+        if _distributed_any(bool(active_indices), device):
+            selected_indices = active_indices or [0]
+            selected = [examples[index] for index in selected_indices]
             inputs = dict(
                 self.qwen.build_waypoint_inputs(
                     selected,
-                    solutions=[decisions[index].assistant_prefix for index in active_indices],
+                    solutions=(
+                        [decisions[index].assistant_prefix for index in active_indices]
+                        if active_indices
+                        else [PRED_DONE_TOKEN]
+                    ),
                     supervise_solutions=False,
                 )
             )
@@ -859,41 +865,80 @@ class ConveyorVLAWaypointPolicy(nn.Module):
             ):
                 local_indices = [
                     local_index
-                    for local_index, global_index in enumerate(active_indices)
-                    if decisions[global_index].action_domain is domain
+                    for local_index, global_index in enumerate(selected_indices)
+                    if active_indices and decisions[global_index].action_domain is domain
                 ]
-                if not local_indices:
+                sampled = _sample_domain_actions(
+                    head,
+                    layers,
+                    attention_mask,
+                    local_indices,
+                )
+                if sampled is None:
                     continue
-                index_tensor = torch.as_tensor(local_indices, device=layers[0].device)
-                head_device = next(head.parameters()).device
-                head_dtype = next(head.parameters()).dtype
-                selected_layers = tuple(
-                    layer.index_select(0, index_tensor).to(
-                        device=head_device,
-                        dtype=head_dtype,
-                    )
-                    for layer in layers
-                )
-                selected_attention = attention_mask.index_select(0, index_tensor).to(
-                    head_device
-                )
-                with _action_autocast(head_device, head_dtype):
-                    sampled = head.sample(
-                        selected_layers,
-                        encoder_attention_mask=selected_attention,
-                    )
                 for local_index, value in zip(
                     local_indices,
                     sampled.float().cpu().tolist(),
                     strict=True,
                 ):
-                    actions[active_indices[local_index]] = tuple(
+                    actions[selected_indices[local_index]] = tuple(
                         tuple(float(component) for component in row) for row in value
                     )
         return tuple(
             WaypointPrediction(decision=decision, normalized_action=actions[index])
             for index, decision in enumerate(decisions)
         )
+
+    @torch.inference_mode()
+    def predict_oracle_actions(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> tuple[tuple[tuple[float, ...], ...] | None, ...]:
+        """Isolate action quality with annotated prefixes; never use online."""
+
+        if not examples:
+            raise ValueError("oracle waypoint evaluation examples must be non-empty")
+        inputs = dict(
+            self.qwen.build_waypoint_inputs(
+                examples,
+                solutions=[str(example["solution"]) for example in examples],
+                supervise_solutions=False,
+            )
+        )
+        inputs.pop("labels", None)
+        outputs = self.qwen(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=True,
+            use_cache=False,
+            return_dict=True,
+        )
+        layers = self._last_action_layers(outputs.hidden_states)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            raise RuntimeError("Qwen processor did not return an attention mask")
+        actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
+        for domain, head in (
+            (WaypointActionDomain.NAVIGATION, self.navigation_head),
+            (WaypointActionDomain.MANIPULATION, self.manipulation_head),
+        ):
+            indices = [
+                index
+                for index, example in enumerate(examples)
+                if str(example["action_domain"]) == domain.value
+            ]
+            sampled = _sample_domain_actions(head, layers, attention_mask, indices)
+            if sampled is None:
+                continue
+            for index, value in zip(
+                indices,
+                sampled.float().cpu().tolist(),
+                strict=True,
+            ):
+                actions[index] = tuple(
+                    tuple(float(component) for component in row) for row in value
+                )
+        return tuple(actions)
 
     def _last_action_layers(
         self, hidden_states: Sequence[torch.Tensor] | None
@@ -1136,6 +1181,32 @@ def _zero_domain_loss(
             time=torch.zeros(1, device=device, dtype=dtype),
         )
     return loss * 0.0
+
+
+def _sample_domain_actions(
+    head: LayerwiseFlowMatchingActionHead,
+    layers: Sequence[torch.Tensor],
+    attention_mask: torch.Tensor,
+    indices: Sequence[int],
+) -> torch.Tensor | None:
+    """Sample a real local domain or a discarded ZeRO-alignment dummy."""
+
+    actual = bool(indices)
+    selected_indices = list(indices) if actual else [0]
+    index_tensor = torch.as_tensor(selected_indices, device=layers[0].device)
+    device = next(head.parameters()).device
+    dtype = next(head.parameters()).dtype
+    selected_layers = tuple(
+        layer.index_select(0, index_tensor).to(device=device, dtype=dtype)
+        for layer in layers
+    )
+    selected_attention = attention_mask.index_select(0, index_tensor).to(device)
+    with _action_autocast(device, dtype):
+        sampled = head.sample(
+            selected_layers,
+            encoder_attention_mask=selected_attention,
+        )
+    return sampled if actual else None
 
 
 def _distributed_any(value: bool, device: torch.device) -> bool:

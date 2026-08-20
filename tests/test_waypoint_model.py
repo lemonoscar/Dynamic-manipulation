@@ -344,3 +344,24 @@ def test_self_conditioning_keeps_full_batch_and_masks_nonmatches():
     )
     assert all(parameter.grad is not None for parameter in arm.parameters())
     assert all(torch.count_nonzero(parameter.grad) == 0 for parameter in arm.parameters())
+
+
+def test_oracle_action_evaluation_samples_both_experts_and_keeps_done_empty():
+    torch.manual_seed(3)
+    qwen = _OracleQwen(cross_dim=8, layer_count=2)
+    nav, arm = _head(3), _head(7)
+    policy = ConveyorVLAWaypointPolicy(qwen, nav, arm, route_confidence_min=0.55)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE),
+        _example(WaypointRoute.DONE),
+    ]
+    arm_calls = []
+    handle = arm.transformer_blocks[0].register_forward_hook(
+        lambda *_args: arm_calls.append(True)
+    )
+    actions = policy.predict_oracle_actions(examples)
+    handle.remove()
+    assert len(actions[0]) == ACTION_HORIZON
+    assert all(len(row) == 3 for row in actions[0])
+    assert actions[1] is None
+    assert arm_calls == [True] * arm.config.num_inference_timesteps
