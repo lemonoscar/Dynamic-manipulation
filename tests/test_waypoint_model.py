@@ -236,7 +236,7 @@ def test_layerwise_head_is_state_free_masks_suffix_and_samples():
         time=time,
     )
     assert torch.isfinite(loss)
-    assert changed_loss == pytest.approx(loss.detach())
+    assert changed_loss.detach().item() == pytest.approx(loss.detach().item())
     loss.backward()
     assert all(layer.grad is not None and torch.isfinite(layer.grad).all() for layer in layers)
     assert any(parameter.grad is not None and parameter.grad.abs().sum() > 0 for parameter in head.parameters())
