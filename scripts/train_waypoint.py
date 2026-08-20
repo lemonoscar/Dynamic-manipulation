@@ -240,12 +240,12 @@ def main(argv: list[str] | None = None) -> int:
                     global_step == args.save_first_checkpoint_step
                     or global_step % args.save_interval_steps == 0
                 ):
-                    common._save_checkpoint(accelerator, output, global_step)
+                    _save_waypoint_checkpoint(accelerator, output, global_step)
                     last_checkpoint_step = global_step
                 if global_step >= args.max_steps:
                     break
         if last_checkpoint_step != global_step:
-            common._save_checkpoint(accelerator, output, global_step)
+            _save_waypoint_checkpoint(accelerator, output, global_step)
         _set_status(accelerator, output, "complete", global_step, last_metrics)
         return 0
     except Exception as error:
@@ -502,6 +502,10 @@ def _resolved_run(
         "config": str(config_path),
         "config_sha256": common._sha256(config_path),
         "model_root": str(args.model_root.expanduser().resolve()),
+        "qwen_base": _qwen_base_identity(
+            args.model_root.expanduser().resolve()
+            / str(config["vlm"]["relative_path"])
+        ),
         "initialization": {
             "qwen": "clean_local_qwen3_vl_4b",
             "navigation_head": "new_random_3d_layerwise_fm",
@@ -557,6 +561,28 @@ def _load_config(path: Path) -> dict[str, Any]:
     if value.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
         raise M0MobileError("waypoint dataset contract ID is incompatible")
     return value
+
+
+def _qwen_base_identity(model_dir: Path) -> dict[str, Any]:
+    names = ("config.json", "tokenizer.json", "model.safetensors.index.json")
+    paths = [model_dir / name for name in names if (model_dir / name).is_file()]
+    paths.extend(sorted(model_dir.glob("model-*.safetensors")))
+    if not paths:
+        single = model_dir / "model.safetensors"
+        if single.is_file():
+            paths.append(single)
+    if not paths or not any(path.suffix == ".safetensors" for path in paths):
+        raise M0MobileError("clean Qwen base checkpoint files are missing")
+    return {
+        "model_dir": str(model_dir),
+        "files": {
+            path.name: {
+                "size": path.stat().st_size,
+                "sha256": common._sha256(path),
+            }
+            for path in paths
+        },
+    }
 
 
 def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
@@ -628,6 +654,37 @@ def _set_status(
             },
         )
         _event(accelerator, output, "status", status=status, step=step)
+    accelerator.wait_for_everyone()
+
+
+def _save_waypoint_checkpoint(
+    accelerator: Accelerator,
+    output: Path,
+    step: int,
+) -> None:
+    common._save_checkpoint(accelerator, output, step)
+    if accelerator.is_main_process:
+        resolved_path = output / "resolved_run.json"
+        resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+        checkpoint = output / "checkpoints" / f"step_{step:06d}"
+        common._write_json_atomic(
+            checkpoint / "waypoint_checkpoint_manifest.json",
+            {
+                "schema_version": "conveyorvla-waypoint-checkpoint-v1",
+                "global_step": step,
+                "model_contract_id": resolved["model_contract_id"],
+                "dataset_schema_version": resolved["dataset_schema_version"],
+                "dataset_manifest_sha256": resolved["dataset_manifest_sha256"],
+                "normalization_sha256": resolved["normalization_sha256"],
+                "special_token_ids": resolved["special_token_ids"],
+                "qwen_base": resolved["qwen_base"],
+                "action_contract": resolved["resolved_policy_config"]["action_model"],
+                "route_confidence_min": resolved["route_confidence_min"],
+                "processor_relative_path": "../../processor",
+                "resolved_run_sha256": common._sha256(resolved_path),
+                "legacy_state_projection_present": False,
+            },
+        )
     accelerator.wait_for_everyone()
 
 
