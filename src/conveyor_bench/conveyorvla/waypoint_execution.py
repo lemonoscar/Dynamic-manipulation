@@ -254,7 +254,14 @@ class PCTDWARecedingHorizonExecutor:
         translation = math.hypot(selected_body[0], selected_body[1])
         mode = (
             "terminal_yaw"
-            if translation <= self.config.goal_tolerance_m
+            if (
+                translation < self.config.waypoint_safety.minimum_translation_m
+                or (
+                    self.config.safety_profile
+                    == NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX
+                    and translation <= self.config.goal_tolerance_m
+                )
+            )
             else "pct_dwa"
         )
         plan: PCTPlan | None = None

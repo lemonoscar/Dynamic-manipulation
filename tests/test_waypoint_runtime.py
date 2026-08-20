@@ -272,13 +272,27 @@ def test_pure_rotation_bypasses_pct_and_uses_bounded_terminal_yaw():
     assert 0.0 < command.base_velocity[2] <= 0.6
 
 
-def test_nav_bypasses_pct_inside_position_tolerance_and_uses_terminal_yaw():
-    pct, dwa = _PCT(), _DWA()
+def test_nav_diagnostic_bypasses_pct_inside_position_tolerance():
     response = _response(
         WaypointRoute.NAV_TO_SOURCE,
         [(0.04, 0.0, 0.3)] * ACTION_HORIZON,
     )
-    executor = PCTDWARecedingHorizonExecutor(pct, dwa)
+    strict_pct = _PCT()
+    strict = PCTDWARecedingHorizonExecutor(strict_pct, _DWA()).begin(
+        response, (0.0, 0.0, 0.0), now_s=0.0
+    )
+    assert not strict.failed
+    assert strict.trace["planner"] == "pct_dwa"
+    assert len(strict_pct.calls) == 1
+
+    pct, dwa = _PCT(), _DWA()
+    executor = PCTDWARecedingHorizonExecutor(
+        pct,
+        dwa,
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX
+        ),
+    )
     planned = executor.begin(
         response, (0.0, 0.0, 0.0), now_s=0.0
     )
