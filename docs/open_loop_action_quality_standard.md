@@ -1,5 +1,9 @@
 # ConveyorVLA AL0 开环动作质量标准检测（basic-v1）
 
+> 历史标准：本页阈值和命令针对旧 `[vx,wz] + TCP-delta` 动作空间。Waypoint v1 使用
+> `scripts/evaluate_waypoint_open_loop.py` 的 route、ADE/FDE、absolute TCP 和 safety
+> 门禁，见 [operations.md](operations.md)；不得把 basic-v1 结果当作 Waypoint 通过。
+
 ## 1. 目的与边界
 
 本检测回答一个单独的问题：在数据集记录的专家观测上，模型实际采样出的动作，和同一时刻的专家动作有多接近、方向是否正确、是否稳定。

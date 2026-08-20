@@ -1,5 +1,10 @@
 # Seen 子任务数据问题分析与修正方案
 
+> 历史诊断：本文分析旧 step 7000 / state28 direct-action 路线。其问题推动了
+> Waypoint v1，但第 4～8 节不是现行模型合同；冲突时以
+> [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md) 和
+> [当前状态](status.md) 为准。
+
 更新时间：2026-08-17。
 
 ## 1. 结论

@@ -1,5 +1,11 @@
 # Liangzhu seen dense-transition 合同
 
+> 历史合同：本文记录 Waypoint v1 之前的
+> `state28 + velocity/TCP-delta` dense-transition 训练线。现行数据、模型和启动命令
+> 已由 [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md)、
+> [data.md](data.md) 和 [operations.md](operations.md) 取代；以下数值仅用于复现与
+> 根因追踪。
+
 本轮只使用 ModelScope `liangzhu_0815_n200` 与 `liangzhu_0815_n400`。旧 raw、base、
 sidecar 和 checkpoint 均保持只读，但不再进入训练引用；不继承旧 optimizer/scheduler。
 新 expanded base schema 是

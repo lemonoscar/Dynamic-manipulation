@@ -1,148 +1,160 @@
 # 架构说明
 
-> 版本范围：本文主要描述 2026-08-13 的采集/runtime 架构。第 4～5 节的
-> `state28 + 20×10 直接动作` 模型是当前旧实现，不是下一代目标。2026-08-20 已批准的
-> 目标架构以 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为唯一依据；
-> 合同尚未实现，二者不得混称。
+版本范围：Waypoint Policy v1，代码基线
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`。批准语义以
+[Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为准；本页说明
+合同在仓库中的落点。旧 `state28 + 20×10 direct action` 结构只作为历史兼容面保留。
 
-## 1. 仓库分层
+## 1. 系统边界
 
 ```text
-CLI
-├── collect / run_benchmark / validate / convert / train / evaluate
-│
-Runtime
-├── isaac/runtime.py        当前 NuRec 场景入口
-├── isaac/runtime_core.py   唯一物理与采集主循环
-├── isaac/scene.py          NuRec 与动态前景组合
-├── isaac/workcell.py       Go2-X5、传送带、相机和投放盒
-└── isaac/physics.py        共享 PhysX 小工具
-│
+模型输入
+  完整任务 + head[t-0.20s,t] + wrist[t-0.20s,t]
+      │
+      ├─ Pass 1：受约束 Qwen generation
+      │           ACTION + 单 route token + subtask，或 DONE
+      │
+      └─ Pass 2：同一 user 输入 + 模型自己的完整 Pass 1 prefix
+                 第二次完整 Qwen forward，输出最后 16 层 hidden states
+                       │
+              route 只选择一个动作域
+               ┌───────┴────────┐
+               │                │
+       Navigation FM        Manipulation FM
+       [20,3]               [20,7]
+       body waypoint        query-base absolute TCP target
+               │                │
+模型外         PCT → DWA         workspace → cuRobo/IK
+执行侧         locomotion        joint controller
+               └───────┬────────┘
+                 首个目标完成/失败
+                       │
+                 新视觉 query
+```
+
+模型侧不接收 robot state、phase、operation、target truth、task FSM 或 semantic history。
+执行侧必须读取 odometry、关节、TCP、局部地图和碰撞状态完成安全规划；这不构成模型
+state 输入，也不得用来重写 Qwen route。
+
+## 2. 仓库分层
+
+```text
 Contracts
-├── schema/                 canonical episode、记录、校验和导出
-├── sidecar/                外部资产校验与组合层生成
-└── task_coordinator.py     顺序目标状态
-│
-Policy
-├── conveyorvla/temporal.py 双帧时序目标
-├── conveyorvla/streaming.py 在线动作合并
-└── conveyorvla/lerobot_v3.py LeRobot v3 适配
+├── conveyorvla/waypoint.py              token、shape、坐标、时间和安全常量
+├── conveyorvla/waypoint_protocol.py     无 state 的 runtime/v1 request/response
+└── configs/waypoint_v1.json             模型、loss、优化和置信度配置
+
+Data / training
+├── conveyorvla/waypoint_data.py         raw→派生 schema、audit、normalizer、loader
+├── conveyorvla/waypoint_model.py        Qwen 接口与双 Layerwise FM head
+├── scripts/build_waypoint_dataset.py
+├── scripts/audit_waypoint_dataset.py
+├── scripts/train_waypoint.py
+└── scripts/check/evaluate/export_waypoint_*.py
+
+Serving / execution
+├── conveyorvla/waypoint_runtime.py      严格推理 session 与 RECOVER
+├── conveyorvla/waypoint_execution.py    receding-horizon executor
+├── conveyorvla/waypoint_planner_adapters.py
+├── conveyorvla/waypoint_rollout.py      图像缓冲、HTTP client、frame/state adapter
+├── scripts/serve_waypoint.py
+├── scripts/serve_waypoint_curobo.py
+└── scripts/run_waypoint_rollout.py
+
+Collection / simulator
+├── isaac/runtime.py / runtime_core.py    采集与现有 ConveyorBench 物理主循环
+├── isaac/scene.py / workcell.py          Liangzhu、Go2-X5、相机与工位
+└── schema/ / sidecar/                    canonical raw 与资产 provenance
 ```
 
-`runtime.py` 只负责当前场景特有的资产和 provenance；所有物理采样、专家控制、
-记录和失败处理都在 `runtime_core.py`。这样场景适配不会复制一套采集主循环。
+稳定合同模块不依赖外部 planner checkout。PCT/DWA 与 cuRobo 的项目特定接线集中在
+`waypoint_planner_adapters.py` 和启动脚本，核心协议与模型可以独立做静态测试。
 
-## 2. 版本策略
+## 3. Qwen 路由与双动作头
 
-源码文件不带 V1/V2/V3 后缀。迭代通过 Git commit、branch 和 tag 保存，当前代码
-直接覆盖旧实现。仅以下版本标识继续保留：
+Pass 1 只能生成以下 active route token 之一，或精确的 `<|pred_done|>`：
 
-- `conveyor-bench-v1`：已经落盘的 canonical episode 协议；
-- `conveyor-vla-al0-temporal-v3`：导航—抓取—配送联合训练记录格式；
-- LeRobot `v3.0`：第三方数据格式；
-- 历史 teacher/profile/scene ID：用于拒绝不兼容旧数据。
+| route | 动作域 | head |
+|---|---|---|
+| `NAV_TO_SOURCE` | `NAVIGATION` | Navigation FM |
+| `PICK` | `MANIPULATION` | Manipulation FM |
+| `NAV_TO_TARGET` | `NAVIGATION` | Navigation FM |
+| `PLACE` | `MANIPULATION` | Manipulation FM |
+| `DONE` | `NONE` | 不生成动作 |
 
-升级数据字段时新增 schema migration 或显式拒绝，不创建第二套 runtime。
+route 是单 token；subtask 文本不参与专家 parser。Pass 2 不能复用 generation cache
+代替完整 forward，也不能用 GT prefix。两个 16 层 Flow-Matching head 参数不共享；
+Qwen 最后 16 层与对应 head block 逐层 cross-attention。两个 head 均没有 state encoder，
+Qwen 主干、embedding/LM head 和双 head 一起训练。
 
-## 3. 渲染与物理
+训练主目标使用 GT route 选择 oracle-prefix 动作 loss；`lambda_self` 在总训练进度 5%
+前为 0，之后线性升到 0.5，用模型自产 prefix 形成辅助目标。训练中的 self-conditioning
+不会引入 previous-subtask history。
 
-NuRec 背景和 Isaac 前景由 RTX 单遍注册渲染。Gaussian 只负责静态外观；机器人、
-传送带和物体都是 Isaac prim，并参与 PhysX。场景逻辑不会把动态物体后期贴到背景上。
+## 4. 动作、坐标与时间
 
-sidecar 校验顺序：
+所有 horizon 都固定为 20，并锚定 query 时刻同一个 `query-base-B_t`：
 
-```text
-root containment
-  → no symlink/special file
-  → manifest membership
-  → SHA-256
-  → NuRec USDZ members
-  → runtime USD layer
-  → stage prim contract
-  → object visual/collision fixture
-```
+| 动作域 | shape | stride | 含义 |
+|---|---:|---:|---|
+| Navigation | `[20,3]` | 0.60 s | `[dx_body, dy_body, dyaw]`，不是速度 |
+| Manipulation | `[20,7]` | 0.20 s | `[x,y,z,roll,pitch,yaw,gripper]` absolute TCP target |
 
-任一门禁失败都在仿真开始前终止。
+Navigation 不是逐点 delta 积分；每行都是相对同一 `B_t` 的未来 base pose。ARM target
+也是相对同一 query base 的绝对目标，而不是相对当前 TCP 的 delta。进入 cuRobo 前必须
+显式执行 `query-base → curobo-planner-base` 变换。
 
-## 4. ConveyorVLA AL0
+数据允许 `action_valid_mask` 在 phase boundary 或 episode 末尾截断 horizon。在线
+输出必须经过有限值、shape、frame、normalizer、workspace、segment 和 sequence gate。
 
-当前网络输入和输出：
+## 5. 运行时与 fail-closed
 
-```text
-完整语言指令
-head[t-5, t] + wrist[t-5, t]
-当前 28 维机器人状态
-          │
-Qwen3-VL 第一次生成当前 canonical subtask
-          │ 模型预测文本 + 原始观测
-Qwen3-VL 第二次完整 forward（全量微调）
-          │ hidden size 2560
-按预测文本映射 Navigation DiT 或 Manipulation DiT
-          │
-未来 20 × 2 或 20 × 7 动作块（25 Hz，0.8 s）
-```
+`conveyorvla-waypoint-runtime/v1` request 只包含 request/episode/sequence 身份、完整
+指令、两张有序 head 图、两张有序 wrist 图和 calibration ID。协议递归检查并拒绝
+`state28`、phase、operation、locked route、pose truth 和 history 等字段。
 
-Qwen3-VL 主干、embedding/lm head 和两个 DiT 都参与训练。Dispatcher 只做语言到专家
-的映射，不保存外部任务顺序。主 prompt 在训练和在线都不接收 semantic history；阶段
-判断只依赖当前双帧视觉与完整任务。动作专家 route 的 teacher forcing 单独衰减到 0。
+以下情况返回 `RECOVER` 且不复用上次动作：请求过期/重放、标定不一致、非法 prefix、
+route 置信度低于 0.55、反归一化失败、shape/数值不合法或 active route 没有动作。
+`RECOVER` 是停机语义，不是把外部 FSM 的 route 填回模型。
 
-28 维状态包含底盘速度、角速度、重力投影、机械臂/夹爪关节等 proprioception。
-10 维动作包含底盘、TCP 和夹爪命令。overview、物体真值和教师 phase 都不能进入
-策略输入。
+单卡服务只加载由 `export_waypoint_inference.py` 从绑定 ZeRO checkpoint 生成的完整
+inference export。export 同时绑定 source commit、resolved run、processor、special token
+ID、normalizer hash 和 checkpoint step。
 
-## 5. 时序能力
+## 6. Receding-horizon 执行
 
-动态抓取能力不是来自“把视频存成 MP4”，而来自三个合同：
+Navigation executor：
 
-1. head/wrist 各提供 `[-5, 0]` model tick、跨度 0.20 秒的有序短 clip；
-2. 模型预测未来 20 个独立动作目标；
-3. 在线执行按 episode、generation、observation tick 和 target tick 合并动作。
+1. 校验完整 `[20,3]` 与 prefix mask；
+2. 选择第一个平移至少 0.03 m 或偏航至少 3° 的有效 waypoint；
+3. body→world 后交给启用 PCT 且显式禁止 fallback 的 planner；
+4. DWA 每个控制 tick 基于测量速度和局部地图输出有界 `[vx,vy,wz]`；
+5. 首 waypoint 到达、超时、stall 或失败后停止并要求新 query。
 
-过期动作、旧 episode、旧 generation、倒序 observation 和不足两步的有效后缀全部
-fail-closed。控制器不允许仅按数组重叠位置拼块。
+纯旋转 waypoint 走限幅 terminal-yaw controller。导航时执行器可分别维持
+`stow_open` 或 `carry_closed`，但 route 仍来自模型。
 
-Navigation DiT 只输出 `[vx,wz]`。动作组合器必须显式补全 joint-space reference：
-`NAV_TO_SOURCE=stow+open`，`NAV_TO_TARGET=carry+closed`，并从实测关节限速过渡；空动作或
-零 TCP delta 不能再表示导航阶段机械臂姿态。Manipulation DiT 激活时底盘速度硬置零。
+Manipulation executor：
 
-## 6. 专家状态机
+1. 校验 `[20,7]` workspace 和相邻目标变化；
+2. 仅采用第一个有效 absolute TCP target；
+3. 转换到 cuRobo planner frame，以实时关节与碰撞场景规划；
+4. 要求 reachable、collision-free 且末端误差在阈值内；
+5. 底盘保持零，执行 joint path 后重新 query。
 
-专家主路径按顺序执行：
+PCT/DWA 适配器绑定批准的 `arm-vla-grasp-sim@388b6818f4c605a707d13c519fbb58b1d07acd92`。
+当前 cuRobo 参考 checkout 为
+`87260212b891aaae8c157a1d9a3277439f602a65`；真实运行仍须记录干净状态与环境。实际
+planner/Isaac 门禁状态见 [status.md](status.md)，不能从“代码已接线”推断为“闭环已通过”。
 
-```text
-mobile_settle
-→ mobile_approach
-→ mobile_stabilize
-→ arm_preposition
-→ settle / select
-→ pregrasp / track / descend
-→ close / lift
-→ carry_retract（底盘锁定，收回标准携带位）
-→ carry_backoff / carry_backoff_settle
-→ carry_turn（蓝框为左转）
-→ carry_navigate / carry_settle
-→ carry / preplace / place_descend
-→ open / retreat / verify_place
-```
+## 7. 旧采集与模型边界
 
-目标物体从 episode 初始化起连续随传送带运动；导航和预摆臂只门控 oracle 激活，
-不再门控物体生成。联合训练只接受 `whole_body_policy`。exporter 要求接近传送带至少 `0.20 m`、收臂后
-负向直退至少 `0.30 m`、负载导航至少 `0.10 m`，并要求 `carry/preplace/place_descend/open`
-阶段底盘动作严格为零。到达目标框后由低层 `root_pose_hold` 站立控制抵消机械臂反力，
-且只有物体已经进入蓝框后才允许执行 `open`；上层 VLA 不再输出导航动作。固定底盘只保留为
-机械臂消融，不再能生成联合训练记录。`m0_*assist` 参数只用于历史诊断，任何启用
-assist 的 episode 都由 exporter 拒绝进入标准训练集。
+ConveyorBench canonical raw、动态传送带教师和 Isaac 采集 runtime 仍是有效的数据证据
+基础；它们不等于现行 Waypoint 模型输入。旧 `temporal_v3` / dense-transition view、
+`state28`、`[vx,wz]`、TCP delta、`scripts/train_hierarchical.py`、`serve.py` 和
+`evaluate.py` 只用于历史复现，不能与 Waypoint checkpoint、normalizer 或 runtime/v1
+混用。
 
-## 7. 扩展规则
-
-新增物品：扩展 `sidecar/objects.py` 和资产 manifest，并增加 fixture 测试；不要复制
-scene 或 runtime。
-
-新增速度：通过配置和采集参数扩展允许集合，并重新运行教师节拍测试；不要复制
-collector。
-
-新增任务：优先扩展 canonical task/phase 和 `task_coordinator.py`；只有数据字段变化
-才升级 schema。
-
-新增场景：若仍使用同一机器人、传送带和 episode 合同，把场景差异放入
-`isaac/scene.py` 的配置；只有物理主循环确实不同才拆模块。
+源码继续采用单一 live tree，不创建 `runtime_v4.py` 或并行版本目录。数据 schema、
+动作语义、坐标、时钟或 checkpoint contract 变化时必须升级显式 ID，并提供拒绝或迁移
+路径。

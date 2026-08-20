@@ -1,5 +1,8 @@
 # ConveyorVLA AL0 `step_003000` 中间检查
 
+> 历史 checkpoint 记录：本文对应 2026-08-15 的旧 state28/direct-action 训练，不能
+> resume、转换或用于评估 Waypoint v1。现行正式训练见 [status.md](status.md)。
+
 ## 结论
 
 `step_003000` 是本轮训练最后一个完整 checkpoint。训练损失持续下降，未出现 NaN、OOM、NCCL 或 checkpoint 损坏；四阶段验证集自由生成达到 64/64 正确。旧训练已停止，3001–3080 仅存在于日志而未保存。

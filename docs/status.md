@@ -1,73 +1,135 @@
-# 当前状态与下一步
+# 当前状态、证据与剩余门禁
 
-更新时间：2026-08-13。
+最后复核：2026-08-20 18:54 CST。现行实现：
+`feature/conveyorvla-waypoint-v1@724ead21be2c27d9b40c200375ee4ab49ccedc84`。
 
-## 已完成
+## 1. 总结
 
-- PCT 对齐的 Go2-X5 URDF/USD、FinRay 夹爪、TCP 和 head/wrist 相机标定；
-- 梁渚 NuRec 背景、独立碰撞层和 Isaac 动态前景的注册组合；
-- SSH sidecar 68 个文件、2,563,083,283 bytes 的逐项 SHA-256 校验；
-- 深绿色横向传送带、真实可乐罐视觉和解析刚体 fixture；
-- 俯视、目标相对跟随、缓降、连续夹爪闭合、抬升和投放教师；
-- canonical raw、严格校验、质量审计、相机门禁和无损导出；
-- raw PNG 到 LeRobot v3 H.264/PyAV 的转换与训练入口；
-- PCT Liangzhu n200/n250 raw 审计与适配入口：成功轨迹可重建为 state28、未来
-  20×10 动作及 0.20 秒双帧时序；单 episode 已完成四路 H.264/PyAV 解码、真实
-  反向更新和 checkpoint 写出 smoke；
-- `navigate_grasp_deliver` 联合专家状态机：接近传送带、动态抓取、负载导航到分类箱、
-  俯视投放；
-- temporal v3 联合训练入口：强制关键 phase 顺序以及 `0.20 m / 0.10 m` 两段实际
-  导航位移门禁；
-- 一条固定底盘完整正例：约 14.02 秒、701 个 control step、三路 1050 张 PNG，
-  抓取—投放成功并通过已有数据门禁；
-- 最新 `whole_body_policy` 联合正例 r23：24.46 秒、1223 个 50 Hz 样本、三路各
-  611 张 PNG。目标从 episode 初始化起连续运动，完整执行导航、跟踪抓取、垂直抬升、
-  锁底盘收臂、后退左转、负载导航和驻车放置；严格校验、质量审计、相机门禁及四种
-  export 均通过，已标记 `training_eligible=true`。
+Waypoint Policy v1 的数据 schema、无 state 模型、训练、checkpoint、开环评测、
+runtime protocol、PCT/DWA 与 cuRobo adapter、单卡服务和模型自主管理的 rollout loop
+均已进入公开分支。4×H20 正式 10,000-step 长训已从干净提交启动，并通过前 20 个连续
+有效 step、四条非零梯度路径、四卡利用率和 step 20 checkpoint 提交门禁。
 
-## 已知失败
+本轮实施里程碑按“健康启动正式长训”判据关闭。该里程碑不改变批准合同中的质量门禁：
+目前不能声明 overfit 通过、模型已收敛、正式 checkpoint 已通过开环、真实 cuRobo
+已通过、或 Isaac 无辅助闭环成功。
 
-早期 VLA 闭环完全失败的主要问题不是单一“数据量不足”：
+## 2. 门禁总表
 
-- 教师动作与传送带速度曾快于 5 Hz 查询/25 Hz 动作模型可跟随的节拍；
-- 早期轨迹使用预测等待式截获，不提供持续目标相对跟随；
-- 旧相机/机器人资产与 PCT 标定不一致；
-- 旧数据混合多个 teacher、速度和辅助控制合同；
-- 模型缺少明确的双帧时序观测与过期动作处理。
+| 门禁 | 状态 | 证据/边界 |
+|---|---|---|
+| 无 state 数据构建与 audit | 通过 | 522 episodes、119,700 rows；state field/tensor=0；manifest/normalizer hash 已冻结 |
+| 模型与协议静态测试 | 通过 | 9 个 Waypoint 测试文件、49 tests passed，commit `724ead2` |
+| Pass 1/Pass 2 与双 Layerwise FM 接线 | 通过（静态/训练） | 两次完整 Qwen、模型自产 prefix、NAV/ARM 均有反向梯度 |
+| 4GPU checkpoint load | 通过（诊断 checkpoint） | 早期 step 3 与 80 的 ZeRO binding/load gate 通过 |
+| 80-step 小样本 overfit | **未通过** | route 未过置信度门禁；动作 loss 有改善但不足以替代 route |
+| PCT/DWA reference navigation probe | 通过 | 已知 0.60 m body waypoint、无 fallback、有限有界 DWA、首目标后 requery |
+| 正式长训健康启动 | 通过 | step 1–20 连续有效，四条 loss/gradient/LR 有限，step 20 checkpoint 完整提交 |
+| 正式 checkpoint load/open-loop | 未执行 | step 20 已落盘，但不能沿用诊断 checkpoint 的结论 |
+| 单 GPU train smoke | 未执行 | 四卡训练已验证，不等于单卡路径验证 |
+| inference export + 实际 checkpoint 服务 | 未执行 | 代码/静态测试通过；未完成真实 consolidation/request |
+| 真实 cuRobo known-pose smoke | 未执行 | adapter/service 静态测试通过；不能声明实际 planner 可用 |
+| oracle-route planner rollout | 未执行 | rollout loop 已实现，尚无真实 episode evidence |
+| 分阶段/完整自主 Isaac 闭环 | 未执行 | 无三视角视频/trace/success evidence |
 
-这些问题促成了当前低速、双帧、未来动作和严格 profile 隔离方案。
+“通过（静态/训练）”只覆盖表中明确写出的层级，不向真实 planner 或仿真闭环外推。
 
-联合教师调试还暴露了逐层问题：早期局部地面范围不足导致步态失效，随后出现负载导航
-驻车容差、投放 IK 重置、机械臂反作用推动浮动底盘等问题；这些均通过真实 episode
-逐项修正。r9 已完成完整动作并把可乐罐投进蓝框，但旧评分器仍等待 0.5 秒静止驻留，
-罐体角速度约 `0.37 rad/s`，因而误报 `placement_not_settled`。当前合同按任务要求改为
-“正确夹持后释放，目标中心首次进入指定框即成功”，运动状态继续记录但不再否决入框。
+## 3. 正式训练
 
-## 当前限制
+| 项目 | 值 |
+|---|---|
+| host | `4xH20`，实际 `VM-0-3-ubuntu` |
+| tmux | `cvla-wp-formal-724ead2-s10000` |
+| run | `/diff/wallx_workspace/dzb/runs/conveyorvla-waypoint-v1-formal-724ead2-s10000-20260820T1813` |
+| source | clean `724ead21be2c27d9b40c200375ee4ab49ccedc84` |
+| train rows | 108,603，全量、无 subset、无 resume |
+| schedule | 10,000 steps，warmup 200 |
+| batch | micro 3/GPU × 4 GPU × accumulation 2 = global 24 |
+| precision / sharding | bf16 / DeepSpeed ZeRO-3，无 CPU offload |
+| checkpoint | step 20，之后每 1,000 step |
 
-联合链路已由 r23 的真实 Isaac episode 验证，不再是当前阻塞。该条在 24.40 秒释放，
-物体进入 `sort_bin_blue`；`last_settled=false` 仍按任务合同正确得到 `success=true`。
-外层目录曾留下 `exit_code=2`，但内层 collector 返回 0，episode 与全部导出均成功；
-若复用旧 launcher，需要修正这处退出码透传。
+step 20 的代表事件：
 
-当前物品池也未达到正式矩阵要求。sidecar 虽包含多个物品文件，只有 `cola` 完成了
-尺度、碰撞、质量、摩擦和抓取 affordance 的训练级 fixture；第二档速度和 GPU 2/3
-并行 pilot 也尚未冻结。因此当前可启动单可乐罐小批量采集，不能启动 384 条正式矩阵。
+| 指标 | 值 |
+|---|---:|
+| total / answer / decision / active-route loss | 1795.844 / 9.576 / 0.688 / 1.386 |
+| NAV / ARM loss | 730.274 / 1053.920 |
+| Qwen / NAV / ARM gradient norm | 9,959,407 / 5,404,630.5 / 1,316,593.75 |
+| optimizer step | `valid_optimizer_step=true` |
 
-## 下一步顺序
+step 20 checkpoint 约 60 GB，四个 model shard、四个 optimizer shard、trainer state、
+scheduler、random state、ZeRO consolidation script 和 checkpoint manifest 均已提交。
+训练在 checkpoint 后继续；18:54 CST 只读复核时已到 step 453，四个训练进程仍在，
+四张 H20 各约 49–50 GiB 显存，最近 event 仍为有限非零梯度。瞬时 GPU utilization
+为 33–100%，step 持续推进。
 
-1. 保持 fixed-base 教师作为机械臂消融基准；
-2. 把 r23 转换成 LeRobot v3，执行四视频解码和单 episode 训练 smoke；
-3. 为另外三个训练物品完成刚体 fixture 和逐物品 stationary/dynamic pilot；
-4. 冻结第二档传送带速度，并证明教师节拍和 VLA 查询频率匹配；
-5. 实现 8-cell 可恢复采集总账；
-6. GPU 2/3 双 worker pilot 全部通过；
-7. 才启动 384 条正式成功配额采集。
+该快照是运行时证据，不是持续监控承诺。训练 worktree 固定在 `724ead2`；后续文档
+commit 不同步进正在运行的 worktree。
 
-## 可声明与不可声明
+## 4. 数据与可复现性
 
-可以声明：固定底盘教师以及完整“导航—动态抓取—负载导航—入框”联合教师，均已有
-真实 Isaac 成功证据；r23 canonical 数据已满足当前训练资格。
+正式 run 绑定：
 
-不可声明：四物品正式矩阵就绪、384 条已可安全启动、当前 VLA 闭环成功率有效。后续
-报告必须继续区分专家轨迹成功、数据完整性和学习策略闭环三项结果。
+- dataset：
+  `/diff/wallx_workspace/dzb/datasets/derived/conveyorvla-waypoint-v1-full-8fcccd9`；
+- dataset manifest：
+  `0db6169d726b2165a90ec6e833403666179eb68135248af5681de92a400ec957`；
+- normalizer：
+  `75a60ba125a83383f1d00ef4151933a77c796faee5d5c559364310cb64acfca0`；
+- policy config：
+  `bbf5ab2cf44391e73c98ace3c2ef990aab4076244c41bec2ba260c58403827ce`；
+- Qwen base 文件逐项 SHA-256、token IDs、完整 argv、环境、hostname 和 clean dirty-state
+  记录在 `resolved_run.json`。
+
+raw n200+n400 保持只读；dataset、run、checkpoint、日志和视频均不进入 Git。
+
+## 5. 80-step overfit 结果
+
+32-sample、80-step 诊断没有通过严格 overfit profile：
+
+- step 80 decision loss 约 0.624；
+- active-route loss 约 1.346；
+- self-conditioned 样本因 route confidence 低于 0.55 全部进入 `RECOVER`；
+- NAV/ARM 动作 loss 相比初始化明显改善。
+
+这说明训练/梯度/动作 head plumbing 可运行，但不能证明模型在小样本上学会自主 route。
+正式长训是按明确决定直接启动的，不应把“给更多训练时间”写成“overfit 已通过”。
+正式 run 的 `lambda_self` 在 5% 进度（step 500）前为 0，早期健康 step 也不能回答
+self-conditioned route 是否可用。
+
+## 6. 已知问题与警告
+
+- `scripts/audit_training_events.py` 仍解析 legacy event 字段，不能直接验证 Waypoint
+  v1 的 `answer_loss/decision_loss/active_route_loss/lambda_self`；正式前 20 step 使用
+  独立 JSONL 检查。
+- Torch 无法创建 run-local kernel cache 时禁用了 kernel caching；这是非致命性能警告，
+  未造成训练中断。
+- 0815 source 只有 head/front 与 wrist，没有第三视角；数据 review clip 不满足合同的
+  三视角闭环视频要求。
+- PCT/DWA 已跑真实 reference code 的合成地图 probe；cuRobo 目前只有接口与静态测试，
+  两者证据层级不同。
+- 代码完成不代表 arm-vla/curobo 环境、场景碰撞、frame calibration 和 joint controller
+  已在完整 episode 中联调。
+
+## 7. 若继续推进
+
+建议严格按以下顺序补齐证据：
+
+1. 在 step 500 之后审计 self-conditioned route/RECOVER 计数，并对正式 checkpoint
+   运行四卡 load gate；
+2. 运行正式 checkpoint 的 diagnostic 与 overfit/open-loop profile；
+3. 完成 inference export 和单卡服务真实 request smoke；
+4. 完成 cuRobo known-pose、frame transform、碰撞与误差 gate；
+5. 运行 oracle-route NAV/ARM planner rollout；
+6. 运行四阶段 staged rollout；
+7. 最后运行无 GT phase、无外部 FSM 的完整自主 Isaac episode，并保存 head、wrist、
+   第三视角视频及逐 query trace。
+
+## 8. 可声明与不可声明
+
+可以声明：Waypoint v1 已实现；数据 audit 和 49 项静态测试通过；4×H20 正式长训从
+干净、绑定的数据/配置/提交健康启动，前 20 step 与首 checkpoint 有证据。
+
+不可声明：80-step overfit 通过、正式模型收敛、正式 checkpoint 开环通过、cuRobo
+实际规划通过、planner rollout 通过、或真实仿真闭环成功。旧教师 episode 和旧
+state28 checkpoint 的成功/失败也不能作为 Waypoint v1 的结果。

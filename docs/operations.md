@@ -1,289 +1,262 @@
-# 采集、训练与测评操作
+# 数据、训练与测评操作
 
-> 版本范围：本文训练/服务命令属于旧的 `state28 + velocity/TCP-delta` 合同。
-> 它们可复现历史 dense-view7 训练，但不得用于启动已批准的 waypoint v1 长训。
-> Waypoint v1 必须先完成新数据、模型、planner adapter、测试和 resolved config，合同见
-> [conveyorvla_waypoint_policy_contract_v1.md](conveyorvla_waypoint_policy_contract_v1.md)。
+版本范围：Waypoint Policy v1，代码基线
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`。所有命令从干净仓库根目录执行，输出必须
+使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
+Git。
 
-本文命令默认从仓库根目录执行。远端工作根为
-`/diff/wallx_workspace/dzb`，本项目实验只允许使用物理 GPU 2/3。
-
-远端只保留以下运行布局：
-
-```text
-ConveyorVLA/                         代码仓库
-assets/conveyorvla-v3/              SSH 交付的 3DGS 与物品资产
-datasets/conveyorvla-al0-grasp-v1/  392 条 LeRobot v3 基线数据
-models/base/                         Qwen3-VL、ABot-M0 与配置登记的 VGGT
-models/conveyorvla-al0/              已训练动作头、配置和统计量
-results/joint-smoke-r23/             最新完整移动教师成功证据
-dynamic-isaaclab-5.1-20260804/       不可搬移的 Isaac 运行环境
-.conda-envs/conveyorvla-al0-lerobot044/  LeRobot 0.4.4 环境
-workspace-manifest/                  清理与保留清单
-```
-
-## 1. 环境预检
+## 1. 环境与代码预检
 
 ```bash
-conda activate /diff/wallx_workspace/dzb/dynamic-isaaclab-5.1-20260804/envs/conveyor_py311
+git status --short --branch
+git rev-parse HEAD
 python -m pip install -e .
-python scripts/check_environment.py
-```
 
-纯逻辑测试：
-
-```bash
 PYTHONDONTWRITEBYTECODE=1 \
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-python -m pytest -p no:cacheprovider
+python -m pytest -p no:cacheprovider \
+  tests/test_waypoint_contract.py \
+  tests/test_waypoint_data.py \
+  tests/test_waypoint_model.py \
+  tests/test_train_waypoint.py \
+  tests/test_waypoint_runtime.py \
+  tests/test_waypoint_open_loop.py \
+  tests/test_waypoint_planner_adapters.py \
+  tests/test_waypoint_service.py \
+  tests/test_waypoint_rollout.py
 ```
 
-## 2. Sidecar 资产
+2026-08-20 的远端基线在上述九个文件中收集 49 项测试并全部通过。测试通过证明静态
+合同和接线，不证明模型收敛或 Isaac episode 成功。
 
-资产通过 SSH 放到服务器，不提交 Git。当前经过哈希校验的目录：
+4×H20 的工作根固定为 `/diff/wallx_workspace/dzb`。远端操作前必须先做非交互 SSH
+探测，确认目标 worktree 干净、commit 精确一致、磁盘和四卡状态可用；不得 reset/clean
+或占用其他任务的 GPU。
 
-```bash
-export CONVEYOR_BENCH_ASSET_ROOT=/diff/wallx_workspace/dzb/assets/conveyorvla-v3
-python scripts/validate_assets.py \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --allowed-root /diff/wallx_workspace/dzb
-```
-
-正式采集不能使用 `--metadata-only`。全量 SHA-256 校验必须通过，且不能出现 symlink、
-缺失文件或额外未登记成员。
-
-## 3. 场景与移动探针
-
-在采集前分别验证场景和 locomotion：
+## 2. 构建无 state waypoint 数据
 
 ```bash
-python scripts/probe_scene.py \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --output-dir outputs/probe_scene \
-  --enable_cameras --headless
+WAYPOINT_SOURCE_N200=/path/to/liangzhu_0815_n200
+WAYPOINT_SOURCE_N400=/path/to/liangzhu_0815_n400
+WAYPOINT_DATASET=/new/path/conveyorvla-waypoint-v1
 
-python scripts/probe_mobile_locomotion.py --help
-```
-
-检查 head、wrist、overview 是否清晰、目标和传送带是否完整可见、动态物体与背景遮挡
-是否正确。Navigation gate 至少检查净位移、航向、驻车速度和 reset 稳定性。
-
-## 4. 采集 dry-run
-
-dry-run 会解析资产、路径、seed、速度、GPU 和最终 Isaac 命令，但不启动仿真：
-
-```bash
-python scripts/collect.py \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --output-root outputs/pilot \
-  --physical-gpu 2 \
-  --robot-mode whole_body_policy \
-  --episodes 1 \
-  --seed 1101 \
-  --belt-speed 0.01 \
-  --dry-run
-```
-
-当前限制：
-
-- `--physical-gpu` 只能是 2 或 3；
-- 单进程 `episodes` 在 1–8；
-- 当前允许速度为 `0` 或 `0.01 m/s`；
-- dynamic 默认目标为 `cola`；
-- stationary 只接受预注册 seed。
-
-## 5. Pilot
-
-先在 GPU 2/3 各运行一个小批次，seed 不得重叠：
-
-```bash
-CUDA_VISIBLE_DEVICES=2 python scripts/collect.py \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --output-root outputs/pilot/gpu2 \
-  --physical-gpu 2 --robot-mode whole_body_policy \
-  --episodes 2 --seed 1101 \
-  --belt-speed 0.01 --require-all-success
-
-CUDA_VISIBLE_DEVICES=3 python scripts/collect.py \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --output-root outputs/pilot/gpu3 \
-  --physical-gpu 3 --robot-mode whole_body_policy \
-  --episodes 2 --seed 1201 \
-  --belt-speed 0.01 --require-all-success
-```
-
-`CUDA_VISIBLE_DEVICES` 与 Kit 的 `activeGpu` 语义取决于服务器启动环境；正式运行前要用
-`nvidia-smi` 和 Kit 日志证明进程确实落在授权物理卡。不要杀死、占用或修改 GPU 0/1
-上的外部任务。
-
-Pilot 通过标准：
-
-- 所有请求 seed 都发布且成功；
-- `collection_report.json` 的 eligible 数与请求数一致；
-- 没有 `.inprogress`；
-- validator、audit、camera gate 和 export 全部通过；
-- Kit/stdout 无 traceback、OOM、CUDA error 或 fatal；
-- 人工检查至少一条完整三相机视频。
-
-## 6. 单条数据复核
-
-```bash
-python scripts/validate.py outputs/pilot/gpu2/raw
-python scripts/audit_episode.py EPISODE_ROOT
-python scripts/check_camera_gate.py EPISODE_ROOT \
-  --output EPISODE_ROOT/camera_gate_report.json
-python scripts/export.py EPISODE_ROOT --profile all --force
-```
-
-命令成功不代替视觉检查。需要观察机器狗先走到传送带并驻车、机械臂跟随缓降抓取、
-垂直提起后直线后退、原地转向蓝框、负载导航、再次驻车、俯视放入并松爪。开始放置后
-底盘不得再次移动。`carry_backoff` 或 `carry_navigate` 为零帧、三段位移低于门禁，
-放置阶段出现非零底盘动作，或实际漂移超过 `0.05 m` 时，即使旧评分器给出成功也不得
-进入训练。
-
-## 7. 转换到 LeRobot v3
-
-使用独立 Python 3.10 + `lerobot==0.4.4` 环境：
-
-```bash
-conda activate /diff/wallx_workspace/dzb/.conda-envs/conveyorvla-al0-lerobot044
-python scripts/convert_dataset.py \
-  --episode-list outputs/pilot/gpu2/successful_episode_roots.txt \
-  --episode-list outputs/pilot/gpu3/successful_episode_roots.txt \
-  --output-root outputs/lerobot_pilot
-```
-
-先使用 `--max-episodes 1` 做 smoke，再运行完整转换。转换后检查四个视频 feature 的
-首帧，并抽查首/中/末 episode。
-
-PCT Liangzhu 的 `liangzhu_0815_n200` 与 `liangzhu_0815_n400` 使用单独入口；raw
-目录保持只读：
-
-```bash
-python scripts/audit_pct_source_overlap.py \
-  --source-root DATASETS/liangzhu_0815_n200 \
-  --source-root DATASETS/liangzhu_0815_n400 \
-  --output RUNS/liangzhu_0815_source_overlap.json
-
-python scripts/convert_pct_dataset.py \
-  --source-root DATASETS/liangzhu_0815_n200 \
-  --source-root DATASETS/liangzhu_0815_n400 \
-  --require-hierarchy-eligible \
+python scripts/build_waypoint_dataset.py \
+  --source-root "$WAYPOINT_SOURCE_N200" \
+  --source-root "$WAYPOINT_SOURCE_N400" \
+  --output-root "$WAYPOINT_DATASET" \
   --audit-only
 
-python scripts/convert_pct_dataset.py \
-  --source-root DATASETS/liangzhu_0815_n200 \
-  --source-root DATASETS/liangzhu_0815_n400 \
-  --require-hierarchy-eligible \
-  --output-root outputs/lerobot_pct_pilot \
-  --max-episodes-per-source 4
+python scripts/build_waypoint_dataset.py \
+  --source-root "$WAYPOINT_SOURCE_N200" \
+  --source-root "$WAYPOINT_SOURCE_N400" \
+  --output-root "$WAYPOINT_DATASET"
+
+python scripts/audit_waypoint_dataset.py \
+  --dataset-root "$WAYPOINT_DATASET" \
+  --output /new/run/waypoint_dataset_audit.json
+
+python scripts/extract_waypoint_videos.py \
+  --dataset-root "$WAYPOINT_DATASET" \
+  --output-root /new/run/waypoint_review_clips
 ```
 
-适配器只接收成功、执行来源可验证、双相机同步且采用 50 Hz 控制/5 Hz 图像时钟的
-episode。PCT 状态记录是稀疏控制结点，因此 25 Hz 监督由结点间位置线性插值、四元数
-最短弧归一化插值和控制命令零阶保持重建；转换 manifest 会明确记录这一事实。双帧
-历史为真实的 `[-5, 0]` model tick（0.20 秒），不能误写成原生采集的 0.08 秒。
+`--audit-only` 只列出 eligible source，不保留输出目录。materialize 拒绝覆盖已有目录。
+正式运行前必须核对 [data.md](data.md) 记录的 schema、522 episodes、119,700 rows、
+manifest hash 和 normalizer hash。review clip 只有 head+wrist，不得称为第三视角证据。
 
-## 8. 训练
+## 3. 四卡正式训练
 
-Liangzhu seen 四阶段训练必须使用 `scripts/train_hierarchical.py`。同一个 Qwen3-VL
-依次执行“生成当前 subtask 文本”和“带预测文本重新编码原始观测”两次 forward，
-Qwen 主干、LM head、Navigation DiT 与 Manipulation DiT 全部参与反向传播。主 prompt
-在训练与推理时都不接收真实或预测的 semantic history；teacher forcing 只影响动作
-专家路由，并按配置衰减到 0。旧的 `scripts/train.py` 是冻结 Qwen 的单动作头路径，
-不得用于本合同的正式训练。
+```bash
+WAYPOINT_DATASET=/path/to/immutable/waypoint-dataset
+WAYPOINT_RUN=/new/path/to/formal-run
 
-正式训练从干净的本地 Qwen3-VL 与发布的 ABot action 权重初始化，不恢复旧
-optimizer/scheduler，也不使用旧 hierarchy view：
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
+  --config_file configs/accelerate_zero3_4gpu_waypoint.yaml \
+  scripts/train_waypoint.py \
+  --dataset-root "$WAYPOINT_DATASET" \
+  --output-dir "$WAYPOINT_RUN/output" \
+  --model-root /diff/wallx_workspace/dzb/models/base \
+  --config configs/waypoint_v1.json \
+  --max-steps 10000 \
+  --batch-size 3 \
+  --gradient-accumulation-steps 2 \
+  --warmup-steps 200 \
+  --save-first-checkpoint-step 20 \
+  --save-interval-steps 1000 \
+  --log-interval-steps 1 \
+  --num-workers 0 \
+  --attention-implementation sdpa \
+  --seed 20260820
+```
+
+四卡 effective global batch 为 `3 × 4 × 2 = 24`。训练从本地干净
+Qwen3-VL-4B-Instruct 和两个全新随机 Layerwise FM head 开始：
+
+- 不载入旧 action checkpoint；
+- 不 resume 旧 optimizer/scheduler；
+- 不使用 `scripts/train_hierarchical.py`；
+- `--limit-train-rows` 只能用于明确标记的诊断/overfit run，正式 run 必须为 0。
+
+训练入口会在 `resolved_run.json` 中绑定 commit/dirty state、完整 argv、配置 hash、
+数据/normalizer hash、模型文件 hash、special token ID、batch 和环境。ZeRO checkpoint
+另有 `waypoint_checkpoint_manifest.json`，不满足绑定时加载器必须拒绝。
+
+## 4. 健康启动判定
+
+至少观察 20 个连续 `train_step` event，并同时满足：
+
+- step 连续且 `valid_optimizer_step=true`；
+- total、answer、decision、active-route、NAV、ARM loss 和全部 learning rate 有限；
+- Qwen、Navigation head、Manipulation head gradient norm 均有限且大于 0；
+- 四个 rank 存活，四张 H20 均有真实计算利用率；
+- checkpoint 已完整 commit，trainer state、四个 ZeRO model/optimizer shard 和 manifest
+  都存在；
+- 日志没有 traceback、OOM、NCCL、NaN/Inf 或提前退出。
+
+`scripts/audit_training_events.py` 目前仍读取 legacy
+`subtask_loss/action_loss/teacher_forcing_probability/routing` 字段，不能作为 Waypoint
+v1 event 的自动门禁。2026-08-20 正式启动使用独立的严格 JSONL 检查完成 1–20 step
+验证；后续若恢复自动化，应先扩展该脚本并加测试。
+
+健康启动只说明训练过程正常。前 5% 进度 `lambda_self=0`，因此前 20 step 还没有
+验证 self-conditioned route。
+
+## 5. Checkpoint 与开环
+
+ZeRO checkpoint 必须用相同四卡 accumulation 合同加载：
+
+```bash
+WAYPOINT_CHECKPOINT=/path/to/checkpoints/step_000020
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
+  --config_file configs/accelerate_zero3_4gpu_waypoint.yaml \
+  scripts/check_waypoint_checkpoint.py \
+  --checkpoint "$WAYPOINT_CHECKPOINT" \
+  --report /new/run/checkpoint_report.json
+```
+
+开环评测同时检查自主 route 与 oracle-prefix waypoint/TCP 质量：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
-  --config_file RUNS/accelerate_zero3_4gpu_accum1.yaml \
-  scripts/train_hierarchical.py \
-  --hierarchy-root DATASETS/NEW_DENSE_TRANSITION_VIEW \
-  --output-dir RUNS/NEW_FORMAL_RUN/output \
-  --model-root /diff/wallx_workspace/dzb/models/base \
-  --initial-action-checkpoint \
-    /diff/wallx_workspace/dzb/models/conveyorvla-al0/action_model_final.safetensors \
-  --max-steps 10000 \
-  --warmup-steps 200 \
-  --save-first-checkpoint-step 25 \
-  --save-interval-steps 1000 \
-  --log-interval-steps 1 \
-  --batch-size 64 \
-  --gradient-accumulation-steps 1 \
-  --teacher-forcing-full-steps 100 \
-  --teacher-forcing-end-step 4000 \
-  --attention-implementation sdpa
+  --config_file configs/accelerate_zero3_4gpu_waypoint.yaml \
+  scripts/evaluate_waypoint_open_loop.py \
+  --checkpoint "$WAYPOINT_CHECKPOINT" \
+  --report /new/run/open_loop_report.json \
+  --split val \
+  --profile diagnostic \
+  --rows 40 \
+  --batch-size 2 \
+  --diffusion-seeds 17,29,43,71
 ```
 
-该命令在四卡上的 global batch 为 `64 × 4 × 1 = 256`。动作物理尺度从新 view 的
-train split P99.9 统计派生并冻结在 `configs/temporal.json`，线上 action composer
-读取同一配置。Navigation DiT 仍只输出 `[vx,wz]`；composer 显式补齐
-`stow + open` 或 `carry + closed` 的关节/夹爪命令。
+`rows` 必须能被 `world_size × batch_size` 整除。`--profile overfit` 使用更严格的
+route、RECOVER、ADE/FDE、方向、ARM pose、夹爪和 safety 阈值；失败报告必须保留，不能
+改用 diagnostic 结果宣称通过。
 
-健康启动至少要求：
+## 6. 单卡 inference export 与服务
 
-- 四个 rank 都初始化完成；
-- 数据帧数、state/action 维度和统计量正常；
-- checkpoint transfer 报告无缺失/意外 key；
-- 连续至少 20 个 step 的 loss、gradient norm 与 learning rate 有限且 step 递增；
-- Qwen、Navigation DiT 和 Manipulation DiT 都有非零梯度；
-- GPU 0/1/2/3 有真实计算利用率；
-- tmux、事件日志、run metadata 与可加载 checkpoint 都存在。
-
-## 9. 服务与闭环
-
-推理服务：
+先把已绑定 ZeRO checkpoint 合并成不可变 inference export：
 
 ```bash
-CUDA_VISIBLE_DEVICES=2 python scripts/serve.py \
-  --action-checkpoint CHECKPOINT.safetensors \
-  --state-statistics state_statistics.json \
-  --model-root /diff/wallx_workspace/dzb/models/base \
+python scripts/export_waypoint_inference.py \
+  --checkpoint "$WAYPOINT_CHECKPOINT" \
+  --output-dir /new/path/waypoint-inference-export \
+  --max-shard-size 5GB
+
+CUDA_VISIBLE_DEVICES=0 python scripts/serve_waypoint.py \
+  --export-dir /new/path/waypoint-inference-export \
   --device cuda:0 \
-  --port 18080
+  --port 18081 \
+  --seed 20260820
 ```
 
-闭环测评：
+服务只监听 loopback，校验 export、processor、token ID、checkpoint、normalizer 和模型
+合同。request 只能含完整指令、两路双帧图像和序列/标定身份；任何 state、phase、pose
+truth 或 history 都应被拒绝。当前代码与静态测试已完成，但正式 checkpoint 的实际
+consolidation + 单卡 request smoke 尚未通过，见 [status.md](status.md)。
+
+## 7. PCT/DWA、cuRobo 与 rollout
+
+Navigation 参考 probe：
 
 ```bash
-CUDA_VISIBLE_DEVICES=3 python scripts/evaluate.py \
-  --endpoint http://127.0.0.1:18080 \
-  --state-statistics state_statistics.json \
-  --asset-root "$CONVEYOR_BENCH_ASSET_ROOT" \
-  --episodes 10 \
-  --belt-speed 0.01 \
-  --output-dir outputs/eval/al0 \
-  --enable_cameras --headless
+ARM_VLA_ROOT=/path/to/clean/arm-vla-grasp-sim-388b681
+
+python scripts/probe_waypoint_navigation.py \
+  --reference-root "$ARM_VLA_ROOT" \
+  --report /new/run/navigation_probe.json \
+  --server-python /path/to/reference/python
 ```
 
-时序训练产物旁的 `conveyorvla_al0_config.json` 会由 runtime 自动发现，用于 20-step
-动作头和 PCT 归一化；服务端按连续 `sequence_id` 缓存上一组 5 Hz head/wrist 图像，
-首个请求复制当前帧，随后严格使用 0.20 秒历史。在线协议执行前 16 行兼容动作前缀，
-训练目标仍保留完整 20×10 动作块。
+它在合成无障碍地图上运行批准的真实 PCT/DWA stack，要求 PCT fallback 明确关闭、
+路径和 snap 合法、DWA 指令有限有界，并在首 waypoint 后 requery。
 
-assist 参数只用于诊断，不得用于正式成功率或训练数据。
+cuRobo 服务：
 
-## 10. 何时开启 384 条正式采集
+```bash
+python scripts/serve_waypoint_curobo.py \
+  --reference-root "$ARM_VLA_ROOT" \
+  --curobo-source-root /path/to/clean/curobo-8726021 \
+  --host 127.0.0.1 \
+  --port 8766 \
+  --ready-json /new/run/curobo_ready.json
+```
 
-不要直接把 pilot 命令循环 384 次。先完成：
+模型服务与 cuRobo 服务均 ready 后，`run_waypoint_rollout.py` 接管批准的 arm-vla
+full-physics pipeline：
 
-1. 四个物品的 sidecar fixture；
-2. 两档动态速度的允许配置和教师门禁；
-3. 8 个 cell 的独立 seed 池和可恢复总账；
-4. GPU 2/3 双 worker pilot；
-5. LeRobot round-trip；
-6. 每 cell 至少连续多条成功。
+```bash
+python scripts/run_waypoint_rollout.py \
+  --reference-root "$ARM_VLA_ROOT" \
+  --model-endpoint http://127.0.0.1:18081 \
+  --curobo-port 8766 \
+  --max-queries 400 \
+  --max-control-steps 24000 \
+  -- \
+  <run_full_physics_pipeline.py 的批准场景、seed、资产和输出参数>
+```
 
-正式协调器应以“48 条 training-eligible 成功”为 cell 终点，而不是 48 次尝试。
-任务失败从预留 seed 补采，结构失败立即停止对应 worker。
+字面量 `--` 之后只能放批准 reference pipeline 的参数；wrapper 禁止外部 route gate、
+`--remote-vla-eval`、dry-run/navigation-smoke 重写和额外 FSM。分阶段诊断可用
+`--stop-after-route` / `--required-first-route`，但不能当作完整自主闭环。
 
-## 11. 中断与恢复
+真实 cuRobo known-pose、oracle-route planner rollout、分阶段/完整 Isaac 闭环和三视角
+视频门禁当前均未完成。不要仅因脚本存在就启动未满足环境/安全前提的执行。
 
-- 不删除已发布 episode；
-- `.inprogress` 保留作故障证据，复核后移到隔离区；
-- 根据 manifest 中 seed 续跑，不靠目录数量推算；
-- 一个输出根只由一个 coordinator 拥有；
-- 重启前记录 commit、配置哈希、资产 manifest 哈希、环境和 GPU；
-- 数据格式或 teacher 改动后必须开新 collection root。
+## 8. 2026-08-20 正式 run 记录
+
+| 项目 | 值 |
+|---|---|
+| host / work root | `4xH20 (VM-0-3-ubuntu)` / `/diff/wallx_workspace/dzb` |
+| source | `feature/conveyorvla-waypoint-v1@724ead21be2c27d9b40c200375ee4ab49ccedc84`，clean |
+| worktree | `worktrees/ConveyorVLA-waypoint-v1-fe2b4ea` |
+| dataset | `datasets/derived/conveyorvla-waypoint-v1-full-8fcccd9` |
+| run | `runs/conveyorvla-waypoint-v1-formal-724ead2-s10000-20260820T1813` |
+| tmux | `cvla-wp-formal-724ead2-s10000` |
+| GPUs | 4 × NVIDIA H20 |
+| environment | `.conda-envs/conveyorvla-al0-lerobot044` |
+
+step 1–20 全部有效，step 20 checkpoint 完整提交，训练随后继续推进。Torch 曾报告
+run-local kernel cache 目录不可创建并自动禁用 kernel cache；这没有中断训练，但应作为
+非致命性能警告保留。
+
+正在运行的远端 worktree 必须继续固定在训练 source commit。文档提交只推送 Git
+`origin`，不得在训练过程中 fast-forward、checkout 或改写该 worktree。
+
+## 9. ConveyorBench 采集链
+
+动态传送带/三视角 canonical 采集仍由 `collect.py → validate.py → audit_episode.py →
+check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生成可审计 raw 和
+旧 LeRobot 数据，不是本轮 0815 Waypoint 正式训练来源。采集的任务、物品、速度、相机
+和成功定义见 [benchmark.md](benchmark.md)；旧 state28 训练/服务命令只从 Git 历史或
+对应历史文档复现，不能写入本节现行命令。
+
+## 10. 中断与恢复
+
+- 不覆盖已有 run、checkpoint、dataset 或 export；
+- 失败/中断后保留日志、events、resolved run 和已 commit checkpoint；
+- resume 前先运行 checkpoint binding/load gate，并记录 parent run；
+- 不删除 source raw、已发布 episode 或远端 evidence；
+- 不用 `git reset`、`git clean`、stash 或 force-push 处理远端差异；
+- 只停止可精确识别为本任务启动的进程/tmux，其他进程不得控制。

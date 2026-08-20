@@ -1,5 +1,9 @@
 # ConveyorVLA AL0：VLM 自主路由的双 DiT 模型方案
 
+> 已被取代的提案：本文包含 state token、单次 Qwen 编码和 direct-action DiT 等未获最终
+> 采用的设计。现行实现必须遵循
+> [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md)；本文只保留为设计
+> 演化记录。
 
 ## 1 模型目标与边界
 

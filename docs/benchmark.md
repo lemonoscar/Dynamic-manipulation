@@ -4,6 +4,11 @@
 [`configs/benchmark.json`](../configs/benchmark.json)，数据字段以
 `src/conveyor_bench/schema/` 为准。
 
+> 范围说明：本文定义任务和成功语义，不声明学习策略已经完成任务。2026-08-20 的
+> Waypoint v1 正式长训使用只读 Liangzhu 0815 n200+n400 的 box-to-box 成功轨迹，
+> 不是本页第 8 节规划的 384 条动态传送带矩阵。模型、数据与验证状态分别见
+> [architecture.md](architecture.md)、[data.md](data.md) 和 [status.md](status.md)。
+
 ## 1. 任务目标
 
 一个完整 episode 包含四个连续阶段：
@@ -135,3 +140,13 @@ sidecar 中虽然已有 apple、orange、bottle、box2 等文件，但“文件�
 
 在这些条件完成前，只允许小批量单可乐罐采集，不能把重复同一条件的数据描述为
 384 条正式 benchmark。
+
+## 9. 策略结果的声明边界
+
+教师 episode、canonical 数据完整、开环 waypoint 指标、planner 可执行和自主闭环成功
+是五个不同层级。报告必须逐项写明数据来源、模型 checkpoint、是否使用 oracle route、
+是否有外部 phase/FSM、planner 和仿真条件；任何较低层级通过都不能替代较高层级。
+
+Waypoint v1 的完整闭环只能由模型 request 中无 state/phase/history、Pass 1 自主 route、
+NAV 经 PCT/DWA、ARM 经 cuRobo/IK、每个首目标后重新观测的 episode 计入。当前是否已有
+这类证据，以 [status.md](status.md) 为唯一状态页。

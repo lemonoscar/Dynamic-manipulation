@@ -1,5 +1,9 @@
 # ConveyorVLA AL0 `step_002500` 闭环问题简报
 
+> 历史失败证据：受测 checkpoint 使用旧 `state28 + velocity/TCP-delta` 合同，不是
+> Waypoint v1 checkpoint。本文保留用于说明架构迁移原因，不提供现行训练或部署命令；
+> 当前结论见 [status.md](status.md)。
+
 - 日期：2026-08-18
 - 范围：Liangzhu seen，`step_002500`，真实无辅助 Isaac 闭环
 - 训练代码：`b2a3a25d68ee88fe5f761528acb1229595a0c5f7`
