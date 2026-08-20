@@ -391,6 +391,13 @@ def materialize_waypoint_dataset(
             stream.close()
         streams = {}
         normalization = _build_normalization(train_nav, train_arm)
+        split_clip_rates = _dataset_clip_rates(staging, normalization)
+        normalization["clip_rate_definition"] = "maximum_one_sided_saturation_fraction"
+        normalization["two_sided_clip_rate_reported"] = True
+        normalization["split_continuous_clip_rates"] = split_clip_rates
+        normalization["train_continuous_clip_rate"] = split_clip_rates["train"]["overall"][
+            "max_one_sided_clip_rate"
+        ]
         normalization_path = staging / "normalization.json"
         normalization_path.write_text(json.dumps(normalization, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         record_files = {
@@ -466,6 +473,7 @@ def audit_waypoint_dataset(root: str | Path) -> dict[str, Any]:
     max_nav_roundtrip = 0.0
     max_arm_roundtrip = 0.0
     row_count = 0
+    clip_rates: Mapping[str, Any] | None = None
     for split in ("train", "val", "test"):
         record_info = _mapping(_mapping(manifest.get("records"), "records").get(split), f"records.{split}")
         path = dataset_root / str(record_info.get("relative_path", ""))
@@ -532,9 +540,20 @@ def audit_waypoint_dataset(root: str | Path) -> dict[str, Any]:
             WaypointNormalizer(normalization)
         except (M0MobileError, ValueError) as error:
             problems.append(str(error))
-        clip_rate = float(normalization.get("train_continuous_clip_rate", math.inf))
-        if clip_rate >= 0.01:
-            problems.append(f"train normalization clip rate {clip_rate:.6g} is not below 1%")
+        else:
+            if normalization.get("clip_rate_definition") != "maximum_one_sided_saturation_fraction":
+                problems.append("normalization clip-rate definition is missing or incompatible")
+            try:
+                clip_rates = _dataset_clip_rates(dataset_root, normalization)
+            except (M0MobileError, OSError, ValueError) as error:
+                problems.append(f"cannot recompute normalization clip rates: {error}")
+            else:
+                reported_rates = normalization.get("split_continuous_clip_rates")
+                if reported_rates != clip_rates:
+                    problems.append("normalization split clip-rate report does not match records")
+                clip_rate = float(clip_rates["train"]["overall"]["max_one_sided_clip_rate"])
+                if clip_rate >= 0.01:
+                    problems.append(f"train normalization clip rate {clip_rate:.6g} is not below 1%")
     if row_count != int(manifest.get("row_count", -1)):
         problems.append("manifest row_count does not match records")
     return {
@@ -550,7 +569,18 @@ def audit_waypoint_dataset(root: str | Path) -> dict[str, Any]:
         "state_tensor_count": 0,
         "navigation_roundtrip_max_m_or_rad": max_nav_roundtrip,
         "arm_roundtrip_max_m_or_rad": max_arm_roundtrip,
-        "train_continuous_clip_rate": None if normalization is None else normalization.get("train_continuous_clip_rate"),
+        "clip_rate_definition": None if normalization is None else normalization.get("clip_rate_definition"),
+        "split_continuous_clip_rates": clip_rates,
+        "train_continuous_clip_rate": (
+            None
+            if clip_rates is None
+            else clip_rates["train"]["overall"]["max_one_sided_clip_rate"]
+        ),
+        "train_continuous_two_sided_clip_rate": (
+            None
+            if clip_rates is None
+            else clip_rates["train"]["overall"]["two_sided_clip_rate"]
+        ),
         "problems": problems,
     }
 
@@ -857,28 +887,31 @@ def _append_normalization_values(
 def _build_normalization(
     nav: list[list[list[float]]], arm: list[list[list[float]]]
 ) -> dict[str, Any]:
-    nav_q01, nav_q99, nav_clip, nav_count = _quantiles(nav, "navigation")
-    arm_q01, arm_q99, arm_clip, arm_count = _quantiles(arm, "manipulation")
+    nav_q01, nav_q99, nav_lower, nav_upper, nav_count = _quantiles(nav, "navigation")
+    arm_q01, arm_q99, arm_lower, arm_upper, arm_count = _quantiles(arm, "manipulation")
     total = nav_count + arm_count
-    clip_rate = (nav_clip + arm_clip) / total if total else math.inf
+    lower_rate = (nav_lower + arm_lower) / total if total else math.inf
+    upper_rate = (nav_upper + arm_upper) / total if total else math.inf
     return {
         "schema_version": NORMALIZATION_SCHEMA_VERSION,
         "dataset_schema_version": DATASET_SCHEMA_VERSION,
         "split": "train",
         "continuous_mapping": "per_horizon_q01_q99_to_minus1_plus1",
+        "quantile_estimator": "conservative_empirical_strict_tail",
         "gripper_mapping": "2*g-1",
-        "navigation": {"shape": [ACTION_HORIZON, 3], "frame": LABEL_FRAME_ID, "unit": ["m", "m", "rad"], "q01": nav_q01, "q99": nav_q99, "valid_value_count": nav_count, "clip_rate": nav_clip / nav_count},
-        "manipulation": {"shape": [ACTION_HORIZON, 6], "frame": LABEL_FRAME_ID, "unit": ["m", "m", "m", "rad", "rad", "rad"], "q01": arm_q01, "q99": arm_q99, "valid_value_count": arm_count, "clip_rate": arm_clip / arm_count},
-        "train_continuous_clip_rate": clip_rate,
+        "navigation": {"shape": [ACTION_HORIZON, 3], "frame": LABEL_FRAME_ID, "unit": ["m", "m", "rad"], "q01": nav_q01, "q99": nav_q99, "valid_value_count": nav_count, "lower_clip_rate": nav_lower / nav_count, "upper_clip_rate": nav_upper / nav_count, "two_sided_clip_rate": (nav_lower + nav_upper) / nav_count, "clip_rate": max(nav_lower, nav_upper) / nav_count},
+        "manipulation": {"shape": [ACTION_HORIZON, 6], "frame": LABEL_FRAME_ID, "unit": ["m", "m", "m", "rad", "rad", "rad"], "q01": arm_q01, "q99": arm_q99, "valid_value_count": arm_count, "lower_clip_rate": arm_lower / arm_count, "upper_clip_rate": arm_upper / arm_count, "two_sided_clip_rate": (arm_lower + arm_upper) / arm_count, "clip_rate": max(arm_lower, arm_upper) / arm_count},
+        "train_continuous_clip_rate": max(lower_rate, upper_rate),
+        "train_continuous_two_sided_clip_rate": lower_rate + upper_rate,
     }
 
 
 def _quantiles(
     values: list[list[list[float]]], name: str
-) -> tuple[list[list[float]], list[list[float]], int, int]:
+) -> tuple[list[list[float]], list[list[float]], int, int, int]:
     lower: list[list[float]] = []
     upper: list[list[float]] = []
-    clipped = count = 0
+    lower_clipped = upper_clipped = count = 0
     for step, dimensions in enumerate(values):
         lower_row = []
         upper_row = []
@@ -886,16 +919,95 @@ def _quantiles(
             array = np.asarray(raw, dtype=np.float64)
             if array.size < 100 or not np.isfinite(array).all():
                 raise M0MobileError(f"{name}[{step},{dimension}] lacks 100 finite train labels")
-            q01, q99 = np.quantile(array, (0.01, 0.99))
+            ordered = np.sort(array)
+            # q01/q99 imply one percent in each tail. Pick the conservative
+            # empirical order statistics so strict (< / >) saturation is
+            # below 1% even when the sample count is an exact multiple of 100.
+            tail = max(0, math.ceil(0.01 * array.size) - 1)
+            q01, q99 = ordered[tail], ordered[array.size - tail - 1]
             if q99 - q01 <= 1.0e-6:
                 raise M0MobileError(f"{name}[{step},{dimension}] q99-q01 is too small")
             lower_row.append(float(q01))
             upper_row.append(float(q99))
-            clipped += int(np.logical_or(array < q01, array > q99).sum())
+            lower_clipped += int((array < q01).sum())
+            upper_clipped += int((array > q99).sum())
             count += int(array.size)
         lower.append(lower_row)
         upper.append(upper_row)
-    return lower, upper, clipped, count
+    return lower, upper, lower_clipped, upper_clipped, count
+
+
+def _dataset_clip_rates(
+    root: Path, normalization: Mapping[str, Any]
+) -> dict[str, Any]:
+    normalizer = WaypointNormalizer(normalization)
+    result: dict[str, Any] = {}
+    for split in ("train", "val", "test"):
+        counters = {
+            "navigation": {"lower": 0, "upper": 0, "count": 0},
+            "manipulation": {"lower": 0, "upper": 0, "count": 0},
+        }
+        path = root / f"{split}.jsonl"
+        for record in _read_jsonl(path):
+            domain = WaypointActionDomain(str(record["action_domain"]))
+            if domain is WaypointActionDomain.NONE:
+                continue
+            if domain is WaypointActionDomain.NAVIGATION:
+                values = record["nav_waypoints_body"]
+                lower, upper = normalizer.nav_q01, normalizer.nav_q99
+                counter = counters["navigation"]
+            else:
+                values = record["arm_targets_base"]
+                lower, upper = normalizer.arm_q01, normalizer.arm_q99
+                counter = counters["manipulation"]
+            valid = tuple(bool(value) for value in record["action_valid_mask"])
+            width = lower.shape[1]
+            for step in range(ACTION_HORIZON):
+                if not valid[step]:
+                    break
+                array = np.asarray(values[step][:width], dtype=np.float64)
+                counter["lower"] += int((array < lower[step]).sum())
+                counter["upper"] += int((array > upper[step]).sum())
+                counter["count"] += width
+        navigation = _clip_rate_report(counters["navigation"])
+        manipulation = _clip_rate_report(counters["manipulation"])
+        overall = _clip_rate_report(
+            {
+                key: counters["navigation"][key] + counters["manipulation"][key]
+                for key in ("lower", "upper", "count")
+            }
+        )
+        result[split] = {
+            "navigation": navigation,
+            "manipulation": manipulation,
+            "overall": overall,
+        }
+    return result
+
+
+def _clip_rate_report(counter: Mapping[str, int]) -> dict[str, int | float]:
+    count = int(counter["count"])
+    lower = int(counter["lower"])
+    upper = int(counter["upper"])
+    if count <= 0:
+        return {
+            "valid_value_count": count,
+            "lower_clip_count": lower,
+            "upper_clip_count": upper,
+            "lower_clip_rate": math.inf,
+            "upper_clip_rate": math.inf,
+            "max_one_sided_clip_rate": math.inf,
+            "two_sided_clip_rate": math.inf,
+        }
+    return {
+        "valid_value_count": count,
+        "lower_clip_count": lower,
+        "upper_clip_count": upper,
+        "lower_clip_rate": lower / count,
+        "upper_clip_rate": upper / count,
+        "max_one_sided_clip_rate": max(lower, upper) / count,
+        "two_sided_clip_rate": (lower + upper) / count,
+    }
 
 
 def _normalization_arrays(

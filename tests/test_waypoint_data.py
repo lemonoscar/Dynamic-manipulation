@@ -11,6 +11,7 @@ from conveyor_bench.conveyorvla.waypoint_data import (
     MODEL_BATCH_KEYS,
     NORMALIZATION_SCHEMA_VERSION,
     ConveyorVLAWaypointDataset,
+    _build_normalization,
     iter_waypoint_records,
 )
 
@@ -149,3 +150,22 @@ def test_loader_returns_exact_model_schema_without_proprioception(tmp_path: Path
     assert len(example["video"]) == 2
     assert all(len(clip) == 2 for clip in example["video"])
     assert len(example["action"]) == ACTION_HORIZON
+
+
+def test_q01_q99_uses_auditable_strict_one_sided_clip_gate() -> None:
+    nav = [
+        [[float(index) for index in range(200)] for _dimension in range(3)]
+        for _step in range(ACTION_HORIZON)
+    ]
+    arm = [
+        [[float(index) for index in range(200)] for _dimension in range(6)]
+        for _step in range(ACTION_HORIZON)
+    ]
+    normalization = _build_normalization(nav, arm)
+    assert normalization["quantile_estimator"] == "conservative_empirical_strict_tail"
+    assert normalization["navigation"]["q01"][0][0] == 1.0
+    assert normalization["navigation"]["q99"][0][0] == 198.0
+    assert normalization["navigation"]["lower_clip_rate"] == pytest.approx(0.005)
+    assert normalization["navigation"]["upper_clip_rate"] == pytest.approx(0.005)
+    assert normalization["train_continuous_clip_rate"] < 0.01
+    assert normalization["train_continuous_two_sided_clip_rate"] == pytest.approx(0.01)
