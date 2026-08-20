@@ -141,6 +141,7 @@ def test_domain_balanced_sampler_keeps_both_experts_in_every_batch():
             batch_routes = {routes[index] for index in epoch_indices[start : start + 3]}
             assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
             assert batch_routes.intersection({"PICK", "PLACE"})
+            assert "DONE" in batch_routes
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():

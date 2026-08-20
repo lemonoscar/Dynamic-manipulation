@@ -433,8 +433,13 @@ class DomainBalancedSampler(Sampler[int]):
             for index, route in enumerate(self.routes)
             if route in {WaypointRoute.PICK.value, WaypointRoute.PLACE.value}
         )
-        if not self.navigation or not self.manipulation:
-            raise M0MobileError("domain-balanced sampler requires NAV and ARM rows")
+        self.done = tuple(
+            index
+            for index, route in enumerate(self.routes)
+            if route == WaypointRoute.DONE.value
+        )
+        if not self.navigation or not self.manipulation or not self.done:
+            raise M0MobileError("domain-balanced sampler requires NAV, ARM, and DONE rows")
 
     def __len__(self) -> int:
         return self.num_samples
@@ -448,9 +453,11 @@ class DomainBalancedSampler(Sampler[int]):
                 self._draw(self.navigation, generator),
                 self._draw(self.manipulation, generator),
             ]
+            if self.batch_size >= 3:
+                batch.append(self._draw(self.done, generator))
             batch.extend(
                 self._draw(all_indices, generator)
-                for _ in range(self.batch_size - 2)
+                for _ in range(self.batch_size - len(batch))
             )
             order = torch.randperm(self.batch_size, generator=generator).tolist()
             yield from (batch[index] for index in order)
