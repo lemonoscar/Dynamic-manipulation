@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         mixed_precision="bf16",
         step_scheduler_with_optimizer=False,
     )
+    training._validate_accumulation_config(accelerator, accumulation)
     set_seed(int(run_args["seed"]), device_specific=True)
     dataset = ConveyorVLAWaypointDataset(dataset_root, split="train")
     sampler = WeightedRandomSampler(
@@ -69,7 +70,6 @@ def main(argv: list[str] | None = None) -> int:
     model, token_ids = training._build_model(
         config,
         Path(str(resolved["model_root"])),
-        dataset,
         str(run_args["attention_implementation"]),
     )
     if token_ids != manifest["special_token_ids"]:
@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
         optimizer,
         loader,
         scheduler,
+    )
+    training._validate_accumulation_runtime(
+        accelerator,
+        training.common._deepspeed_engine(accelerator),
+        accumulation,
     )
     del loader
     accelerator.load_state(checkpoint)

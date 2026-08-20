@@ -75,11 +75,13 @@ def main(argv: list[str] | None = None) -> int:
     checkpoint = args.checkpoint.expanduser().resolve()
     manifest, resolved, dataset_root = checkpoint_gate._validate_binding(checkpoint)
     run_args = _mapping(resolved["arguments"], "resolved arguments")
+    accumulation = int(resolved["gradient_accumulation_steps"])
     accelerator = Accelerator(
-        gradient_accumulation_steps=int(resolved["gradient_accumulation_steps"]),
+        gradient_accumulation_steps=accumulation,
         mixed_precision="bf16",
         step_scheduler_with_optimizer=False,
     )
+    training._validate_accumulation_config(accelerator, accumulation)
     if args.rows <= 0 or args.batch_size <= 0:
         raise M0MobileError("open-loop rows and batch size must be positive")
     group_size = accelerator.num_processes * args.batch_size
@@ -125,7 +127,6 @@ def main(argv: list[str] | None = None) -> int:
     model, token_ids = training._build_model(
         config,
         Path(str(resolved["model_root"])),
-        train_dataset,
         str(run_args["attention_implementation"]),
     )
     if token_ids != manifest["special_token_ids"]:
@@ -143,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
         optimizer,
         loader,
         scheduler,
+    )
+    training._validate_accumulation_runtime(
+        accelerator,
+        training.common._deepspeed_engine(accelerator),
+        accumulation,
     )
     del loader
     accelerator.load_state(checkpoint)
