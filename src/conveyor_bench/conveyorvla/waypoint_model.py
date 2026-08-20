@@ -194,11 +194,12 @@ class WaypointQwenInterface(Qwen3VLInterface):
             dtype=dtype,
             attn_implementation=implementation,
         )
+        model.config.hidden_size = model.config.text_config.hidden_size
         processor.tokenizer.add_special_tokens(
             {"additional_special_tokens": list(SPECIAL_TOKENS)},
             replace_additional_special_tokens=False,
         )
-        if len(processor.tokenizer) != model.get_input_embeddings().num_embeddings:
+        if len(processor.tokenizer) > model.get_input_embeddings().num_embeddings:
             model.resize_token_embeddings(len(processor.tokenizer), mean_resizing=False)
         interface = cls(model, processor)
         interface.waypoint_token_ids = waypoint_token_ids(interface)
@@ -622,6 +623,7 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         manipulation_head: LayerwiseFlowMatchingActionHead,
         *,
         route_confidence_min: float,
+        max_subtask_tokens: int = 24,
         loss_config: WaypointLossConfig = WaypointLossConfig(),
         route_class_weights: Mapping[str, float] | None = None,
     ) -> None:
@@ -638,6 +640,7 @@ class ConveyorVLAWaypointPolicy(nn.Module):
         self.router = ConstrainedWaypointRouter(
             qwen,
             route_confidence_min=route_confidence_min,
+            max_subtask_tokens=max_subtask_tokens,
         )
         self.loss_config = loss_config
         self.route_class_weights = {
