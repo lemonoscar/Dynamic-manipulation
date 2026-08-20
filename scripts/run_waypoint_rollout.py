@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib.util
 import json
 import math
@@ -14,7 +15,7 @@ import traceback
 import urllib.parse
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +72,62 @@ def build_parser() -> argparse.ArgumentParser:
         choices=tuple(route.value for route in WaypointRoute),
     )
     return parser
+
+
+class _ExternalWaypointCuRoboLifecycle:
+    """Bind the reference pipeline lifecycle to the already-gated waypoint service."""
+
+    def __init__(
+        self,
+        _legacy_config: Any,
+        *,
+        port: int,
+        timeout_s: float,
+        transport: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    ) -> None:
+        self._transport = transport or JsonLineCuRoboTransport(
+            port=int(port), timeout_s=float(timeout_s)
+        )
+        self.start_report: dict[str, Any] = {
+            "requested": False,
+            "external_waypoint_service": True,
+            "port": int(port),
+        }
+
+    def start(self) -> None:
+        ping = dict(self._transport({"command": "ping"}))
+        capabilities = dict(self._transport({"command": "capabilities"}))
+        features = capabilities.get("features")
+        valid = bool(
+            ping.get("ok") is True
+            and ping.get("arm_vla_reference_commit") == APPROVED_ARM_VLA_COMMIT
+            and capabilities.get("ok") is True
+            and capabilities.get("arm_vla_reference_commit")
+            == APPROVED_ARM_VLA_COMMIT
+            and isinstance(features, Mapping)
+            and features.get("direct_absolute_tcp_target") is True
+            and features.get("input_target_frame") == "query-base-B_t"
+            and features.get("planner_target_frame") == "curobo-planner-base"
+            and features.get("orientation_fallback") is False
+            and features.get("world_collision") is True
+        )
+        self.start_report = {
+            "requested": True,
+            "started": False,
+            "reused_existing": valid,
+            "ready": valid,
+            "external_waypoint_service": True,
+            "arm_vla_reference_commit": ping.get("arm_vla_reference_commit"),
+            "capabilities": capabilities,
+        }
+        if not valid:
+            raise RuntimeError("external waypoint cuRobo service failed capability gate")
+
+    def wait_until_ready(self) -> bool:
+        return self.start_report.get("ready") is True
+
+    def close(self) -> None:
+        self.start_report["external_server_preserved"] = True
 
 
 class WaypointRolloutPipeline:
@@ -936,6 +993,13 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("rollout wrapper owns the approved arm-vla execution mode")
 
     import source.evaluation.factory as evaluation_factory
+    import source.manipulation as reference_manipulation
+
+    reference_manipulation.CuroboPlannerServerProcess = functools.partial(
+        _ExternalWaypointCuRoboLifecycle,
+        port=args.curobo_port,
+        timeout_s=args.curobo_timeout_s,
+    )
 
     def create_waypoint_pipeline(
         *,

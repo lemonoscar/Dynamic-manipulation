@@ -5,7 +5,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from scripts.run_waypoint_rollout import _simulation_curobo_safety_gate
+from scripts.run_waypoint_rollout import (
+    _ExternalWaypointCuRoboLifecycle,
+    _simulation_curobo_safety_gate,
+)
 
 from conveyor_bench.conveyorvla.waypoint import CAMERA_CALIBRATION_ID
 from conveyor_bench.conveyorvla.waypoint_rollout import (
@@ -124,3 +127,59 @@ def test_simulation_curobo_gate_is_independent_and_fail_closed():
     assert not _simulation_curobo_safety_gate(
         request, {**response, "collision_free": False}
     )
+
+
+def test_reference_lifecycle_reuses_only_the_gated_waypoint_curobo_service():
+    requests = []
+
+    def transport(request):
+        requests.append(dict(request))
+        if request["command"] == "ping":
+            return {
+                "ok": True,
+                "arm_vla_reference_commit": (
+                    "388b6818f4c605a707d13c519fbb58b1d07acd92"
+                ),
+            }
+        return {
+            "ok": True,
+            "arm_vla_reference_commit": (
+                "388b6818f4c605a707d13c519fbb58b1d07acd92"
+            ),
+            "features": {
+                "direct_absolute_tcp_target": True,
+                "input_target_frame": "query-base-B_t",
+                "planner_target_frame": "curobo-planner-base",
+                "orientation_fallback": False,
+                "world_collision": True,
+            },
+        }
+
+    lifecycle = _ExternalWaypointCuRoboLifecycle(
+        object(), port=8766, timeout_s=1.0, transport=transport
+    )
+    lifecycle.start()
+    assert lifecycle.wait_until_ready()
+    assert requests == [{"command": "ping"}, {"command": "capabilities"}]
+    assert lifecycle.start_report["started"] is False
+    assert lifecycle.start_report["reused_existing"] is True
+    lifecycle.close()
+    assert lifecycle.start_report["external_server_preserved"] is True
+
+
+def test_reference_lifecycle_fails_closed_on_legacy_curobo_capabilities():
+    def transport(request):
+        return {
+            "ok": True,
+            "arm_vla_reference_commit": (
+                "388b6818f4c605a707d13c519fbb58b1d07acd92"
+            ),
+            "features": {} if request["command"] == "capabilities" else None,
+        }
+
+    lifecycle = _ExternalWaypointCuRoboLifecycle(
+        object(), port=8766, timeout_s=1.0, transport=transport
+    )
+    with pytest.raises(RuntimeError, match="capability gate"):
+        lifecycle.start()
+    assert not lifecycle.wait_until_ready()
