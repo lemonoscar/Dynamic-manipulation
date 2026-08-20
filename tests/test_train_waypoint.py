@@ -33,8 +33,8 @@ class _FakePolicy(nn.Module):
 def _args(tmp_path: Path) -> Namespace:
     dataset = tmp_path / "dataset"
     model_root = tmp_path / "models"
-    (model_root / "Qwen3-VL-4B-Instruct").mkdir(parents=True)
-    dataset.mkdir()
+    (model_root / "Qwen3-VL-4B-Instruct").mkdir(parents=True, exist_ok=True)
+    dataset.mkdir(exist_ok=True)
     return Namespace(
         dataset_root=dataset,
         output_dir=tmp_path / "output",

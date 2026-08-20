@@ -277,7 +277,7 @@ def test_direct_pose_service_plans_the_exact_rpy_target_without_fallback():
         }
     )
     assert response["ok"] is True
-    assert response["joint_path"] == [[0.0, 0.0], [0.05, 0.05]]
+    assert response["joint_path"] == pytest.approx([[0.0, 0.0], [0.05, 0.05]])
     assert module.target_position.tolist() == pytest.approx([0.3, 0.0, 0.2])
     assert module.target_quaternion.tolist() == pytest.approx([1.0, 0.0, 0.0, 0.0])
     assert response["metadata"]["orientation_fallback_used"] is False
