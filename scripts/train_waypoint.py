@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--model-root", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--max-steps", type=int, default=10_000)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
@@ -92,6 +93,17 @@ def main(argv: list[str] | None = None) -> int:
             raise M0MobileError(
                 "waypoint dataset failed its gate: " + "; ".join(audit["problems"])
             )
+        warmup_steps = (
+            int(config["optimization"]["warmup_steps"])
+            if args.warmup_steps is None
+            else args.warmup_steps
+        )
+        resume = _resume_binding(
+            args,
+            audit,
+            accelerator,
+            warmup_steps,
+        )
         output = args.output_dir.expanduser().resolve()
         common._reserve_output(accelerator, output, None)
         output_reserved = True
@@ -130,12 +142,11 @@ def main(argv: list[str] | None = None) -> int:
             args.model_root,
             args.attention_implementation,
         )
+        if resume is not None and token_ids != resume["special_token_ids"]:
+            raise M0MobileError(
+                "resume checkpoint special token IDs do not match the processor"
+            )
         optimizer, parameter_groups = _optimizer(model, config)
-        warmup_steps = (
-            int(config["optimization"]["warmup_steps"])
-            if args.warmup_steps is None
-            else args.warmup_steps
-        )
         scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer,
             common._schedule(args.max_steps, warmup_steps),
@@ -156,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
                     accelerator,
                     warmup_steps,
                     train_indices,
+                    resume,
                 ),
             )
         accelerator.wait_for_everyone()
@@ -169,13 +181,46 @@ def main(argv: list[str] | None = None) -> int:
             args.gradient_accumulation_steps,
         )
         global_step = 0
-        last_checkpoint_step = 0
+        first_loader = loader
+        if resume is not None:
+            checkpoint = Path(str(resume["checkpoint"]))
+            accelerator.load_state(checkpoint)
+            global_step = int(resume["global_step"])
+            _event(
+                accelerator,
+                output,
+                "scheduler_resume_alignment",
+                **common._align_scheduler_after_resume(
+                    scheduler,
+                    optimizer,
+                    global_step,
+                ),
+            )
+            data_position = _resume_data_position(
+                len(loader),
+                args.gradient_accumulation_steps,
+                global_step,
+            )
+            sampler._iteration = data_position["completed_loader_passes"]
+            if data_position["skipped_micro_batches"]:
+                first_loader = accelerator.skip_first_batches(
+                    loader,
+                    data_position["skipped_micro_batches"],
+                )
+            _event(
+                accelerator,
+                output,
+                "data_resume_alignment",
+                **data_position,
+            )
+        last_checkpoint_step = global_step
         last_metrics: dict[str, Any] = {}
         _set_status(accelerator, output, "running", global_step)
         model.train()
         optimizer.zero_grad(set_to_none=True)
+        active_loader = first_loader
         while global_step < args.max_steps:
-            for examples in loader:
+            for examples in active_loader:
                 progress = global_step / args.max_steps
                 self_weight = lambda_self_schedule(progress)
                 with accelerator.accumulate(model):
@@ -275,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
                     last_checkpoint_step = global_step
                 if global_step >= args.max_steps:
                     break
+            active_loader = loader
         if last_checkpoint_step != global_step:
             _save_waypoint_checkpoint(accelerator, output, global_step)
         _set_status(accelerator, output, "complete", global_step, last_metrics)
@@ -692,6 +738,7 @@ def _resolved_run(
     accelerator: Accelerator,
     warmup_steps: int,
     train_indices: list[int] | None,
+    resume: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     effective_batch = (
         args.batch_size
@@ -734,11 +781,24 @@ def _resolved_run(
             / str(config["vlm"]["relative_path"])
         ),
         "initialization": {
-            "qwen": "clean_local_qwen3_vl_4b",
-            "navigation_head": "new_random_3d_layerwise_fm",
-            "manipulation_head": "new_random_7d_layerwise_fm",
+            "qwen": (
+                "clean_local_qwen3_vl_4b"
+                if resume is None
+                else "restored_waypoint_checkpoint"
+            ),
+            "navigation_head": (
+                "new_random_3d_layerwise_fm"
+                if resume is None
+                else "restored_waypoint_checkpoint"
+            ),
+            "manipulation_head": (
+                "new_random_7d_layerwise_fm"
+                if resume is None
+                else "restored_waypoint_checkpoint"
+            ),
             "legacy_checkpoint_loaded": False,
-            "optimizer_resume": False,
+            "optimizer_resume": resume is not None,
+            "resume": resume,
         },
         "model_input_robot_state_fields": 0,
         "special_token_ids": token_ids,
@@ -874,6 +934,8 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         raise M0MobileError("waypoint warmup must be within [0, max steps)")
     if not args.dataset_root.expanduser().resolve().is_dir():
         raise M0MobileError("waypoint dataset root does not exist")
+    if args.resume_from is not None and not args.resume_from.expanduser().resolve().is_dir():
+        raise M0MobileError("waypoint resume checkpoint does not exist")
     model_dir = (
         args.model_root.expanduser().resolve()
         / str(config["vlm"]["relative_path"])
@@ -900,6 +962,109 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         "maximum": 0.5,
     }:
         raise M0MobileError("waypoint self-conditioned schedule was modified")
+
+
+def _resume_binding(
+    args: argparse.Namespace,
+    audit: Mapping[str, Any],
+    accelerator: Accelerator,
+    warmup_steps: int,
+) -> dict[str, Any] | None:
+    if args.resume_from is None:
+        return None
+    from scripts import check_waypoint_checkpoint as checkpoint_check
+
+    checkpoint = args.resume_from.expanduser().resolve()
+    manifest, resolved, dataset_root = checkpoint_check._validate_binding(checkpoint)
+    if manifest.get("model_contract_id") != MODEL_CONTRACT_ID:
+        raise M0MobileError("resume checkpoint model contract is incompatible")
+    if manifest.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
+        raise M0MobileError("resume checkpoint dataset schema is incompatible")
+    if dataset_root.resolve() != args.dataset_root.expanduser().resolve():
+        raise M0MobileError("resume checkpoint uses a different waypoint dataset")
+    if manifest.get("dataset_manifest_sha256") != audit.get("manifest_sha256"):
+        raise M0MobileError("resume checkpoint dataset audit binding changed")
+    if common._sha256(args.config.expanduser().resolve()) != manifest.get(
+        "resolved_policy_config_sha256"
+    ):
+        raise M0MobileError("resume checkpoint policy config changed")
+    if (
+        Path(str(resolved.get("model_root"))).resolve()
+        != args.model_root.expanduser().resolve()
+    ):
+        raise M0MobileError("resume checkpoint Qwen model root changed")
+    if int(resolved.get("world_size", -1)) != accelerator.num_processes:
+        raise M0MobileError("resume checkpoint world size changed")
+    parent_args = resolved.get("arguments")
+    if not isinstance(parent_args, Mapping):
+        raise M0MobileError("resume checkpoint resolved arguments are invalid")
+    exact_arguments = {
+        "max_steps": args.max_steps,
+        "batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "limit_train_rows": args.limit_train_rows,
+        "attention_implementation": args.attention_implementation,
+        "seed": args.seed,
+    }
+    changed = sorted(
+        name
+        for name, expected in exact_arguments.items()
+        if parent_args.get(name) != expected
+    )
+    if changed:
+        raise M0MobileError(
+            "resume checkpoint training contract changed: " + ", ".join(changed)
+        )
+    if int(resolved.get("warmup_steps", -1)) != warmup_steps:
+        raise M0MobileError("resume checkpoint warmup schedule changed")
+    global_step = common._checkpoint_step(checkpoint)
+    if global_step != int(manifest.get("global_step", -1)):
+        raise M0MobileError("resume checkpoint step binding is inconsistent")
+    if global_step >= args.max_steps:
+        raise M0MobileError("resume checkpoint already reached max steps")
+    parent_output = checkpoint.parents[1]
+    output = args.output_dir.expanduser().resolve()
+    if output == parent_output:
+        raise M0MobileError("waypoint resume must write to a new output directory")
+    manifest_path = checkpoint / "waypoint_checkpoint_manifest.json"
+    resolved_path = parent_output / "resolved_run.json"
+    return {
+        "checkpoint": str(checkpoint),
+        "global_step": global_step,
+        "parent_output": str(parent_output),
+        "parent_checkpoint_manifest_sha256": common._sha256(manifest_path),
+        "parent_resolved_run_sha256": common._sha256(resolved_path),
+        "parent_source_git": manifest["source_git"],
+        "special_token_ids": manifest["special_token_ids"],
+        "optimizer_and_scheduler_restored": True,
+    }
+
+
+def _resume_data_position(
+    loader_batches: int,
+    gradient_accumulation_steps: int,
+    global_step: int,
+) -> dict[str, int]:
+    if loader_batches <= 0 or gradient_accumulation_steps <= 0 or global_step < 0:
+        raise M0MobileError("resume data position inputs are invalid")
+    optimizer_steps_per_pass = math.ceil(
+        loader_batches / gradient_accumulation_steps
+    )
+    completed_passes, optimizer_step_in_pass = divmod(
+        global_step, optimizer_steps_per_pass
+    )
+    skipped_micro_batches = min(
+        loader_batches,
+        optimizer_step_in_pass * gradient_accumulation_steps,
+    )
+    return {
+        "global_step": global_step,
+        "loader_micro_batches_per_pass": loader_batches,
+        "optimizer_steps_per_loader_pass": optimizer_steps_per_pass,
+        "completed_loader_passes": completed_passes,
+        "optimizer_step_in_pass": optimizer_step_in_pass,
+        "skipped_micro_batches": skipped_micro_batches,
+    }
 
 
 def _set_status(

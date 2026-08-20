@@ -29,6 +29,8 @@ from conveyor_bench.conveyorvla.waypoint import (  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint_execution import (  # noqa: E402
     CuRoboIKRecedingHorizonExecutor,
     ManipulationExecutionConfig,
+    NAVIGATION_SAFETY_PROFILE_CONTRACT,
+    NAVIGATION_SAFETY_PROFILES,
     NavigationExecutionConfig,
     PCTDWARecedingHorizonExecutor,
 )
@@ -63,6 +65,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--curobo-timeout-s", type=float, default=30.0)
     parser.add_argument("--max-queries", type=int, default=400)
     parser.add_argument("--max-control-steps", type=int, default=24_000)
+    parser.add_argument(
+        "--navigation-safety-profile",
+        choices=NAVIGATION_SAFETY_PROFILES,
+        default=NAVIGATION_SAFETY_PROFILE_CONTRACT,
+        help=(
+            "contract validates all 20 predicted waypoints; "
+            "executable-prefix-diagnostic still audits all 20 but permits only "
+            "a legal first non-degenerate waypoint to reach PCT/DWA"
+        ),
+    )
     parser.add_argument(
         "--stop-after-route",
         choices=tuple(route.value for route in WaypointRoute if route is not WaypointRoute.DONE),
@@ -150,6 +162,7 @@ class WaypointRolloutPipeline:
         max_control_steps: int,
         stop_after_route: str | None,
         required_first_route: str | None,
+        navigation_safety_profile: str,
         close_simulation_on_exit: bool,
     ) -> None:
         from source.interfaces import NavGoal, RobotAction, SimulationState
@@ -193,6 +206,7 @@ class WaypointRolloutPipeline:
             self.pct_adapter,
             self.dwa_adapter,
             NavigationExecutionConfig(
+                safety_profile=navigation_safety_profile,
                 stow_joint_target=None,
                 carry_joint_target=None,
             ),
@@ -356,6 +370,7 @@ class WaypointRolloutPipeline:
                 "model_state_fields": 0,
                 "route_owner": "Qwen Pass 1",
                 "external_fsm_used": False,
+                "navigation_safety_profile": self.navigation.config.safety_profile,
             }
             summary_path.write_text(
                 json.dumps(_jsonable(summary), ensure_ascii=False, indent=2) + "\n",
@@ -1046,6 +1061,7 @@ def main(argv: list[str] | None = None) -> int:
             max_control_steps=args.max_control_steps,
             stop_after_route=args.stop_after_route,
             required_first_route=args.required_first_route,
+            navigation_safety_profile=args.navigation_safety_profile,
             close_simulation_on_exit=close_simulation_on_exit,
         )
 

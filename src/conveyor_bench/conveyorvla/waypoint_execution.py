@@ -25,6 +25,13 @@ PlanarWorldPose = tuple[float, float, float]
 PCTWorldPose = tuple[float, float, float, float]
 BaseVelocity = tuple[float, float, float]
 
+NAVIGATION_SAFETY_PROFILE_CONTRACT = "contract"
+NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX = "executable-prefix-diagnostic"
+NAVIGATION_SAFETY_PROFILES = (
+    NAVIGATION_SAFETY_PROFILE_CONTRACT,
+    NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
+)
+
 
 @dataclass(frozen=True)
 class PCTPlan:
@@ -93,6 +100,7 @@ class ExecutionCommand:
 @dataclass(frozen=True)
 class NavigationExecutionConfig:
     waypoint_safety: NavWaypointSafety = NavWaypointSafety()
+    safety_profile: str = NAVIGATION_SAFETY_PROFILE_CONTRACT
     pct_snap_max_m: float = 0.10
     goal_tolerance_m: float = 0.12
     yaw_tolerance_rad: float = 0.14
@@ -110,6 +118,11 @@ class NavigationExecutionConfig:
     closed_gripper_target: float = 0.0
 
     def __post_init__(self) -> None:
+        if self.safety_profile not in NAVIGATION_SAFETY_PROFILES:
+            raise ValueError(
+                "navigation safety profile must be one of "
+                + ", ".join(NAVIGATION_SAFETY_PROFILES)
+            )
         values = (
             self.pct_snap_max_m,
             self.goal_tolerance_m,
@@ -206,11 +219,26 @@ class PCTDWARecedingHorizonExecutor:
         try:
             current = _world_pose(current_base_world)
             waypoints, mask = _fixed_navigation_chunk(response)
-            selected_index, selected_body = select_navigation_waypoint(
-                waypoints,
-                mask,
-                safety=self.config.waypoint_safety,
-            )
+            full_horizon_violation: str | None = None
+            try:
+                selected_index, selected_body = select_navigation_waypoint(
+                    waypoints,
+                    mask,
+                    safety=self.config.waypoint_safety,
+                )
+            except (ValueError, TypeError) as error:
+                if (
+                    self.config.safety_profile
+                    == NAVIGATION_SAFETY_PROFILE_CONTRACT
+                ):
+                    raise
+                full_horizon_violation = str(error)
+                selected_index, selected_body = select_navigation_waypoint(
+                    waypoints,
+                    mask,
+                    safety=self.config.waypoint_safety,
+                    validate_full_horizon=False,
+                )
             predicted_goal = nav_waypoint_world(
                 (current[0], current[1], current[2], *_yaw_quaternion(current[3])),
                 selected_body,
@@ -246,6 +274,9 @@ class PCTDWARecedingHorizonExecutor:
                 if response.route == WaypointRoute.NAV_TO_SOURCE.value
                 else "carry_closed"
             ),
+            "safety_profile": self.config.safety_profile,
+            "full_horizon_contract_passed": full_horizon_violation is None,
+            "full_horizon_violation": full_horizon_violation,
             "selected_index": selected_index,
             "selected_body": selected_body,
             "predicted_goal": predicted_goal,
@@ -351,6 +382,11 @@ class PCTDWARecedingHorizonExecutor:
             "sequence_id": active["sequence_id"],
             "route": active["route"],
             "execution_mode": active["execution_mode"],
+            "safety_profile": active["safety_profile"],
+            "full_horizon_contract_passed": active[
+                "full_horizon_contract_passed"
+            ],
+            "full_horizon_violation": active["full_horizon_violation"],
             "selected_waypoint_index": active["selected_index"],
             "selected_waypoint_body": list(active["selected_body"]),
             "predicted_goal_world": list(active["predicted_goal"]),
@@ -694,6 +730,9 @@ __all__ = [
     "DWAController",
     "ExecutionCommand",
     "ManipulationExecutionConfig",
+    "NAVIGATION_SAFETY_PROFILE_CONTRACT",
+    "NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX",
+    "NAVIGATION_SAFETY_PROFILES",
     "NavigationExecutionConfig",
     "PCTDWARecedingHorizonExecutor",
     "PCTPlan",

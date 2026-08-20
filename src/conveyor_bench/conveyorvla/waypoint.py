@@ -275,7 +275,15 @@ def select_navigation_waypoint(
     valid_mask: Sequence[bool],
     *,
     safety: NavWaypointSafety = NavWaypointSafety(),
+    validate_full_horizon: bool = True,
 ) -> tuple[int, tuple[float, float, float]]:
+    """Select the first executable waypoint, strictly auditing the chunk by default.
+
+    Disabling the full-horizon audit is reserved for receding-horizon diagnostics;
+    every segment through the returned waypoint still uses the unchanged limits.
+    """
+    if not isinstance(validate_full_horizon, bool):
+        raise ValueError("validate_full_horizon must be a boolean")
     rows = _fixed_chunk(waypoints, 3, "nav_waypoints_body")
     valid = _prefix_mask(valid_mask)
     previous = (0.0, 0.0, 0.0)
@@ -294,6 +302,8 @@ def select_navigation_waypoint(
             or abs(row[2]) >= safety.minimum_yaw_rad
         ):
             selected = (index, row)
+            if not validate_full_horizon:
+                return selected
         previous = row
     if selected is None:
         raise ValueError("navigation chunk has no non-degenerate valid waypoint")

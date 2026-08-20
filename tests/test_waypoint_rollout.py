@@ -8,6 +8,7 @@ from PIL import Image
 from scripts.run_waypoint_rollout import (
     _ExternalWaypointCuRoboLifecycle,
     _simulation_curobo_safety_gate,
+    build_parser,
 )
 
 from conveyor_bench.conveyorvla.waypoint import CAMERA_CALIBRATION_ID
@@ -24,6 +25,17 @@ from conveyor_bench.conveyorvla.waypoint_rollout import (
 
 def _image(value):
     return np.full((8, 12, 3), value, dtype=np.uint8)
+
+
+def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
+    parser = build_parser()
+    assert parser.get_default("navigation_safety_profile") == "contract"
+    choices = next(
+        action.choices
+        for action in parser._actions
+        if action.dest == "navigation_safety_profile"
+    )
+    assert tuple(choices) == ("contract", "executable-prefix-diagnostic")
 
 
 def test_temporal_buffer_requires_exact_synchronized_point_two_second_pair():

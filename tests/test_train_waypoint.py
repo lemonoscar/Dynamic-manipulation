@@ -14,6 +14,7 @@ from scripts.train_waypoint import (
     _balanced_subset_indices,
     _load_config,
     _optimizer,
+    _resume_data_position,
     _validate_accumulation_config,
     _validate_accumulation_runtime,
     _validate_args,
@@ -43,6 +44,7 @@ def _args(tmp_path: Path) -> Namespace:
         output_dir=tmp_path / "output",
         model_root=model_root,
         config=Path("configs/waypoint_v1.json"),
+        resume_from=None,
         max_steps=1000,
         batch_size=8,
         gradient_accumulation_steps=8,
@@ -62,7 +64,13 @@ def test_waypoint_training_cli_has_no_legacy_checkpoint_or_state_argument():
     destinations = {action.dest for action in parser._actions}
     assert "initial_action_checkpoint" not in destinations
     assert "state" not in destinations
-    assert {"dataset_root", "output_dir", "model_root", "config"} <= destinations
+    assert {
+        "dataset_root",
+        "output_dir",
+        "model_root",
+        "config",
+        "resume_from",
+    } <= destinations
     assert parser.get_default("save_interval_steps") == 500
 
 
@@ -160,6 +168,19 @@ def test_gradient_accumulation_has_one_runtime_source_of_truth():
             SimpleNamespace(gradient_accumulation_steps=lambda: 8),
             2,
         )
+
+
+def test_resume_data_position_skips_exact_completed_micro_batches():
+    assert _resume_data_position(9051, 2, 1000) == {
+        "global_step": 1000,
+        "loader_micro_batches_per_pass": 9051,
+        "optimizer_steps_per_loader_pass": 4526,
+        "completed_loader_passes": 0,
+        "optimizer_step_in_pass": 1000,
+        "skipped_micro_batches": 2000,
+    }
+    assert _resume_data_position(9051, 2, 4526)["completed_loader_passes"] == 1
+    assert _resume_data_position(9051, 2, 4526)["skipped_micro_batches"] == 0
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():

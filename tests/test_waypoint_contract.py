@@ -68,6 +68,13 @@ def test_runtime_selects_first_non_degenerate_nav_waypoint_and_fails_closed() ->
     chunk[2] = [1.0, 0.0, 0.0]
     with pytest.raises(ValueError, match="translation limit"):
         select_navigation_waypoint(chunk, [True, True, True] + [False] * 17)
+    index, selected = select_navigation_waypoint(
+        chunk,
+        [True, True, True] + [False] * 17,
+        validate_full_horizon=False,
+    )
+    assert index == 1
+    assert selected == (0.04, 0.0, 0.0)
 
 
 def test_arm_gate_validates_absolute_targets_without_state_input() -> None:
