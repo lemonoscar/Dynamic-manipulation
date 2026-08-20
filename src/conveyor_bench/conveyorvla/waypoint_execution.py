@@ -252,7 +252,11 @@ class PCTDWARecedingHorizonExecutor:
         except (ValueError, TypeError) as error:
             return _stop(f"navigation_waypoint_rejected:{error}", failed=True)
         translation = math.hypot(selected_body[0], selected_body[1])
-        mode = "terminal_yaw" if translation < self.config.waypoint_safety.minimum_translation_m else "pct_dwa"
+        mode = (
+            "terminal_yaw"
+            if translation <= self.config.goal_tolerance_m
+            else "pct_dwa"
+        )
         plan: PCTPlan | None = None
         if mode == "pct_dwa":
             try:
