@@ -662,6 +662,12 @@ def _component_gradient_norms(
         "navigation_gradient_norm": ("navigation_",),
         "manipulation_gradient_norm": ("manipulation_",),
     }
+    optimizer_groups = getattr(optimizer, "param_groups", ())
+    if any(
+        str(group.get("name", "")).startswith("auxiliary_")
+        for group in optimizer_groups
+    ):
+        groups["auxiliary_gradient_norm"] = ("auxiliary_",)
     zero_optimizer = getattr(optimizer, "optimizer", None)
     if all(
         hasattr(zero_optimizer, attribute)

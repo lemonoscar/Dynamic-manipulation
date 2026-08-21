@@ -488,6 +488,7 @@ class LayerwiseFlowMatchingActionHead(nn.Module):
         action_valid_mask: torch.Tensor,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
+        reduction: str = "element_mean",
     ) -> torch.Tensor:
         layers, batch_size = self._validate_inputs(
             layerwise_vl_embeddings,
@@ -523,6 +524,17 @@ class LayerwiseFlowMatchingActionHead(nn.Module):
         )
         element_mask = valid[:, :, None].expand_as(actions)
         squared_error = (predicted_velocity - target_velocity).square()
+        if reduction == "none":
+            return (squared_error * element_mask).sum(dim=(1, 2)) / element_mask.sum(
+                dim=(1, 2)
+            )
+        if reduction == "sample_mean":
+            return (
+                (squared_error * element_mask).sum(dim=(1, 2))
+                / element_mask.sum(dim=(1, 2))
+            ).mean()
+        if reduction != "element_mean":
+            raise ValueError("layerwise FM reduction must be element_mean, sample_mean, or none")
         return (squared_error * element_mask).sum() / element_mask.sum()
 
     @torch.no_grad()

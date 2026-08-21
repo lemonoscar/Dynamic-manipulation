@@ -12,12 +12,14 @@ from torch import nn
 from scripts.train_waypoint import (
     DomainBalancedSampler,
     _balanced_subset_indices,
+    _episode_subset_indices,
     _load_config,
     _optimizer,
     _resume_data_position,
     _validate_accumulation_config,
     _validate_accumulation_runtime,
     _validate_args,
+    _v2_row_sample_weights,
     build_parser,
 )
 
@@ -54,6 +56,7 @@ def _args(tmp_path: Path) -> Namespace:
         log_interval_steps=1,
         num_workers=0,
         limit_train_rows=0,
+        limit_train_episodes=0,
         attention_implementation="sdpa",
         seed=1,
     )
@@ -83,6 +86,17 @@ def test_production_config_is_fixed_and_validated(tmp_path: Path):
     changed = {**config, "action_model": {**config["action_model"], "hidden_size": 768}}
     with pytest.raises(Exception, match="contract was modified"):
         _validate_args(_args(tmp_path), changed)
+
+
+def test_v2_s1_s4_configs_change_only_independent_fm_draw_count(tmp_path: Path):
+    s1 = _load_config(Path("configs/waypoint_v2_b1_s1.json"))
+    s4 = _load_config(Path("configs/waypoint_v2_b1_s4.json"))
+    assert s1["action_model"]["num_inference_timesteps"] == 4
+    assert s4["action_model"]["num_inference_timesteps"] == 4
+    left = {**s1, "loss": {**s1["loss"], "repeated_diffusion_steps": 4}}
+    assert left == s4
+    _validate_args(_args(tmp_path), s1)
+    _validate_args(_args(tmp_path), s4)
 
 
 def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():
@@ -199,3 +213,59 @@ def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():
         id(parameter) for parameter in model.parameters()
     }
     assert all(group["parameters"] > 0 for group in report)
+
+
+def test_v2_optimizer_adds_only_enabled_auxiliary_parameters():
+    model = _FakePolicy()
+    model.auxiliary_heads = nn.Linear(2, 2)
+    config = _load_config(Path("configs/waypoint_v2_overfit_all_s1_full.json"))
+    optimizer, _report = _optimizer(model, config)
+    assert [group["name"] for group in optimizer.param_groups] == [
+        "vlm_core",
+        "vlm_embeddings_lm_head",
+        "navigation_head",
+        "manipulation_head",
+        "auxiliary_heads",
+    ]
+    model.auxiliary_heads.requires_grad_(False)
+    optimizer, _report = _optimizer(model, config)
+    assert [group["name"] for group in optimizer.param_groups][-1] == "manipulation_head"
+
+
+def test_v2_sampler_weights_events_and_episode_subset_without_state():
+    routes = []
+    boundaries = []
+    transition_ids = []
+    episodes = []
+    progress = []
+    for episode_index in range(12):
+        episode = f"episode-{episode_index:02d}"
+        for route_index, route in enumerate(
+            ("NAV_TO_SOURCE", "PICK", "NAV_TO_TARGET", "PLACE", "DONE")
+        ):
+            routes.append(route)
+            episodes.append(episode)
+            progress.append(route_index / 4.0)
+            if route_index < 4:
+                boundaries.append(f"transition-{route_index}")
+                transition_ids.append(f"{episode}:transition-{route_index}")
+            else:
+                boundaries.append(None)
+                transition_ids.append(None)
+    dataset = type(
+        "V2Dataset",
+        (),
+        {
+            "routes": routes,
+            "boundaries": boundaries,
+            "transition_ids": transition_ids,
+            "source_episode_ids": episodes,
+            "phase_progress": progress,
+            "__len__": lambda self: len(routes),
+        },
+    )()
+    selected = _episode_subset_indices(dataset, 8)
+    assert len({episodes[index] for index in selected}) == 8
+    weights = _v2_row_sample_weights(dataset, selected)
+    assert len(weights) == len(selected)
+    assert all(value > 0.0 for value in weights)

@@ -773,6 +773,9 @@ class ConveyorVLAWaypointV2Dataset:
         self.routes: list[str] = []
         self.boundaries: list[str | None] = []
         self.transition_ids: list[str | None] = []
+        self.source_episode_ids: list[str] = []
+        self.phase_progress: list[float] = []
+        self.suffix_reasons: list[str] = []
         with self.path.open("rb") as stream:
             while True:
                 offset = stream.tell()
@@ -786,6 +789,9 @@ class ConveyorVLAWaypointV2Dataset:
                 self.routes.append(str(record["route"]))
                 self.boundaries.append(record.get("boundary_transition"))
                 self.transition_ids.append(record.get("transition_id"))
+                self.source_episode_ids.append(str(record["source_episode_id"]))
+                self.phase_progress.append(float(record["phase_progress"]))
+                self.suffix_reasons.append(str(record["suffix_reason"]))
         if not self.offsets:
             raise M0MobileError(f"waypoint-v2 {split} split is empty")
         self._stream: Any = None

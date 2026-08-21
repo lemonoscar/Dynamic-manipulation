@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the state-free ConveyorVLA Waypoint Policy v1."""
+"""Train an immutable state-free ConveyorVLA Waypoint Policy contract."""
 
 from __future__ import annotations
 
@@ -46,6 +46,21 @@ from conveyor_bench.conveyorvla.waypoint_model import (  # noqa: E402
     WaypointQwenInterface,
     lambda_self_schedule,
 )
+from conveyor_bench.conveyorvla.waypoint_v2 import (  # noqa: E402
+    DATASET_SCHEMA_VERSION_V2,
+    MODEL_CONTRACT_ID_V2,
+    POLICY_CONFIG_SCHEMA_VERSION_V2,
+)
+from conveyor_bench.conveyorvla.waypoint_v2_data import (  # noqa: E402
+    ConveyorVLAWaypointV2Dataset,
+    audit_waypoint_v2_dataset,
+)
+from conveyor_bench.conveyorvla.waypoint_v2_model import (  # noqa: E402
+    ConveyorVLAWaypointV2Policy,
+    WaypointV2AuxiliaryConfig,
+    WaypointV2AuxiliaryHeads,
+    WaypointV2LossConfig,
+)
 
 
 DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "waypoint_v1.json"
@@ -67,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-interval-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--limit-train-rows", type=int, default=0)
+    parser.add_argument("--limit-train-episodes", type=int, default=0)
     parser.add_argument(
         "--attention-implementation",
         choices=("sdpa", "flash_attention_2", "eager"),
@@ -88,7 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     _validate_accumulation_config(accelerator, args.gradient_accumulation_steps)
     output_reserved = False
     try:
-        audit = audit_waypoint_dataset(args.dataset_root)
+        is_v2 = _is_v2_config(config)
+        audit = (
+            audit_waypoint_v2_dataset(args.dataset_root)
+            if is_v2
+            else audit_waypoint_dataset(args.dataset_root)
+        )
         if not audit["ok"]:
             raise M0MobileError(
                 "waypoint dataset failed its gate: " + "; ".join(audit["problems"])
@@ -100,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         resume = _resume_binding(
             args,
+            config,
             audit,
             accelerator,
             warmup_steps,
@@ -108,8 +130,18 @@ def main(argv: list[str] | None = None) -> int:
         common._reserve_output(accelerator, output, None)
         output_reserved = True
         set_seed(args.seed, device_specific=True)
-        dataset = ConveyorVLAWaypointDataset(args.dataset_root, split="train")
-        train_indices = _balanced_subset_indices(dataset, args.limit_train_rows)
+        dataset = (
+            ConveyorVLAWaypointV2Dataset(args.dataset_root, split="train")
+            if is_v2
+            else ConveyorVLAWaypointDataset(args.dataset_root, split="train")
+        )
+        if is_v2:
+            _validate_v2_dataset_config(config, dataset.manifest)
+        train_indices = (
+            _episode_subset_indices(dataset, args.limit_train_episodes)
+            if args.limit_train_episodes
+            else _balanced_subset_indices(dataset, args.limit_train_rows)
+        )
         loader_dataset = dataset if train_indices is None else Subset(dataset, train_indices)
         loader_routes = (
             dataset.routes
@@ -121,9 +153,14 @@ def main(argv: list[str] | None = None) -> int:
             if train_indices is None
             else [dataset.boundaries[index] for index in train_indices]
         )
+        loader_weights = (
+            _v2_row_sample_weights(dataset, train_indices)
+            if is_v2
+            else _row_sample_weights(loader_routes, loader_boundaries)
+        )
         sampler = DomainBalancedSampler(
             loader_routes,
-            _row_sample_weights(loader_routes, loader_boundaries),
+            loader_weights,
             batch_size=args.batch_size,
             seed=args.seed,
         )
@@ -141,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
             config,
             args.model_root,
             args.attention_implementation,
+        )
+        has_auxiliary = any(
+            parameter.requires_grad
+            for parameter in getattr(model, "auxiliary_heads", torch.nn.Module()).parameters()
         )
         if resume is not None and token_ids != resume["special_token_ids"]:
             raise M0MobileError(
@@ -227,14 +268,12 @@ def main(argv: list[str] | None = None) -> int:
                     oracle = model(examples, objective="oracle")
                     _finite_losses(
                         oracle,
-                        (
-                            "loss",
-                            "answer_loss",
-                            "route_loss",
-                            "decision_loss",
-                            "active_route_loss",
-                            "navigation_loss",
-                            "manipulation_loss",
+                        tuple(
+                            key
+                            for key, value in oracle.items()
+                            if isinstance(value, torch.Tensor)
+                            and value.numel() == 1
+                            and (key == "loss" or key.endswith("_loss"))
                         ),
                     )
                     oracle_loss = _tensor(oracle["loss"], "oracle loss")
@@ -248,7 +287,13 @@ def main(argv: list[str] | None = None) -> int:
                         self_conditioned = model(examples, objective="self_conditioned")
                         _finite_losses(
                             self_conditioned,
-                            ("loss", "navigation_loss", "manipulation_loss"),
+                            tuple(
+                                key
+                                for key, value in self_conditioned.items()
+                                if isinstance(value, torch.Tensor)
+                                and value.numel() == 1
+                                and (key == "loss" or key.endswith("_loss"))
+                            ),
                         )
                         self_loss = _tensor(self_conditioned["loss"], "self-conditioned loss")
                         common._backward_loss(
@@ -262,7 +307,10 @@ def main(argv: list[str] | None = None) -> int:
                         self_loss = oracle_loss.detach() * 0.0
 
                     gradient_norm = torch.full((), float("nan"), device=oracle_loss.device)
-                    component_norms = _nan_component_norms(oracle_loss.device)
+                    component_norms = _nan_component_norms(
+                        oracle_loss.device,
+                        has_auxiliary=has_auxiliary,
+                    )
                     if accelerator.sync_gradients:
                         component_norms = common._component_gradient_norms(accelerator, optimizer)
                         for name, value in component_norms.items():
@@ -275,7 +323,12 @@ def main(argv: list[str] | None = None) -> int:
                                 float(config["optimization"]["max_gradient_norm"]),
                             )
                         else:
-                            gradient_norm = torch.stack(tuple(component_norms.values())).square().sum().sqrt()
+                            gradient_norm = (
+                                torch.stack(tuple(component_norms.values()))
+                                .square()
+                                .sum()
+                                .sqrt()
+                            )
                         common._finite(gradient_norm, "gradient norm")
                     if deepspeed_engine is None:
                         optimizer.step()
@@ -372,23 +425,69 @@ def _build_model(
         )
     )
     loss = config["loss"]
-    policy = ConveyorVLAWaypointPolicy(
-        qwen,
-        navigation,
-        manipulation,
-        route_confidence_min=float(config["router"]["route_confidence_min"]),
-        max_subtask_tokens=int(config["router"]["max_subtask_tokens"]),
-        loss_config=WaypointLossConfig(
-            lambda_answer=float(loss["lambda_answer"]),
-            lambda_route=float(loss["lambda_route"]),
-            lambda_nav=float(loss["lambda_navigation"]),
-            lambda_arm=float(loss["lambda_manipulation"]),
-            repeated_diffusion_steps=int(loss["repeated_diffusion_steps"]),
-        ),
-    )
-    policy.enable_full_finetuning()
-    if not all(parameter.requires_grad for parameter in policy.parameters()):
-        raise M0MobileError("waypoint full-finetuning contract left frozen parameters")
+    if _is_v2_config(config):
+        auxiliary = config["auxiliary"]
+        policy = ConveyorVLAWaypointV2Policy(
+            qwen,
+            navigation,
+            manipulation,
+            WaypointV2AuxiliaryHeads(
+                WaypointV2AuxiliaryConfig(
+                    cross_attention_dim=int(action["cross_attention_dim"]),
+                    action_hidden_size=int(action["hidden_size"]),
+                    hidden_size=int(auxiliary["hidden_size"]),
+                    crl_dim=int(auxiliary["crl_dim"]),
+                    crl_temperature=float(auxiliary["crl_temperature"]),
+                    enable_boundary_progress=bool(
+                        auxiliary["enable_boundary_progress"]
+                    ),
+                    enable_prefix=bool(auxiliary["enable_prefix"]),
+                    enable_crl=bool(auxiliary["enable_crl"]),
+                    tau_route_s=auxiliary.get("tau_route_s"),
+                )
+            ),
+            route_confidence_min=float(config["router"]["route_confidence_min"]),
+            max_subtask_tokens=int(config["router"]["max_subtask_tokens"]),
+            loss_config=WaypointV2LossConfig(
+                lambda_answer=float(loss["lambda_answer"]),
+                lambda_route=float(loss["lambda_route"]),
+                lambda_navigation=float(loss["lambda_navigation"]),
+                lambda_manipulation=float(loss["lambda_manipulation"]),
+                lambda_boundary=float(loss["lambda_boundary"]),
+                lambda_progress=float(loss["lambda_progress"]),
+                lambda_prefix=float(loss["lambda_prefix"]),
+                lambda_crl=float(loss["lambda_crl"]),
+                repeated_diffusion_steps=int(loss["repeated_diffusion_steps"]),
+                on_policy_correction_weight=float(
+                    loss["on_policy_correction_weight"]
+                ),
+            ),
+        )
+        policy.enable_v2_finetuning()
+        required_modules = (policy.qwen, policy.navigation_head, policy.manipulation_head)
+        if any(
+            not all(parameter.requires_grad for parameter in module.parameters())
+            for module in required_modules
+        ):
+            raise M0MobileError("waypoint-v2 core full-finetuning contract was frozen")
+    else:
+        policy = ConveyorVLAWaypointPolicy(
+            qwen,
+            navigation,
+            manipulation,
+            route_confidence_min=float(config["router"]["route_confidence_min"]),
+            max_subtask_tokens=int(config["router"]["max_subtask_tokens"]),
+            loss_config=WaypointLossConfig(
+                lambda_answer=float(loss["lambda_answer"]),
+                lambda_route=float(loss["lambda_route"]),
+                lambda_nav=float(loss["lambda_navigation"]),
+                lambda_arm=float(loss["lambda_manipulation"]),
+                repeated_diffusion_steps=int(loss["repeated_diffusion_steps"]),
+            ),
+        )
+        policy.enable_full_finetuning()
+        if not all(parameter.requires_grad for parameter in policy.parameters()):
+            raise M0MobileError("waypoint full-finetuning contract left frozen parameters")
     ids = policy.router.token_ids
     return policy, {
         "pred_action": ids.pred_action,
@@ -408,13 +507,53 @@ def _optimizer(
     qwen_lm: list[torch.nn.Parameter] = []
     qwen_core: list[torch.nn.Parameter] = []
     for name, parameter in model.qwen.named_parameters():
+        if not parameter.requires_grad:
+            continue
         (qwen_lm if name.endswith(lm_suffixes) else qwen_core).append(parameter)
-    groups = (
+    groups = [
         ("vlm_core", qwen_core, float(optimization["vlm_core_learning_rate"])),
-        ("vlm_embeddings_lm_head", qwen_lm, float(optimization["vlm_embeddings_lm_head_learning_rate"])),
-        ("navigation_head", list(model.navigation_head.parameters()), float(optimization["navigation_head_learning_rate"])),
-        ("manipulation_head", list(model.manipulation_head.parameters()), float(optimization["manipulation_head_learning_rate"])),
+        (
+            "vlm_embeddings_lm_head",
+            qwen_lm,
+            float(optimization["vlm_embeddings_lm_head_learning_rate"]),
+        ),
+        (
+            "navigation_head",
+            [
+                parameter
+                for parameter in model.navigation_head.parameters()
+                if parameter.requires_grad
+            ],
+            float(optimization["navigation_head_learning_rate"]),
+        ),
+        (
+            "manipulation_head",
+            [
+                parameter
+                for parameter in model.manipulation_head.parameters()
+                if parameter.requires_grad
+            ],
+            float(optimization["manipulation_head_learning_rate"]),
+        ),
+    ]
+    auxiliary_module = getattr(model, "auxiliary_heads", None)
+    auxiliary_parameters = (
+        []
+        if auxiliary_module is None
+        else [
+            parameter
+            for parameter in auxiliary_module.parameters()
+            if parameter.requires_grad
+        ]
     )
+    if auxiliary_parameters:
+        groups.append(
+            (
+                "auxiliary_heads",
+                auxiliary_parameters,
+                float(optimization["auxiliary_head_learning_rate"]),
+            )
+        )
     if any(not parameters for _name, parameters, _lr in groups):
         raise M0MobileError("waypoint optimizer parameter group is empty")
     flat = [parameter for _name, parameters, _lr in groups for parameter in parameters]
@@ -549,6 +688,90 @@ def _row_sample_weights(
     )
 
 
+def _v2_row_sample_weights(
+    dataset: ConveyorVLAWaypointV2Dataset,
+    selected_indices: Sequence[int] | None,
+) -> tuple[float, ...]:
+    """Balance routes, episodes, progress, and transition events—not frames."""
+
+    from collections import Counter
+
+    indices = list(range(len(dataset))) if selected_indices is None else list(selected_indices)
+    if not indices:
+        raise M0MobileError("waypoint-v2 sampler subset is empty")
+    routes = [dataset.routes[index] for index in indices]
+    boundaries = [dataset.boundaries[index] for index in indices]
+    transition_ids = [dataset.transition_ids[index] for index in indices]
+    episodes = [dataset.source_episode_ids[index] for index in indices]
+    progress_bins = [min(2, int(dataset.phase_progress[index] * 3.0)) for index in indices]
+    route_counts = Counter(routes)
+    episode_counts = Counter(episodes)
+    event_row_counts = Counter(value for value in transition_ids if value is not None)
+    event_boundary = {}
+    for transition_id, boundary in zip(transition_ids, boundaries, strict=True):
+        if transition_id is not None:
+            event_boundary[transition_id] = boundary
+    boundary_event_counts = Counter(event_boundary.values())
+    interior_bin_counts = Counter(
+        progress_bin
+        for progress_bin, transition_id in zip(
+            progress_bins, transition_ids, strict=True
+        )
+        if transition_id is None
+    )
+    total = len(indices)
+    weights = []
+    for route, boundary, transition_id, episode, progress_bin in zip(
+        routes,
+        boundaries,
+        transition_ids,
+        episodes,
+        progress_bins,
+        strict=True,
+    ):
+        weight = total / (len(route_counts) * route_counts[route])
+        weight += total / (len(episode_counts) * episode_counts[episode])
+        if transition_id is not None:
+            events = boundary_event_counts[boundary]
+            weight += total / (
+                len(boundary_event_counts)
+                * events
+                * event_row_counts[transition_id]
+            )
+        elif interior_bin_counts:
+            weight += total / (
+                len(interior_bin_counts) * interior_bin_counts[progress_bin]
+            )
+        weights.append(weight)
+    return tuple(weights)
+
+
+def _episode_subset_indices(dataset: Any, limit: int) -> list[int]:
+    if not 8 <= limit <= 16:
+        raise M0MobileError("waypoint-v2 overfit subset must contain 8..16 episodes")
+    episode_ids = getattr(dataset, "source_episode_ids", None)
+    if not isinstance(episode_ids, list) or len(episode_ids) != len(dataset):
+        raise M0MobileError("waypoint-v2 dataset does not expose episode identities")
+    selected_episodes = tuple(dict.fromkeys(episode_ids))[:limit]
+    if len(selected_episodes) != limit:
+        raise M0MobileError("waypoint-v2 train split has too few episodes")
+    selected_set = set(selected_episodes)
+    indices = [
+        index for index, episode_id in enumerate(episode_ids) if episode_id in selected_set
+    ]
+    routes = {dataset.routes[index] for index in indices}
+    boundaries = {
+        dataset.boundaries[index]
+        for index in indices
+        if dataset.boundaries[index] is not None
+    }
+    if routes != {route.value for route in WaypointRoute} or len(boundaries) != 4:
+        raise M0MobileError(
+            "waypoint-v2 episode subset does not cover every route and transition"
+        )
+    return indices
+
+
 def _balanced_subset_indices(
     dataset: ConveyorVLAWaypointDataset,
     limit: int,
@@ -635,6 +858,17 @@ def _step_metrics(
             for name, value in component_norms.items()
         }
     )
+    for key, value in oracle.items():
+        if (
+            key in result
+            or not isinstance(value, torch.Tensor)
+            or value.numel() != 1
+        ):
+            continue
+        if key.endswith(
+            ("_loss", "_std", "_accuracy", "_mae", "_mae_k", "_rate", "_margin")
+        ):
+            result[key] = common._distributed_mean(accelerator, value.detach())
     for key in (
         "navigation_samples",
         "manipulation_samples",
@@ -670,14 +904,19 @@ def _zero_self_metrics(reference: torch.Tensor) -> dict[str, torch.Tensor | int]
     }
 
 
-def _nan_component_norms(device: torch.device) -> dict[str, torch.Tensor]:
+def _nan_component_norms(
+    device: torch.device, *, has_auxiliary: bool = False
+) -> dict[str, torch.Tensor]:
+    names = [
+        "vlm_gradient_norm",
+        "navigation_gradient_norm",
+        "manipulation_gradient_norm",
+    ]
+    if has_auxiliary:
+        names.append("auxiliary_gradient_norm")
     return {
         name: torch.full((), float("nan"), device=device)
-        for name in (
-            "vlm_gradient_norm",
-            "navigation_gradient_norm",
-            "manipulation_gradient_norm",
-        )
+        for name in names
     }
 
 
@@ -731,7 +970,7 @@ def _tensor(value: Any, name: str) -> torch.Tensor:
 def _resolved_run(
     args: argparse.Namespace,
     config: Mapping[str, Any],
-    dataset: ConveyorVLAWaypointDataset,
+    dataset: Any,
     audit: Mapping[str, Any],
     token_ids: Mapping[str, Any],
     parameter_groups: list[dict[str, Any]],
@@ -762,10 +1001,14 @@ def _resolved_run(
         "sha256": dataset.manifest["normalization_sha256"],
     }
     return {
-        "schema_version": "conveyorvla-waypoint-training-run-v1",
+        "schema_version": (
+            "conveyorvla-waypoint-training-run-v2"
+            if _is_v2_config(config)
+            else "conveyorvla-waypoint-training-run-v1"
+        ),
         "status": "initializing",
-        "model_contract_id": MODEL_CONTRACT_ID,
-        "dataset_schema_version": DATASET_SCHEMA_VERSION,
+        "model_contract_id": config["model_contract_id"],
+        "dataset_schema_version": config["dataset_schema_version"],
         "dataset_root": str(dataset_root),
         "dataset_manifest_sha256": common._sha256(dataset_root / "manifest.json"),
         "dataset_audit_manifest_sha256": audit["manifest_sha256"],
@@ -773,6 +1016,8 @@ def _resolved_run(
         "normalization": normalization,
         "camera_contract": camera_contract,
         "dataset_action_contract": dataset.manifest["action_contract"],
+        "dataset_transition_contract": dataset.manifest.get("transition_contract"),
+        "dataset_crl_contract": dataset.manifest.get("crl_contract"),
         "config": str(config_path),
         "config_sha256": common._sha256(config_path),
         "model_root": str(args.model_root.expanduser().resolve()),
@@ -797,6 +1042,14 @@ def _resolved_run(
                 else "restored_waypoint_checkpoint"
             ),
             "legacy_checkpoint_loaded": False,
+            "auxiliary_heads": (
+                None
+                if not _is_v2_config(config)
+                else {
+                    "source": "new_random_waypoint_v2_auxiliary_heads",
+                    "enabled": config["auxiliary"],
+                }
+            ),
             "optimizer_resume": resume is not None,
             "resume": resume,
         },
@@ -810,6 +1063,7 @@ def _resolved_run(
         "effective_batch_size": effective_batch,
         "train_rows": len(dataset) if train_indices is None else len(train_indices),
         "training_subset": train_indices is not None,
+        "training_subset_episode_limit": args.limit_train_episodes,
         "training_subset_indices": train_indices,
         "optimizer_steps_per_equivalent_sampling_epoch": len(dataset)
         / effective_batch
@@ -846,13 +1100,46 @@ def _load_config(path: Path) -> dict[str, Any]:
         raise M0MobileError(f"invalid waypoint policy config {resolved}: {error}") from error
     if not isinstance(value, dict):
         raise M0MobileError("waypoint policy config must be a JSON object")
-    if value.get("schema_version") != "conveyorvla-waypoint-policy-config-v1":
-        raise M0MobileError("waypoint policy config schema is incompatible")
-    if value.get("model_contract_id") != MODEL_CONTRACT_ID:
-        raise M0MobileError("waypoint model contract ID is incompatible")
-    if value.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
-        raise M0MobileError("waypoint dataset contract ID is incompatible")
+    identity = (
+        value.get("schema_version"),
+        value.get("model_contract_id"),
+        value.get("dataset_schema_version"),
+    )
+    valid = {
+        (
+            "conveyorvla-waypoint-policy-config-v1",
+            MODEL_CONTRACT_ID,
+            DATASET_SCHEMA_VERSION,
+        ),
+        (
+            POLICY_CONFIG_SCHEMA_VERSION_V2,
+            MODEL_CONTRACT_ID_V2,
+            DATASET_SCHEMA_VERSION_V2,
+        ),
+    }
+    if identity not in valid:
+        raise M0MobileError("waypoint policy/config/dataset identity is incompatible")
     return value
+
+
+def _is_v2_config(config: Mapping[str, Any]) -> bool:
+    return config.get("schema_version") == POLICY_CONFIG_SCHEMA_VERSION_V2
+
+
+def _validate_v2_dataset_config(
+    config: Mapping[str, Any], manifest: Mapping[str, Any]
+) -> None:
+    if manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+        raise M0MobileError("waypoint-v2 trainer received a non-v2 dataset")
+    auxiliary = config.get("auxiliary")
+    if not isinstance(auxiliary, Mapping):
+        raise M0MobileError("waypoint-v2 auxiliary config is missing")
+    if bool(auxiliary.get("enable_crl")):
+        contract = manifest.get("crl_contract")
+        if not isinstance(contract, Mapping) or auxiliary.get("tau_route_s") != contract.get(
+            "tau_route_s"
+        ):
+            raise M0MobileError("waypoint-v2 CRL tau does not match the dataset manifest")
 
 
 def _qwen_base_identity(model_dir: Path) -> dict[str, Any]:
@@ -923,6 +1210,12 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         raise M0MobileError("waypoint num workers cannot be negative")
     if args.limit_train_rows < 0:
         raise M0MobileError("waypoint train-row limit cannot be negative")
+    if args.limit_train_episodes < 0:
+        raise M0MobileError("waypoint train-episode limit cannot be negative")
+    if args.limit_train_rows and args.limit_train_episodes:
+        raise M0MobileError("waypoint row and episode subsets are mutually exclusive")
+    if args.limit_train_episodes and not _is_v2_config(config):
+        raise M0MobileError("waypoint episode subsets require a v2 config")
     if not 0 <= args.save_first_checkpoint_step <= args.max_steps:
         raise M0MobileError("first waypoint checkpoint step is outside the run")
     warmup = (
@@ -952,9 +1245,18 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         "manipulation_action_dim": 7,
         "state_encoder": False,
         "shared_parameters": False,
+        "num_inference_timesteps": 4,
     }
     if any(action.get(key) != value for key, value in required.items()):
         raise M0MobileError("waypoint production action-model contract was modified")
+    if _is_v2_config(config):
+        if config["vlm"].get("relative_path") != "Qwen3-VL-4B-Instruct":
+            raise M0MobileError("waypoint-v2 must initialize from official Qwen3-VL")
+        if int(config["loss"].get("repeated_diffusion_steps", 0)) not in {1, 4}:
+            raise M0MobileError("waypoint-v2 FM draws must be S1 or S4")
+        auxiliary = config.get("auxiliary")
+        if not isinstance(auxiliary, Mapping):
+            raise M0MobileError("waypoint-v2 auxiliary config is missing")
     schedule = config["loss"]["lambda_self_schedule"]
     if schedule != {
         "zero_until_progress": 0.05,
@@ -966,6 +1268,7 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
 
 def _resume_binding(
     args: argparse.Namespace,
+    config: Mapping[str, Any],
     audit: Mapping[str, Any],
     accelerator: Accelerator,
     warmup_steps: int,
@@ -976,9 +1279,11 @@ def _resume_binding(
 
     checkpoint = args.resume_from.expanduser().resolve()
     manifest, resolved, dataset_root = checkpoint_check._validate_binding(checkpoint)
-    if manifest.get("model_contract_id") != MODEL_CONTRACT_ID:
+    if manifest.get("model_contract_id") != config.get("model_contract_id"):
         raise M0MobileError("resume checkpoint model contract is incompatible")
-    if manifest.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
+    if manifest.get("dataset_schema_version") != config.get(
+        "dataset_schema_version"
+    ):
         raise M0MobileError("resume checkpoint dataset schema is incompatible")
     if dataset_root.resolve() != args.dataset_root.expanduser().resolve():
         raise M0MobileError("resume checkpoint uses a different waypoint dataset")
@@ -1003,6 +1308,7 @@ def _resume_binding(
         "batch_size": args.batch_size,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "limit_train_rows": args.limit_train_rows,
+        "limit_train_episodes": args.limit_train_episodes,
         "attention_implementation": args.attention_implementation,
         "seed": args.seed,
     }
@@ -1078,7 +1384,7 @@ def _set_status(
         common._write_json_atomic(
             output / "run_state.json",
             {
-                "schema_version": "conveyorvla-waypoint-training-state-v1",
+                "schema_version": _training_state_schema(output),
                 "status": status,
                 "global_step": step,
                 "metrics": dict(metrics or {}),
@@ -1101,7 +1407,11 @@ def _save_waypoint_checkpoint(
         common._write_json_atomic(
             checkpoint / "waypoint_checkpoint_manifest.json",
             {
-                "schema_version": "conveyorvla-waypoint-checkpoint-v1",
+                "schema_version": (
+                    "conveyorvla-waypoint-checkpoint-v2"
+                    if resolved["model_contract_id"] == MODEL_CONTRACT_ID_V2
+                    else "conveyorvla-waypoint-checkpoint-v1"
+                ),
                 "global_step": step,
                 "model_contract_id": resolved["model_contract_id"],
                 "dataset_schema_version": resolved["dataset_schema_version"],
@@ -1113,6 +1423,14 @@ def _save_waypoint_checkpoint(
                 "special_token_ids": resolved["special_token_ids"],
                 "qwen_base": resolved["qwen_base"],
                 "action_contract": resolved["resolved_policy_config"]["action_model"],
+                "auxiliary_contract": resolved["resolved_policy_config"].get(
+                    "auxiliary"
+                ),
+                "loss_contract": resolved["resolved_policy_config"]["loss"],
+                "dataset_transition_contract": resolved.get(
+                    "dataset_transition_contract"
+                ),
+                "dataset_crl_contract": resolved.get("dataset_crl_contract"),
                 "route_confidence_min": resolved["route_confidence_min"],
                 "processor_relative_path": "../../processor",
                 "resolved_policy_config_sha256": resolved["config_sha256"],
@@ -1152,11 +1470,23 @@ def _write_failure(output: Path, error: Exception) -> None:
     common._write_json_atomic(
         state,
         {
-            "schema_version": "conveyorvla-waypoint-training-state-v1",
+            "schema_version": _training_state_schema(output),
             "status": "failed",
             "global_step": step,
             "error": str(error),
         },
+    )
+
+
+def _training_state_schema(output: Path) -> str:
+    try:
+        resolved = json.loads((output / "resolved_run.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "conveyorvla-waypoint-training-state-v1"
+    return (
+        "conveyorvla-waypoint-training-state-v2"
+        if resolved.get("model_contract_id") == MODEL_CONTRACT_ID_V2
+        else "conveyorvla-waypoint-training-state-v1"
     )
 
 

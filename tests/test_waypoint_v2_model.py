@@ -1,0 +1,234 @@
+from types import SimpleNamespace
+
+import pytest
+import torch
+import torch.nn.functional as F
+from torch import nn
+
+from conveyor_bench.conveyorvla.waypoint import (
+    ACTION_HORIZON,
+    ROUTE_TOKENS,
+    SPECIAL_TOKENS,
+    WaypointRoute,
+    canonical_solution,
+)
+from conveyor_bench.conveyorvla.waypoint_model import (
+    LayerwiseFlowMatchingActionHead,
+    LayerwiseFlowMatchingConfig,
+)
+from conveyor_bench.conveyorvla.waypoint_v2 import LOCAL_CRL_GOALS
+from conveyor_bench.conveyorvla.waypoint_v2_model import (
+    ConveyorVLAWaypointV2Policy,
+    WaypointV2AuxiliaryConfig,
+    WaypointV2AuxiliaryHeads,
+    WaypointV2LossConfig,
+    _prefix_target_distribution,
+)
+
+
+TOKEN_IDS = {token: index + 10 for index, token in enumerate(SPECIAL_TOKENS)}
+
+
+class _Tokenizer:
+    def __call__(self, text, *, add_special_tokens=False):
+        del add_special_tokens
+        return SimpleNamespace(input_ids=[TOKEN_IDS[text]])
+
+    def convert_tokens_to_ids(self, token):
+        return TOKEN_IDS.get(token, -1)
+
+
+class _Backbone(nn.Module):
+    def __init__(self, cross_dim: int, layer_count: int) -> None:
+        super().__init__()
+        self.logits = nn.Parameter(torch.zeros(6, 64))
+        self.hidden = nn.ParameterList(
+            [nn.Parameter(torch.randn(6, cross_dim) * 0.1) for _ in range(layer_count)]
+        )
+        self.calls = 0
+
+    def forward(self, input_ids, labels=None, **_kwargs):
+        self.calls += 1
+        batch_size = input_ids.shape[0]
+        logits = self.logits[None].expand(batch_size, -1, -1)
+        loss = None
+        if labels is not None:
+            supervised = labels != -100
+            loss = F.cross_entropy(logits[supervised], labels[supervised])
+        hidden_states = tuple(
+            value[None].expand(batch_size, -1, -1) for value in self.hidden
+        )
+        return SimpleNamespace(loss=loss, logits=logits, hidden_states=hidden_states)
+
+
+class _Qwen(nn.Module):
+    def __init__(self, cross_dim: int, layer_count: int) -> None:
+        super().__init__()
+        self.model = _Backbone(cross_dim, layer_count)
+        self.processor = SimpleNamespace(tokenizer=_Tokenizer())
+
+    def build_waypoint_inputs(self, examples, *, supervise_solutions=True, **_kwargs):
+        labels = torch.full((len(examples), 6), -100, dtype=torch.long)
+        for index, example in enumerate(examples):
+            route = WaypointRoute(example["route"])
+            labels[index, 1] = TOKEN_IDS[
+                "<|pred_done|>" if route is WaypointRoute.DONE else "<|pred_action|>"
+            ]
+            if route is not WaypointRoute.DONE:
+                labels[index, 2] = TOKEN_IDS[ROUTE_TOKENS[route]]
+                labels[index, 3] = TOKEN_IDS["<|subtask|>"]
+                labels[index, 4] = TOKEN_IDS["<|end_subtask|>"]
+        result = {
+            "input_ids": torch.zeros_like(labels),
+            "attention_mask": torch.ones_like(labels),
+        }
+        if supervise_solutions:
+            result["labels"] = labels
+        return result
+
+    def forward(self, **kwargs):
+        return self.model(**kwargs)
+
+    def enable_full_finetuning(self):
+        self.requires_grad_(True)
+
+
+def _head(action_dim: int) -> LayerwiseFlowMatchingActionHead:
+    return LayerwiseFlowMatchingActionHead(
+        LayerwiseFlowMatchingConfig(
+            action_dim=action_dim,
+            cross_attention_dim=8,
+            hidden_size=8,
+            num_layers=2,
+            num_attention_heads=2,
+            attention_head_dim=4,
+            max_seq_len=32,
+            num_inference_timesteps=4,
+        )
+    )
+
+
+def _example(route: WaypointRoute, index: int) -> dict:
+    active = route is not WaypointRoute.DONE
+    width = 3 if route in {WaypointRoute.NAV_TO_SOURCE, WaypointRoute.NAV_TO_TARGET} else 7
+    domain = "NAVIGATION" if width == 3 else "MANIPULATION"
+    return {
+        "video": ((object(), object()), (object(), object())),
+        "lang": "test task",
+        "solution": canonical_solution(route),
+        "route": route.value,
+        "action_domain": domain if active else "NONE",
+        "action": (
+            [[0.01 * (step + 1 + index)] * width for step in range(ACTION_HORIZON)]
+            if active
+            else None
+        ),
+        "action_valid_mask": [active] * ACTION_HORIZON,
+        "boundary_class": ("BEFORE", "AFTER", "INTERIOR")[index % 3],
+        "phase_progress": index / 4.0,
+        "prefix_target_k": 4 + index if active else 0,
+        "transition_window": index % 2 == 0,
+        "time_to_boundary_s": float(index + 1),
+        "time_to_boundary_valid": active,
+        "on_policy_correction": False,
+        "crl_goal_index": -1 if not active else tuple(LOCAL_CRL_GOALS).index(route),
+    }
+
+
+def _policy(*, repeats: int, auxiliary: bool) -> ConveyorVLAWaypointV2Policy:
+    tau = {route.value: 4.0 + index for index, route in enumerate(LOCAL_CRL_GOALS)}
+    aux_config = WaypointV2AuxiliaryConfig(
+        cross_attention_dim=8,
+        action_hidden_size=8,
+        hidden_size=16,
+        crl_dim=8,
+        enable_boundary_progress=auxiliary,
+        enable_prefix=auxiliary,
+        enable_crl=auxiliary,
+        tau_route_s=tau if auxiliary else None,
+    )
+    return ConveyorVLAWaypointV2Policy(
+        _Qwen(8, 2),
+        _head(3),
+        _head(7),
+        WaypointV2AuxiliaryHeads(aux_config),
+        route_confidence_min=0.55,
+        loss_config=WaypointV2LossConfig(
+            repeated_diffusion_steps=repeats,
+            lambda_boundary=0.2 if auxiliary else 0.0,
+            lambda_progress=0.1 if auxiliary else 0.0,
+            lambda_prefix=0.2 if auxiliary else 0.0,
+            lambda_crl=0.1 if auxiliary else 0.0,
+        ),
+    )
+
+
+def test_s4_uses_one_qwen_forward_and_means_four_independent_draws() -> None:
+    torch.manual_seed(7)
+    policy = _policy(repeats=4, auxiliary=True)
+    policy.enable_v2_finetuning()
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+        _example(WaypointRoute.NAV_TO_TARGET, 2),
+        _example(WaypointRoute.PLACE, 3),
+        _example(WaypointRoute.DONE, 4),
+    ]
+    result = policy.oracle_loss(examples)
+    assert policy.qwen.model.calls == 1
+    assert torch.isfinite(result["loss"])
+    for domain in ("navigation", "manipulation"):
+        draws = torch.stack([result[f"{domain}_draw_{index}_loss"] for index in range(4)])
+        assert result[f"{domain}_loss"].item() == pytest.approx(draws.mean().item())
+        assert result[f"{domain}_draw_std"].item() > 0.0
+    for name in ("boundary_loss", "progress_loss", "prefix_loss", "crl_loss"):
+        assert torch.isfinite(result[name]) and result[name].item() >= 0.0
+    result["loss"].backward()
+    for module in (
+        policy.qwen,
+        policy.navigation_head,
+        policy.manipulation_head,
+        policy.auxiliary_heads.boundary_head,
+        policy.auxiliary_heads.progress_head,
+        policy.auxiliary_heads.prefix_head,
+        policy.auxiliary_heads.crl_state,
+        policy.auxiliary_heads.crl_goal,
+    ):
+        assert any(
+            parameter.grad is not None
+            and torch.isfinite(parameter.grad).all()
+            and parameter.grad.abs().sum() > 0
+            for parameter in module.parameters()
+        )
+
+
+def test_b1_freezes_all_auxiliary_parameters() -> None:
+    policy = _policy(repeats=1, auxiliary=False)
+    policy.enable_v2_finetuning()
+    assert not any(
+        parameter.requires_grad for parameter in policy.auxiliary_heads.parameters()
+    )
+    result = policy.oracle_loss(
+        [
+            _example(WaypointRoute.NAV_TO_SOURCE, 0),
+            _example(WaypointRoute.PICK, 1),
+        ]
+    )
+    assert result["boundary_loss"].item() == 0.0
+    assert result["prefix_loss"].item() == 0.0
+    result["loss"].backward()
+    assert all(
+        parameter.grad is None for parameter in policy.auxiliary_heads.parameters()
+    )
+
+
+def test_prefix_targets_reward_long_safe_prefix_and_penalize_overrun() -> None:
+    targets = torch.tensor([5, 5])
+    transition = torch.tensor([False, True])
+    distribution = _prefix_target_distribution(targets, transition, torch.float32)
+    assert distribution.shape == (2, ACTION_HORIZON)
+    assert distribution[0].argmax().item() + 1 == 5
+    assert distribution[0, 4] > distribution[0, 3] > distribution[0, 2]
+    assert distribution[0, 5] < distribution[0, 0]
+    assert distribution[1, 3] == pytest.approx(distribution[1, 4])
+    assert distribution[1, 4] == pytest.approx(distribution[1, 5])

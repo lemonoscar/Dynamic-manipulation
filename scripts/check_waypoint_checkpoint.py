@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load and validate a ConveyorVLA Waypoint v1 ZeRO checkpoint."""
+"""Load and validate a ConveyorVLA Waypoint ZeRO checkpoint identity."""
 
 from __future__ import annotations
 
@@ -22,11 +22,14 @@ from scripts import train_waypoint as training  # noqa: E402
 import torch  # noqa: E402
 from accelerate import Accelerator  # noqa: E402
 from accelerate.utils import set_seed  # noqa: E402
-from torch.utils.data import DataLoader, WeightedRandomSampler  # noqa: E402
+from torch.utils.data import DataLoader, Subset  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint_data import (  # noqa: E402
     ConveyorVLAWaypointDataset,
+)
+from conveyor_bench.conveyorvla.waypoint_v2_data import (  # noqa: E402
+    ConveyorVLAWaypointV2Dataset,
 )
 
 
@@ -50,15 +53,46 @@ def main(argv: list[str] | None = None) -> int:
     )
     training._validate_accumulation_config(accelerator, accumulation)
     set_seed(int(run_args["seed"]), device_specific=True)
-    dataset = ConveyorVLAWaypointDataset(dataset_root, split="train")
-    sampler = WeightedRandomSampler(
-        torch.as_tensor(dataset.sample_weights(), dtype=torch.double),
-        num_samples=len(dataset),
-        replacement=True,
-        generator=torch.Generator().manual_seed(int(run_args["seed"])),
+    config = training._load_config(Path(str(resolved["config"])))
+    is_v2 = training._is_v2_config(config)
+    dataset = (
+        ConveyorVLAWaypointV2Dataset(dataset_root, split="train")
+        if is_v2
+        else ConveyorVLAWaypointDataset(dataset_root, split="train")
+    )
+    if is_v2:
+        training._validate_v2_dataset_config(config, dataset.manifest)
+    episode_limit = int(run_args.get("limit_train_episodes", 0))
+    row_limit = int(run_args.get("limit_train_rows", 0))
+    train_indices = (
+        training._episode_subset_indices(dataset, episode_limit)
+        if episode_limit
+        else training._balanced_subset_indices(dataset, row_limit)
+    )
+    loader_dataset = dataset if train_indices is None else Subset(dataset, train_indices)
+    routes = (
+        dataset.routes
+        if train_indices is None
+        else [dataset.routes[index] for index in train_indices]
+    )
+    boundaries = (
+        dataset.boundaries
+        if train_indices is None
+        else [dataset.boundaries[index] for index in train_indices]
+    )
+    weights = (
+        training._v2_row_sample_weights(dataset, train_indices)
+        if is_v2
+        else training._row_sample_weights(routes, boundaries)
+    )
+    sampler = training.DomainBalancedSampler(
+        routes,
+        weights,
+        batch_size=int(resolved["batch_size_per_process"]),
+        seed=int(run_args["seed"]),
     )
     loader = DataLoader(
-        dataset,
+        loader_dataset,
         batch_size=int(resolved["batch_size_per_process"]),
         sampler=sampler,
         num_workers=0,
@@ -66,7 +100,6 @@ def main(argv: list[str] | None = None) -> int:
         pin_memory=True,
         drop_last=True,
     )
-    config = training._load_config(Path(str(resolved["config"])))
     model, token_ids = training._build_model(
         config,
         Path(str(resolved["model_root"])),
@@ -119,7 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise M0MobileError("loaded checkpoint learning rates are invalid")
     report = {
-        "schema_version": "conveyorvla-waypoint-checkpoint-load-report-v1",
+        "schema_version": (
+            "conveyorvla-waypoint-checkpoint-load-report-v2"
+            if is_v2
+            else "conveyorvla-waypoint-checkpoint-load-report-v1"
+        ),
         "status": "pass",
         "checkpoint": str(checkpoint),
         "global_step": loaded_step,
@@ -148,7 +185,10 @@ def _validate_binding(
     if not checkpoint.is_dir():
         raise M0MobileError(f"checkpoint directory does not exist: {checkpoint}")
     manifest = _read_json(checkpoint / "waypoint_checkpoint_manifest.json")
-    if manifest.get("schema_version") != "conveyorvla-waypoint-checkpoint-v1":
+    if manifest.get("schema_version") not in {
+        "conveyorvla-waypoint-checkpoint-v1",
+        "conveyorvla-waypoint-checkpoint-v2",
+    }:
         raise M0MobileError("waypoint checkpoint schema is incompatible")
     required = {
         "camera_contract",
@@ -163,6 +203,12 @@ def _validate_binding(
     output = checkpoint.parents[1]
     resolved_path = output / "resolved_run.json"
     resolved = _read_json(resolved_path)
+    if manifest.get("model_contract_id") != resolved.get("model_contract_id"):
+        raise M0MobileError("checkpoint model identity disagrees with resolved run")
+    if manifest.get("dataset_schema_version") != resolved.get(
+        "dataset_schema_version"
+    ):
+        raise M0MobileError("checkpoint dataset identity disagrees with resolved run")
     if training.common._sha256(resolved_path) != manifest["resolved_run_sha256"]:
         raise M0MobileError("checkpoint resolved-run binding is corrupt")
     config_path = Path(str(resolved["config"]))
@@ -186,6 +232,21 @@ def _validate_binding(
         raise M0MobileError("checkpoint camera/calibration binding is corrupt")
     if manifest["dataset_action_contract"] != dataset_manifest["action_contract"]:
         raise M0MobileError("checkpoint waypoint stride/frame binding is corrupt")
+    if manifest.get("schema_version") == "conveyorvla-waypoint-checkpoint-v2":
+        for key in (
+            "auxiliary_contract",
+            "loss_contract",
+            "dataset_transition_contract",
+            "dataset_crl_contract",
+        ):
+            if key not in manifest:
+                raise M0MobileError(f"waypoint-v2 checkpoint omits {key}")
+        if manifest["dataset_transition_contract"] != dataset_manifest.get(
+            "transition_contract"
+        ):
+            raise M0MobileError("checkpoint waypoint-v2 transition binding is corrupt")
+        if manifest["dataset_crl_contract"] != dataset_manifest.get("crl_contract"):
+            raise M0MobileError("checkpoint waypoint-v2 CRL binding is corrupt")
     source_git = _mapping(manifest["source_git"], "source Git binding")
     dirty = _mapping(source_git.get("dirty_state_artifact"), "dirty-state artifact")
     if dirty.get("is_dirty") is not False or dirty.get("entries") != []:

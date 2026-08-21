@@ -1,0 +1,81 @@
+{
+  "schema_version": "conveyorvla-waypoint-policy-config-v2",
+  "model_contract_id": "qwen3vl-layerwise-dual-fm-waypoint-v2",
+  "dataset_schema_version": "conveyorvla-waypoint-dense-transition-v2",
+  "vlm": {
+    "architecture": "Qwen3VLForConditionalGeneration",
+    "relative_path": "Qwen3-VL-4B-Instruct",
+    "hidden_size": 2560,
+    "full_finetuning": true,
+    "dtype": "bfloat16"
+  },
+  "router": {
+    "route_confidence_min": 0.55,
+    "max_subtask_tokens": 24,
+    "calibration_split": "val"
+  },
+  "action_model": {
+    "architecture": "LayerwiseFlowMatching",
+    "action_horizon": 20,
+    "cross_attention_dim": 2560,
+    "hidden_size": 1024,
+    "num_layers": 16,
+    "num_attention_heads": 16,
+    "attention_head_dim": 64,
+    "dropout": 0.0,
+    "max_seq_len": 1024,
+    "noise_beta_alpha": 1.5,
+    "noise_beta_beta": 1.0,
+    "noise_s": 0.999,
+    "num_timestep_buckets": 1000,
+    "num_inference_timesteps": 4,
+    "navigation_action_dim": 3,
+    "manipulation_action_dim": 7,
+    "shared_parameters": false,
+    "state_encoder": false
+  },
+  "auxiliary": {
+    "hidden_size": 256,
+    "crl_dim": 128,
+    "crl_temperature": 0.07,
+    "enable_boundary_progress": true,
+    "enable_prefix": true,
+    "enable_crl": true,
+    "tau_route_s": {
+      "NAV_TO_SOURCE": 6.199999999999999,
+      "PICK": 7.199999999999999,
+      "NAV_TO_TARGET": 20.2,
+      "PLACE": 6.400000000000006
+    }
+  },
+  "loss": {
+    "lambda_answer": 1.0,
+    "lambda_route": 1.0,
+    "lambda_navigation": 1.0,
+    "lambda_manipulation": 1.0,
+    "lambda_boundary": 0.2,
+    "lambda_progress": 0.1,
+    "lambda_prefix": 0.2,
+    "lambda_crl": 0.1,
+    "on_policy_correction_weight": 1.0,
+    "lambda_self_schedule": {
+      "zero_until_progress": 0.05,
+      "linear_to_progress": 0.40,
+      "maximum": 0.5
+    },
+    "repeated_diffusion_steps": 1
+  },
+  "optimization": {
+    "optimizer": "AdamW",
+    "vlm_core_learning_rate": 2e-6,
+    "vlm_embeddings_lm_head_learning_rate": 1e-5,
+    "navigation_head_learning_rate": 2e-5,
+    "manipulation_head_learning_rate": 2e-5,
+    "auxiliary_head_learning_rate": 2e-5,
+    "betas": [0.9, 0.95],
+    "epsilon": 1e-8,
+    "weight_decay": 1e-8,
+    "max_gradient_norm": 1.0,
+    "warmup_steps": 20
+  }
+}
