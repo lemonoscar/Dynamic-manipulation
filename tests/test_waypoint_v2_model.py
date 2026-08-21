@@ -10,6 +10,7 @@ from conveyor_bench.conveyorvla.waypoint import (
     ACTION_HORIZON,
     ROUTE_TOKENS,
     SPECIAL_TOKENS,
+    WaypointActionDomain,
     WaypointRoute,
     canonical_solution,
 )
@@ -390,3 +391,32 @@ def test_oracle_crl_diagnostics_keep_zero3_module_order_for_done_batches() -> No
             hook.remove()
     assert diagnostics == (None, None)
     assert calls == {"state": 2, "action": 2, "goal": 1}
+
+
+def test_prefix_prediction_keeps_both_zero3_action_encoders_aligned() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    calls = {"navigation": 0, "manipulation": 0}
+    hooks = [
+        policy.navigation_head.action_encoder.register_forward_hook(
+            lambda *_args: calls.__setitem__(
+                "navigation", calls["navigation"] + 1
+            )
+        ),
+        policy.manipulation_head.action_encoder.register_forward_hook(
+            lambda *_args: calls.__setitem__(
+                "manipulation", calls["manipulation"] + 1
+            )
+        ),
+    ]
+    try:
+        features = policy._prediction_fm_action_features(
+            [SimpleNamespace(action_domain=WaypointActionDomain.NAVIGATION)],
+            [0],
+            [tuple((0.0, 0.0, 0.0) for _ in range(ACTION_HORIZON))],
+            torch.zeros((1, 8)),
+        )
+    finally:
+        for hook in hooks:
+            hook.remove()
+    assert features.shape == (1, ACTION_HORIZON, 8)
+    assert calls == {"navigation": 1, "manipulation": 1}

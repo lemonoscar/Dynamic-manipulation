@@ -1302,19 +1302,28 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 if actions[global_index] is not None
                 and decisions[global_index].action_domain is domain
             ]
-            if not local_indices:
-                continue
+            actual = bool(local_indices)
             parameter = next(head.parameters())
-            action_tensor = torch.tensor(
-                [actions[selected_indices[local]] for local in local_indices],
-                device=parameter.device,
-                dtype=parameter.dtype,
+            action_tensor = (
+                torch.tensor(
+                    [actions[selected_indices[local]] for local in local_indices],
+                    device=parameter.device,
+                    dtype=parameter.dtype,
+                )
+                if actual
+                else torch.zeros(
+                    (1, ACTION_HORIZON, head.config.action_dim),
+                    device=parameter.device,
+                    dtype=parameter.dtype,
+                )
             )
             time = torch.zeros(
-                len(local_indices), device=parameter.device, dtype=torch.long
+                len(action_tensor), device=parameter.device, dtype=torch.long
             )
             with _action_autocast(parameter.device, parameter.dtype):
                 encoded = head.action_encoder(action_tensor, time)
+            if not actual:
+                continue
             for local, feature in zip(local_indices, encoded, strict=True):
                 values[local] = feature.to(reference)
         zero = torch.zeros(
