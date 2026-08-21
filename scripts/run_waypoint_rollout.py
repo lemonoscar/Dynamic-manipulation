@@ -31,6 +31,7 @@ from conveyor_bench.conveyorvla.waypoint_execution import (  # noqa: E402
     ManipulationExecutionConfig,
     NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_CONTRACT,
+    NAVIGATION_SAFETY_PROFILE_LOOKAHEAD_ARM_VLA,
     NAVIGATION_SAFETY_PROFILES,
     NavigationExecutionConfig,
     PCTDWARecedingHorizonExecutor,
@@ -71,7 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=NAVIGATION_SAFETY_PROFILES,
         default=NAVIGATION_SAFETY_PROFILE_CONTRACT,
         help=(
-            "contract validates all 20 predicted waypoints; "
+            "contract ranks a checkpoint-calibrated trusted prefix by useful "
+            "lookahead and selects the first PCT-planable model goal; "
+            "lookahead-arm-vla-reference uses that selector with arm-vla's "
+            "original downstream tolerances, DWA, stall, and requery behavior; "
             "arm-vla-reference applies only arm-vla 388b681's first-waypoint "
             "limits, tolerances, DWA bounds, stall detector, and requery behavior; "
             "executable-prefix-diagnostic still audits all 20 but permits only "
@@ -87,6 +91,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--required-first-route",
         choices=tuple(route.value for route in WaypointRoute),
+    )
+    parser.add_argument(
+        "--require-initial-source-visible",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="require settled source object to lie in the front camera sector",
+    )
+    parser.add_argument(
+        "--initial-source-max-bearing-deg",
+        type=float,
+        default=30.0,
+        help="maximum absolute settled source bearing for the visibility preflight",
     )
     return parser
 
@@ -169,6 +185,8 @@ class WaypointRolloutPipeline:
         required_first_route: str | None,
         navigation_safety_profile: str,
         navigation_max_chunk_steps: int,
+        require_initial_source_visible: bool,
+        initial_source_max_bearing_deg: float,
         close_simulation_on_exit: bool,
     ) -> None:
         from source.interfaces import NavGoal, RobotAction, SimulationState
@@ -185,12 +203,19 @@ class WaypointRolloutPipeline:
         self.max_control_steps = int(max_control_steps)
         self.stop_after_route = stop_after_route
         self.required_first_route = required_first_route
+        self.require_initial_source_visible = bool(require_initial_source_visible)
+        self.initial_source_max_bearing_deg = float(initial_source_max_bearing_deg)
         self.close_simulation_on_exit = bool(close_simulation_on_exit)
         self.RobotAction = RobotAction
         self.SimulationState = SimulationState
 
         if self.max_queries <= 0 or self.max_control_steps <= 0:
             raise ValueError("waypoint rollout limits must be positive")
+        if (
+            not math.isfinite(self.initial_source_max_bearing_deg)
+            or not 0.0 < self.initial_source_max_bearing_deg < 90.0
+        ):
+            raise ValueError("initial source bearing limit must be within (0, 90) deg")
         planner, reference_executor, navigation_verifier = create_navigation_components(
             config=config,
             episode_spec=episode_spec,
@@ -210,7 +235,10 @@ class WaypointRolloutPipeline:
         )
         arm_vla_reference = (
             navigation_safety_profile
-            == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+            in (
+                NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
+                NAVIGATION_SAFETY_PROFILE_LOOKAHEAD_ARM_VLA,
+            )
         )
         self.navigation = PCTDWARecedingHorizonExecutor(
             self.pct_adapter,
@@ -272,6 +300,7 @@ class WaypointRolloutPipeline:
         self._navigation_since_arm_settle = True
         self._trace_stream: Any | None = None
         self._video: Any | None = None
+        self._initial_source_visibility: dict[str, Any] | None = None
 
     def run_episode(self) -> dict[str, Any]:
         self.episode_dir.mkdir(parents=True, exist_ok=True)
@@ -400,6 +429,7 @@ class WaypointRolloutPipeline:
                 "route_owner": "Qwen Pass 1",
                 "external_fsm_used": False,
                 "navigation_safety_profile": self.navigation.config.safety_profile,
+                "initial_source_visibility": self._initial_source_visibility,
             }
             summary_path.write_text(
                 json.dumps(_jsonable(summary), ensure_ascii=False, indent=2) + "\n",
@@ -427,6 +457,7 @@ class WaypointRolloutPipeline:
         if not settings.settle_object_before_navigation:
             for _ in range(self.frames.separation_steps + 1):
                 self._physical_step(self._hold_action("initial_visual_warmup"))
+            self._check_initial_source_visibility()
             return
         begin = getattr(self.simulation, "begin_object_settle", None)
         finalize = getattr(self.simulation, "finalize_object_settle", None)
@@ -502,6 +533,7 @@ class WaypointRolloutPipeline:
                         "finalize": final_report,
                     },
                 )
+                self._check_initial_source_visibility()
                 return
             self._physical_step(
                 self.RobotAction(
@@ -516,6 +548,24 @@ class WaypointRolloutPipeline:
                 )
             )
         raise RuntimeError("object/base settle gate timed out")
+
+    def _check_initial_source_visibility(self) -> None:
+        state = self.simulation.read()
+        report = _initial_source_front_sector_report(
+            state.robot_root_pose,
+            state.object_pose,
+            state.camera_images,
+            max_bearing_deg=self.initial_source_max_bearing_deg,
+        )
+        report["required"] = self.require_initial_source_visible
+        self._initial_source_visibility = report
+        self._record("initial_source_visibility_preflight", report)
+        if self.require_initial_source_visible and not report["passed"]:
+            raise RuntimeError(
+                "initial_source_not_front_visible:"
+                f"bearing_deg={report['bearing_deg']:.3f}:"
+                f"front_rgb_present={report['front_rgb_present']}"
+            )
 
     def _next_request(self) -> tuple[Any, Any]:
         for _ in range(max(100, 4 * self.frames.separation_steps)):
@@ -919,6 +969,50 @@ def _simulation_curobo_safety_gate(
     )
 
 
+def _initial_source_front_sector_report(
+    robot_root_pose: Sequence[Any],
+    object_pose: Sequence[Any] | None,
+    camera_images: Mapping[str, Any],
+    *,
+    max_bearing_deg: float,
+) -> dict[str, Any]:
+    if object_pose is None or len(robot_root_pose) != 7 or len(object_pose) < 3:
+        raise RuntimeError("initial source visibility requires robot and object poses")
+    root = tuple(float(value) for value in robot_root_pose)
+    source = tuple(float(value) for value in object_pose[:3])
+    if not all(math.isfinite(value) for value in (*root, *source)):
+        raise RuntimeError("initial source visibility poses are non-finite")
+    w, x, y, z = root[3:7]
+    norm = math.sqrt(w * w + x * x + y * y + z * z)
+    if norm < 1.0e-9:
+        raise RuntimeError("initial source visibility base quaternion is invalid")
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
+    yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    dx, dy = source[0] - root[0], source[1] - root[1]
+    body_x = math.cos(yaw) * dx + math.sin(yaw) * dy
+    body_y = -math.sin(yaw) * dx + math.cos(yaw) * dy
+    bearing_deg = math.degrees(math.atan2(body_y, body_x))
+    front = camera_images.get("front")
+    shape = tuple(int(value) for value in getattr(front, "shape", ()))
+    front_rgb_present = bool(front is not None and len(shape) >= 2 and min(shape[:2]) > 0)
+    passed = bool(
+        front_rgb_present
+        and body_x > 0.0
+        and abs(bearing_deg) <= float(max_bearing_deg)
+    )
+    return {
+        "passed": passed,
+        "bearing_deg": bearing_deg,
+        "max_bearing_deg": float(max_bearing_deg),
+        "distance_m": math.hypot(body_x, body_y),
+        "source_body_xy_m": [body_x, body_y],
+        "front_rgb_present": front_rgb_present,
+        "front_rgb_shape": list(shape),
+        "gate_basis": "settled_gt_bearing_plus_front_rgb_present",
+        "source_truth_sent_to_model": False,
+    }
+
+
 def _state_snapshot(state: Any) -> dict[str, Any]:
     return {
         "step_index": int(state.step_index),
@@ -1091,6 +1185,8 @@ def main(argv: list[str] | None = None) -> int:
             required_first_route=args.required_first_route,
             navigation_safety_profile=args.navigation_safety_profile,
             navigation_max_chunk_steps=max_chunk_execution_steps,
+            require_initial_source_visible=args.require_initial_source_visible,
+            initial_source_max_bearing_deg=args.initial_source_max_bearing_deg,
             close_simulation_on_exit=close_simulation_on_exit,
         )
 

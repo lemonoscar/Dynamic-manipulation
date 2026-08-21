@@ -230,7 +230,7 @@ python scripts/probe_waypoint_navigation.py \
 ```
 
 它在合成无障碍地图上运行批准的真实 PCT/DWA stack，要求 PCT fallback 明确关闭、
-路径和 snap 合法、DWA 指令有限有界，并在首 waypoint 后 requery。
+路径和 snap 合法、DWA 指令有限有界，并在选中 waypoint 后 requery。
 
 cuRobo 服务：
 
@@ -264,13 +264,20 @@ python scripts/run_waypoint_rollout.py \
   <run_full_physics_pipeline.py 的批准场景、seed、资产和输出参数>
 ```
 
+默认在 settle 完成、首次模型 query 之前执行 source 可见性预检：必须存在 head/front
+RGB，且可乐相对机器人正前方的方位角不超过 `30°`。该 GT pose 只用于冻结测试 seed
+和拒绝侧向/背向开局，不会进入模型 request；正式证据还必须人工目检 head 首帧。
+
 字面量 `--` 之后只能放批准 reference pipeline 的参数；wrapper 禁止外部 route gate、
 `--remote-vla-eval`、dry-run/navigation-smoke 重写和额外 FSM。分阶段诊断可用
 `--stop-after-route` / `--required-first-route`，但不能当作完整自主闭环。
 
-production 默认 `--navigation-safety-profile contract`，完整 20 点任一 segment 违规都
-fail-closed。为了区分“首个 receding-horizon 目标是否可执行”和“远端 horizon 尾部是否
-已学好”，可在明确标记的 staged run 使用：
+production 默认 `--navigation-safety-profile contract`：完整 20 点只做 shape/finite/mask
+校验，然后在前 10 个可信点中优先选择超过 `2 × 0.12 m` 且最接近 `0.50 m`
+的目标，并按排名尝试 PCT。如果没有点超过最小前瞻，明确回退到可信前缀中
+最远的非退化点。它不把未执行的同 anchor 候选行当成必经 path segment。
+
+为了保留旧式完整 horizon 轨迹审计对照，可在明确标记的 staged run 使用：
 
 ```bash
 python scripts/run_waypoint_rollout.py \
@@ -285,6 +292,22 @@ python scripts/run_waypoint_rollout.py \
 速度或 workspace 阈值；若首点平移已经在 0.12 m 执行到达容差内，可直接检验限幅
 terminal-yaw。production `contract` 仍只对平移 `<0.03 m` 的纯旋转目标绕过 PCT。诊断
 profile 不能替代 contract profile 的完整自主闭环门禁。
+
+检验“新选点能否让底盘真正导航”时，使用新选择器与原始 arm-vla 下游控制的
+组合 profile：
+
+```bash
+python scripts/run_waypoint_rollout.py \
+  --navigation-safety-profile lookahead-arm-vla-reference \
+  --max-queries 400 \
+  --max-control-steps 24000 \
+  <其余服务与批准 reference pipeline 参数>
+```
+
+它在前 10 点中优先选择超过 `2 × 0.18 m` 且最接近 `0.50 m` 的点，并按
+PCT 可规划性回退；后续使用 reference 的到达容差、DWA、stall detector 和 250-step
+重询。它不施加本地 3 s/1 cm stall、完整 horizon segment 或 PCT snap 拒绝。这是模型
+能力测试，结果必须与 `contract` 门禁分开报告。
 
 需要与固定 arm-vla reference 的原始执行行为做对照时，使用显式 profile：
 

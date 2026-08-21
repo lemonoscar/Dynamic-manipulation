@@ -126,30 +126,36 @@ ID、normalizer hash 和 checkpoint step。
 
 Navigation executor：
 
-1. production 默认校验完整 `[20,3]` 与 prefix mask；
-2. 选择第一个平移至少 0.03 m 或偏航至少 3° 的有效 waypoint；
-3. 平移小于 0.03 m 的纯旋转目标直接执行限幅 terminal-yaw；
-4. 其余目标 body→world 后交给启用 PCT 且显式禁止 fallback 的 planner；
+1. production 默认校验完整 `[20,3]` 的 shape、finite 值与 prefix mask；
+2. step 2000 校准只使用前 10 点，优先选平移超过 `2×` 到达容差且最接近
+   `0.50 m` 的点；若都不满足则用可信前缀中最远的非退化点；
+3. 候选点按排名逐个 body→world 并尝试 PCT，执行第一个可规划 local goal；
+4. 平移小于 0.03 m 的纯旋转目标直接执行限幅 terminal-yaw；
 5. DWA 每个控制 tick 基于测量速度和局部地图输出有界 `[vx,vy,wz]`；
-6. 首 waypoint 到达、超时、stall 或失败后停止并要求新 query。
+6. 选中 waypoint 到达、超时、stall 或失败后停止并要求新 query。
 
 纯旋转 waypoint，以及 PCT/DWA 行进后进入位置容差但仍有偏航误差的终段，都走同一个
-限幅 terminal-yaw controller。production 仍严格使用合同的 0.03 m 纯旋转边界和 0.10 m
-PCT snap 门禁。导航时执行器可分别维持 `stow_open` 或 `carry_closed`，但 route 仍来自
-模型。
+限幅 terminal-yaw controller。同一 query 的 20 行都锚定同一起始位姿，未选行不是要依次
+穿过的 path segment；production 保留 PCT `0.10 m` snap 门禁。导航时执行器可分别维持
+`stow_open` 或 `carry_closed`，但 route 仍来自模型。
 
-显式诊断 profile `executable-prefix-diagnostic` 仍会先审计完整 horizon，并记录完整合同
+显式诊断 profile `executable-prefix-diagnostic` 仍会先审计完整 horizon，并记录旧式完整轨迹
 失败原因；只有第一个可执行 prefix 自身合法时才允许执行。它不修改 0.8 m/45° 等合同
 阈值；为检验已经落在 0.12 m 执行到达容差内的首点，它可以直接使用 terminal-yaw 而不
-要求 0.2 m 栅格 snap。该行为不能用于声明 production 完整 horizon/PCT 通过。默认
-`contract` profile 对任意尾部违规继续 fail-closed。
+要求 0.2 m 栅格 snap。该行为只用于保留旧式 horizon 轨迹审计对照，不代表
+production 选点策略。
 
 `arm-vla-reference` 是另一种显式对照 profile：它只采用 reference 首个 raw waypoint，
 保留 arm-vla 的 0.8 m/45°首点规则、执行到达容差、DWA 限幅、stall detector 和 250-step
 chunk；stall/timeout 停车后重新 query。它不叠加本地完整 horizon、PCT snap、重复 DWA
 速度或 3 s/1 cm stall 门禁。该 profile 用于回答“原始 arm-vla 规则下模型会怎样”，不
-替代冻结合同的 production `contract` 门禁。ARM 侧仍保留 reference/合同共同规定的
+替代 production `contract` 选点策略。ARM 侧仍保留 reference/合同共同规定的
 workspace、0.15 m/35° rate gate，以及真实 cuRobo/IK 和关节限制。
+
+`lookahead-arm-vla-reference` 是完整能力测试 profile：它使用 production 的前 10 点
+排名/PCT 回退选择器，但下游使用 arm-vla 的 `0.18 m / pi` 到达容差、DWA、stall
+detector 和 250-step 停车重询语义。因此它的最小有效前瞻是 `0.36 m`。该 profile
+不保留原始首点选择，也不冒充 production `contract` 门禁。
 
 Manipulation executor：
 

@@ -310,6 +310,57 @@ def select_navigation_waypoint(
     return selected
 
 
+def rank_navigation_waypoints(
+    waypoints: Sequence[Sequence[float]],
+    valid_mask: Sequence[bool],
+    *,
+    trusted_horizon_points: int,
+    minimum_lookahead_m: float,
+    target_lookahead_m: float,
+    safety: NavWaypointSafety = NavWaypointSafety(),
+) -> tuple[tuple[int, tuple[float, float, float]], ...]:
+    """Rank model local goals without treating unused rows as executed segments."""
+
+    if (
+        isinstance(trusted_horizon_points, bool)
+        or not 1 <= trusted_horizon_points <= ACTION_HORIZON
+    ):
+        raise ValueError(
+            f"trusted_horizon_points must be within [1, {ACTION_HORIZON}]"
+        )
+    minimum = float(minimum_lookahead_m)
+    target = float(target_lookahead_m)
+    if (
+        not math.isfinite(minimum)
+        or minimum <= 0.0
+        or not math.isfinite(target)
+        or target < minimum
+    ):
+        raise ValueError("lookahead distances must be finite and target >= minimum > 0")
+
+    rows = _fixed_chunk(waypoints, 3, "nav_waypoints_body")
+    valid = _prefix_mask(valid_mask)
+    candidates: list[tuple[int, tuple[float, float, float], float]] = []
+    for index, row in enumerate(rows[:trusted_horizon_points]):
+        if not valid[index]:
+            break
+        radius = math.hypot(row[0], row[1])
+        if radius >= safety.minimum_translation_m or abs(row[2]) >= safety.minimum_yaw_rad:
+            candidates.append((index, row, radius))
+    if not candidates:
+        raise ValueError("navigation trusted prefix has no non-degenerate waypoint")
+
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            0 if item[2] >= minimum else 1,
+            abs(item[2] - target) if item[2] >= minimum else -item[2],
+            item[0] if item[2] >= minimum else -item[0],
+        ),
+    )
+    return tuple((index, row) for index, row, _radius in ranked)
+
+
 def validate_arm_targets(
     targets: Sequence[Sequence[float]],
     valid_mask: Sequence[bool],
@@ -403,6 +454,7 @@ __all__ = [
     "nav_waypoint_world",
     "quaternion_to_rpy",
     "rpy_to_quaternion",
+    "rank_navigation_waypoints",
     "select_navigation_waypoint",
     "unit_quaternion",
     "validate_arm_targets",

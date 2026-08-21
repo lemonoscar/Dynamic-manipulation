@@ -1,8 +1,9 @@
 # ConveyorVLA Waypoint Policy v1：模型、训练与推理合同
 
-- 状态：`APPROVED / 已审核通过`，实施尚未开始
+- 状态：`APPROVED / 已审核通过`，实施与门禁持续更新
 - 日期：2026-08-20
-- 批准记录：用户于 2026-08-20 明确确认 waypoint 版本设计方案审核通过
+- 批准记录：用户于 2026-08-20 明确确认 waypoint 版本设计方案审核通过；
+  2026-08-21 批准 NAV chunk 选点修订（可信前缀、有效前瞻和 PCT 可规划回退）
 - 模型合同：`qwen3vl-layerwise-dual-fm-waypoint-v1`
 - 数据合同：`conveyorvla-waypoint-dense-transition-v1`
 - 在线协议：`conveyorvla-waypoint-runtime/v1`
@@ -118,12 +119,13 @@ Dispatcher 只做 route token 到动作专家的静态映射。PCT、DWA、cuRob
 
 | 专家 | shape | waypoint 间隔 | 覆盖时间 | 每次默认执行 |
 |---|---:|---:|---:|---|
-| Navigation | `[20,3]` | `0.60 s` | `12.0 s` | 第一个非退化 waypoint，抵达后重推理 |
+| Navigation | `[20,3]` | `0.60 s` | `12.0 s` | 从可信前缀选一个有效前瞻目标，抵达后重推理 |
 | Manipulation | `[20,7]` | `0.20 s` | `4.0 s` | 第一个可达 TCP target，抵达/超时后重推理 |
 
-Navigation 的 `0.60 s` 取代旧动作的 `25 Hz` 速度时序，使第一个 waypoint 具有可规划的
-空间距离，并与 StarVLA 的稀疏长时域 waypoint 设计接近。该值必须先通过数据分布和
-PCT 短程规划 probe；若变更，必须升级 resolved config 和 normalization hash，不能静默修改。
+Navigation 的 `0.60 s` 取代旧动作的 `25 Hz` 速度时序。`[20,3]` 保留稀疏长时域监督，
+但在线不再假定首点已超过执行器的到达容差。选点参数必须通过数据/当前 checkpoint
+分布和 PCT 短程规划 probe 校准并写入 trace；若改变 horizon/stride，仍必须升级
+resolved config 和 normalization hash，不能静默修改。
 
 ## 5. 模型输入合同
 
@@ -317,10 +319,16 @@ yaw_goal = wrap_to_pi(yaw_t + dyaw_Bt)
 约束：
 
 - 每个 waypoint 有 `action_valid_mask[k]`；跨 phase、episode 尾部和无标签后缀为 false；
-- 相邻有效 waypoint 平移不得超过 `0.80 m`；偏航不得超过 `45 deg`；
-- 非有限值、全部零/退化 chunk 或越界 segment 直接进入 runtime `RECOVER`，不得复用旧动作；
-- executor 选择第一个平移至少 `0.03 m` 或偏航至少 `3 deg` 的有效 waypoint；
-- 不直接取第 20 个 waypoint，也不把 `[dx,dy,dyaw]` 当 `[vx,vy,wz]`。
+- 相邻有效 waypoint 的 `0.80 m / 45 deg` 用于数据和开环质量审计；各行都是相对
+  同一 query anchor 的候选 local goal，在线不把未执行行之间当成必经路段；
+- 非有限值、shape/mask 错误或全部零/退化 chunk 直接进入 runtime `RECOVER`，
+  不得复用旧动作；
+- step 2000 默认只在前 `10` 个有效点中选择；最小有效前瞻为 `2 × goal_tolerance`
+  （默认 `0.24 m`），目标前瞻为 `0.50 m`；
+- 优先按与 `0.50 m` 的距离排序满足最小前瞻的点；若没有，选可信前缀中最远的
+  非退化点作为明确回退；
+- 按排名逐个尝试 PCT，执行第一个可规划的模型 local goal，抵达/超时/失败后重新 query；
+- 不固定取第一点，也不盲取第 20 点；始终不把 `[dx,dy,dyaw]` 当 `[vx,vy,wz]`。
 
 ### 8.2 Manipulation TCP target
 
@@ -542,7 +550,7 @@ NAV Flow head
 
 执行规则：
 
-1. 每次只执行第一个非退化有效 waypoint，不跳到 horizon 第 20 点；
+1. 每次在 checkpoint 校准的可信前缀内排名候选点，执行第一个 PCT 可规划目标；
 2. PCT 的目标是模型预测的 local goal，不是数据或 FSM 提供的 pick/place GT goal；
 3. PCT 失败默认 fail-closed，不静默切换 A* 或直线速度；
 4. PCT 对终点的 snap 距离必须记录且不超过 `0.10 m`，超过即拒绝该 chunk；
@@ -595,7 +603,7 @@ ARM Flow head
 1. 已知 body waypoint 的 body→world 变换单测通过；
 2. 预测 world local goal 能生成至少两个点的 PCT path；
 3. DWA 全程输出有限 `[vx,vy,wz]` 且在限幅内；
-4. 首 waypoint 完成后发生新模型 query，不继续盲走剩余 chunk；
+4. 选中 waypoint 完成后发生新模型 query，不继续盲走剩余 chunk；
 5. 零、过大、NaN、过期 waypoint 均零速 fail-closed；
 6. 已知 TCP target 能通过 validator、cuRobo/IK 和执行 smoke；
 7. 仿真与真机 adapter 共享 frame/unit/schema tests，但各自保留独立安全门。
@@ -662,7 +670,8 @@ loader 必须拒绝以下组合：旧 state28 config、新无 state checkpoint�
 1. 接受两个独立 Layerwise Flow-Matching head，而不是一个带 mask 的统一 10D head；
 2. 接受 NAV=`[20,3] @ 0.60s`、ARM=`[20,7] @ 0.20s`；
 3. 接受 NAV 全 horizon 锚定当前 `B_t`，ARM 为当前 `B_t` 下的 absolute TCP targets；
-4. 接受每次只执行第一个非退化 waypoint/target，然后重新观测；
+4. ARM 每次只执行第一个可达 target；NAV 在前 10 点可信前缀内按
+   `2×到达容差 / 0.50 m / PCT 可规划性` 选一点；两者执行后都重新观测；
 5. 接受模型 request 完全移除 state、phase、operation、history，但 executor 继续使用 state；
 6. 接受 oracle-prefix 主 loss + self-conditioned 辅助 loss，而不是让预测错误直接饿死动作专家；
 7. 接受 PCT 默认 fail-closed，不自动 A* fallback；

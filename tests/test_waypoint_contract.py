@@ -12,6 +12,7 @@ from conveyor_bench.conveyorvla.waypoint import (
     canonical_solution,
     nav_waypoint_body,
     nav_waypoint_world,
+    rank_navigation_waypoints,
     rpy_to_quaternion,
     select_navigation_waypoint,
     validate_arm_targets,
@@ -75,6 +76,29 @@ def test_runtime_selects_first_non_degenerate_nav_waypoint_and_fails_closed() ->
     )
     assert index == 1
     assert selected == (0.04, 0.0, 0.0)
+
+
+def test_nav_lookahead_ranks_target_distance_inside_the_trusted_prefix() -> None:
+    chunk = [[0.05 * (index + 1), 0.0, 0.0] for index in range(ACTION_HORIZON)]
+    chunk[19] = [0.50, 0.0, 0.0]
+    ranked = rank_navigation_waypoints(
+        chunk,
+        [True] * ACTION_HORIZON,
+        trusted_horizon_points=10,
+        minimum_lookahead_m=0.24,
+        target_lookahead_m=0.50,
+    )
+    assert ranked[0] == (9, (0.50, 0.0, 0.0))
+    assert all(index < 10 for index, _row in ranked)
+
+    short = rank_navigation_waypoints(
+        [[0.20, 0.0, 0.0]] * ACTION_HORIZON,
+        [True] * ACTION_HORIZON,
+        trusted_horizon_points=10,
+        minimum_lookahead_m=0.24,
+        target_lookahead_m=0.50,
+    )
+    assert short[0][0] == 9
 
 
 def test_arm_gate_validates_absolute_targets_without_state_input() -> None:

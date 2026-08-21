@@ -7,6 +7,7 @@ from PIL import Image
 
 from scripts.run_waypoint_rollout import (
     _ExternalWaypointCuRoboLifecycle,
+    _initial_source_front_sector_report,
     _simulation_curobo_safety_gate,
     build_parser,
 )
@@ -38,9 +39,31 @@ def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
     assert tuple(choices) == (
         "contract",
         "arm-vla-reference",
+        "lookahead-arm-vla-reference",
         "executable-prefix-diagnostic",
         "unbounded-translation-diagnostic",
     )
+    assert parser.get_default("require_initial_source_visible") is True
+    assert parser.get_default("initial_source_max_bearing_deg") == 30.0
+
+
+def test_initial_source_visibility_requires_front_rgb_and_frontal_bearing():
+    report = _initial_source_front_sector_report(
+        (0.0, 0.0, 0.2, 1.0, 0.0, 0.0, 0.0),
+        (1.0, 0.2, 0.2, 1.0, 0.0, 0.0, 0.0),
+        {"front": _image(1)},
+        max_bearing_deg=30.0,
+    )
+    assert report["passed"]
+    assert report["source_truth_sent_to_model"] is False
+
+    side = _initial_source_front_sector_report(
+        (0.0, 0.0, 0.2, 1.0, 0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.2, 1.0, 0.0, 0.0, 0.0),
+        {"front": _image(1)},
+        max_bearing_deg=30.0,
+    )
+    assert not side["passed"]
 
 
 def test_temporal_buffer_requires_exact_synchronized_point_two_second_pair():

@@ -15,6 +15,7 @@ from conveyor_bench.conveyorvla.waypoint_execution import (
     CuRoboIKRecedingHorizonExecutor,
     NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
+    NAVIGATION_SAFETY_PROFILE_LOOKAHEAD_ARM_VLA,
     NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION,
     NavigationExecutionConfig,
     PCTDWARecedingHorizonExecutor,
@@ -202,7 +203,7 @@ class _ArmVLAStallDetector:
         )
 
 
-def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_first_waypoint():
+def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_selected_waypoint():
     pct, dwa = _PCT(), _DWA()
     executor = PCTDWARecedingHorizonExecutor(pct, dwa)
     response = _response(
@@ -212,6 +213,8 @@ def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_first_waypoint():
     planned = executor.begin(response, (1.0, 2.0, 1.57079632679), now_s=0.0)
     assert not planned.failed
     assert planned.gripper_target == 1.0
+    assert planned.trace["selected_waypoint_index"] == 9
+    assert planned.trace["selection_policy"] == "trusted-prefix-target-lookahead-pct-v1"
     assert pct.calls[0][1] == pytest.approx((1.0, 2.2, 0.0, 1.57079632679))
     command = executor.step((1.0, 2.0, 1.57079632679), (0.0, 0.0, 0.0), object(), now_s=0.1)
     assert command.base_velocity == (0.2, 0.05, 0.3)
@@ -220,7 +223,7 @@ def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_first_waypoint():
     reached = executor.step((1.0, 2.2, 1.57079632679), (0.0, 0.0, 0.0), object(), now_s=0.2)
     assert reached.base_velocity == (0.0, 0.0, 0.0)
     assert reached.requires_requery
-    assert reached.reason == "first_waypoint_reached"
+    assert reached.reason == "selected_waypoint_reached"
 
 
 def test_nav_preserves_base_height_for_pct_local_goal():
@@ -257,15 +260,16 @@ def test_nav_pct_failure_and_unsafe_dwa_are_zero_speed_fail_closed():
     assert unsafe.failed and unsafe.base_velocity == (0.0, 0.0, 0.0)
 
 
-def test_nav_diagnostic_profile_executes_only_a_legal_prefix_and_reports_bad_tail():
+def test_nav_contract_uses_ranked_goal_while_diagnostic_reports_bad_tail():
     rows = [(0.2, 0.0, 0.0)] * ACTION_HORIZON
     rows[5] = (1.2, 0.0, 0.0)
     response = _response(WaypointRoute.NAV_TO_SOURCE, rows)
-    strict = PCTDWARecedingHorizonExecutor(_PCT(), _DWA()).begin(
+    contract = PCTDWARecedingHorizonExecutor(_PCT(), _DWA()).begin(
         response, (0.0, 0.0, 0.0), now_s=0.0
     )
-    assert strict.failed
-    assert "segment 5 exceeds translation limit" in strict.reason
+    assert not contract.failed
+    assert contract.trace["selected_waypoint_index"] == 5
+    assert contract.trace["full_horizon_contract_passed"] is None
 
     diagnostic = PCTDWARecedingHorizonExecutor(
         _PCT(),
@@ -279,6 +283,32 @@ def test_nav_diagnostic_profile_executes_only_a_legal_prefix_and_reports_bad_tai
     assert diagnostic.trace["full_horizon_contract_passed"] is False
     assert "segment 5 exceeds translation limit" in diagnostic.trace[
         "full_horizon_violation"
+    ]
+
+
+def test_nav_contract_tries_the_next_ranked_goal_when_pct_rejects_one():
+    class _RejectFirstPCT(_PCT):
+        def plan(self, current, goal):
+            self.calls.append((current, goal))
+            if len(self.calls) == 1:
+                raise RuntimeError("first candidate blocked")
+            return PCTPlan(
+                path_world=((current[0], current[1]), (goal[0], goal[1])),
+                snapped_goal_world=goal,
+                snap_distance_m=0.0,
+            )
+
+    rows = [(0.05 * (index + 1), 0.0, 0.0) for index in range(ACTION_HORIZON)]
+    pct = _RejectFirstPCT()
+    planned = PCTDWARecedingHorizonExecutor(pct, _DWA()).begin(
+        _response(WaypointRoute.NAV_TO_SOURCE, rows),
+        (0.0, 0.0, 0.0),
+        now_s=0.0,
+    )
+    assert not planned.failed
+    assert planned.trace["selected_waypoint_index"] == 8
+    assert planned.trace["pct_candidate_rejections"] == [
+        {"index": 9, "reason": "RuntimeError:first candidate blocked"}
     ]
 
 
@@ -316,6 +346,36 @@ def test_nav_arm_vla_reference_uses_only_original_gates_and_requeries_on_stall()
     assert stalled.requires_requery
     assert stalled.reason == "navigation_stall"
     assert stalled.trace["stall_diagnostics"]["sample_count"] == 2
+
+
+def test_nav_lookahead_uses_reference_controls_without_selecting_the_first_point():
+    detector = _ArmVLAStallDetector(stall_after=999)
+    executor = PCTDWARecedingHorizonExecutor(
+        _PCT(snap=0.5),
+        _DWA((99.0, 0.0, 0.0)),
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_LOOKAHEAD_ARM_VLA,
+            goal_tolerance_m=0.18,
+            yaw_tolerance_rad=math.pi,
+        ),
+        stall_detector=detector,
+    )
+    rows = [(0.05 * (index + 1), 0.0, 0.0) for index in range(ACTION_HORIZON)]
+    planned = executor.begin(
+        _response(WaypointRoute.NAV_TO_SOURCE, rows),
+        (0.0, 0.0, 0.0),
+        now_s=0.0,
+    )
+    assert not planned.failed
+    assert planned.trace["selected_waypoint_index"] == 9
+    assert planned.trace["minimum_lookahead_m"] == pytest.approx(0.36)
+    assert planned.trace["pct_snap_distance_m"] == 0.5
+    assert planned.trace["arm_vla_reference_rules"] is True
+
+    moving = executor.step(
+        (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), object(), now_s=0.1
+    )
+    assert moving.base_velocity == (99.0, 0.0, 0.0)
 
 
 def test_nav_arm_vla_reference_requeries_instead_of_failing_on_chunk_timeout():
