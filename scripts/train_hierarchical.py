@@ -712,6 +712,48 @@ def _component_gradient_norms(
             for name, value in squared.items()
         }
 
+    stage2_optimizer = getattr(zero_optimizer, "optimizer", None)
+    if (
+        hasattr(zero_optimizer, "averaged_gradients")
+        and hasattr(zero_optimizer, "bit16_groups")
+        and hasattr(stage2_optimizer, "param_groups")
+    ):
+        squared = {
+            name: torch.zeros((), device=accelerator.device, dtype=torch.float32)
+            for name in groups
+        }
+        matched = set()
+        for group_id, gradients in zero_optimizer.averaged_gradients.items():
+            group_name = str(stage2_optimizer.param_groups[group_id].get("name", ""))
+            result_name = next(
+                (
+                    name
+                    for name, prefixes in groups.items()
+                    if group_name.startswith(prefixes)
+                ),
+                None,
+            )
+            if result_name is None:
+                raise M0MobileError(
+                    f"unknown ZeRO optimizer parameter group: {group_name!r}"
+                )
+            matched.add(result_name)
+            if gradients is not None:
+                for gradient in gradients:
+                    if gradient is not None:
+                        squared[result_name] += (
+                            gradient.detach().float().square().sum()
+                        )
+        if matched != set(groups):
+            raise M0MobileError("ZeRO gradients do not cover VLM and both DiTs")
+        loss_scale = float(getattr(zero_optimizer, "loss_scale", 1.0))
+        if not math.isfinite(loss_scale) or loss_scale <= 0.0:
+            raise M0MobileError("ZeRO loss scale must be positive and finite")
+        return {
+            name: accelerator.reduce(value, reduction="sum").sqrt() / loss_scale
+            for name, value in squared.items()
+        }
+
     result = {}
     for result_name, prefixes in groups.items():
         squared = torch.zeros((), device=accelerator.device, dtype=torch.float32)
@@ -749,13 +791,14 @@ def _backward_loss(
 
 
 def _clear_deepspeed_partitioned_gradients(deepspeed_engine: Any) -> None:
-    """Clear ZeRO-3's persistent flat buffer after one completed update."""
+    """Clear persistent ZeRO gradient bookkeeping after one completed update."""
 
     zero_optimizer = getattr(deepspeed_engine, "optimizer", None)
     buffer = getattr(zero_optimizer, "grad_partitions_flat_buffer", None)
-    if not isinstance(buffer, torch.Tensor):
-        raise M0MobileError("ZeRO-3 gradient partition buffer is unavailable")
-    buffer.zero_()
+    if isinstance(buffer, torch.Tensor):
+        buffer.zero_()
+    elif not hasattr(zero_optimizer, "bit16_groups"):
+        raise M0MobileError("ZeRO gradient partition buffer is unavailable")
     zero_optimizer.averaged_gradients = {}
 
 

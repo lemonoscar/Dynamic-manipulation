@@ -145,6 +145,40 @@ def test_zero3_component_norms_use_partitioned_gradient_buffers() -> None:
     assert float(norms["manipulation_gradient_norm"]) == pytest.approx(2.5)
 
 
+def test_zero2_component_norms_use_partitioned_gradient_buffers() -> None:
+    base_optimizer = SimpleNamespace(
+        param_groups=[
+            {"name": "vlm_core"},
+            {"name": "vlm_embeddings_lm_head"},
+            {"name": "navigation_head"},
+            {"name": "manipulation_head"},
+        ]
+    )
+    zero_optimizer = SimpleNamespace(
+        averaged_gradients={
+            0: [torch.tensor([3.0, 4.0])],
+            1: [torch.tensor([12.0])],
+            2: [torch.tensor([5.0])],
+            3: [torch.tensor([8.0])],
+        },
+        bit16_groups=[[], [], [], []],
+        optimizer=base_optimizer,
+        loss_scale=2.0,
+    )
+
+    norms = TRAIN._component_gradient_norms(
+        SimpleNamespace(
+            device=torch.device("cpu"),
+            reduce=lambda value, reduction: value,
+        ),
+        SimpleNamespace(optimizer=zero_optimizer),
+    )
+
+    assert float(norms["vlm_gradient_norm"]) == pytest.approx(6.5)
+    assert float(norms["navigation_gradient_norm"]) == pytest.approx(2.5)
+    assert float(norms["manipulation_gradient_norm"]) == pytest.approx(4.0)
+
+
 def test_deepspeed_backward_defers_the_gradient_boundary() -> None:
     class Engine:
         def __init__(self):
@@ -191,4 +225,17 @@ def test_zero3_partition_buffer_is_cleared_after_step() -> None:
     )
 
     assert torch.count_nonzero(buffer) == 0
+    assert zero_optimizer.averaged_gradients == {}
+
+
+def test_zero2_partition_gradient_bookkeeping_is_cleared_after_step() -> None:
+    zero_optimizer = SimpleNamespace(
+        bit16_groups=[[]],
+        averaged_gradients={0: None},
+    )
+
+    TRAIN._clear_deepspeed_partitioned_gradients(
+        SimpleNamespace(optimizer=zero_optimizer)
+    )
+
     assert zero_optimizer.averaged_gradients == {}
