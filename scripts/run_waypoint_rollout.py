@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run model-owned Waypoint v1 routing in the approved arm-vla Isaac runtime."""
+"""Run model-owned Waypoint routing in the approved arm-vla Isaac runtime."""
 
 from __future__ import annotations
 
@@ -407,9 +407,9 @@ class WaypointRolloutPipeline:
                 self._record("video_close_failed", video_summary)
             final_state = self._safe_read()
             summary = {
-                "schema_version": "conveyorvla-waypoint-rollout-summary-v1",
+                "schema_version": "conveyorvla-waypoint-rollout-summary-v2",
                 "execution_mode": (
-                    "waypoint_v1_staged" if self.stop_after_route else "waypoint_v1_autonomous"
+                    "waypoint_staged" if self.stop_after_route else "waypoint_autonomous"
                 ),
                 "success": success,
                 "pure_physics_success": pure_physics_success,
@@ -777,7 +777,7 @@ class WaypointRolloutPipeline:
             gripper_command=self._held_gripper_command,
             source=f"waypoint_{route.lower()}",
             metadata={
-                "waypoint_v1": True,
+                "waypoint_policy": True,
                 "model_route": route,
                 "model_sequence_id": int(sequence_id),
                 "executor_status": command.status,
@@ -799,7 +799,7 @@ class WaypointRolloutPipeline:
             gripper_command=self._held_gripper_command,
             source=source,
             metadata={
-                "waypoint_v1": True,
+                "waypoint_policy": True,
                 "model_route": self._active_route,
                 "manipulation_base_lock": manipulation,
                 "manipulation_support_joint_lock": bool(
