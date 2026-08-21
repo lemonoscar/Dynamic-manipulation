@@ -94,6 +94,9 @@ python -m pytest -p no:cacheprovider \
 
 - [文档索引与权威性](docs/README.md)
 - [已批准且冻结的 Waypoint Policy v1 合同](docs/conveyorvla_waypoint_policy_contract_v1.md)
+- [Waypoint v2 阶段切换执行与长训计划](docs/waypoint_v2_stage_transition_execution_plan.md)：
+  已批准的 successor 计划；冻结 v1，使用全新 v2 schema，并按证据选择 terminal-hold、动态
+  prefix、局部目标 CRL、训练 FM sample `1→4` 与 on-policy correction
 - [当前状态、证据和未通过门禁](docs/status.md)
 - [step 002000 原始 arm-vla 规则闭环复测](docs/checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)
 - [step 001000 开环与真实 Isaac 闭环评测](docs/checkpoint_step1000_evaluation_20260821.md)

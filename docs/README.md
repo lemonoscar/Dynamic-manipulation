@@ -1,9 +1,9 @@
 # ConveyorVLA 文档索引
 
-更新时间：2026-08-21。现行 runtime/eval 实现基线：
+更新时间：2026-08-22。现行 runtime/eval 实现基线：
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`；当前 durable
 checkpoint 为 `step_002000@a8d57a22c515`。四卡训练已按用户指令在 step 2090 后停止，
-当前没有训练任务占用 H20。
+2026-08-21 最后记录时没有本任务占用 H20；远端实时状态必须在操作前重新核验。
 
 ## 权威性顺序
 
@@ -12,16 +12,23 @@ checkpoint 为 `step_002000@a8d57a22c515`。四卡训练已按用户指令在 st
 1. [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md) 决定模型输入、两次
    Qwen forward、route 语法、动作 shape/坐标、planner 边界和门禁语义；它是已批准且
    冻结的规范正文。
-2. `configs/waypoint_v1.json`、`src/conveyor_bench/conveyorvla/waypoint*.py` 和
+2. [Waypoint v2 阶段切换执行与长训计划](waypoint_v2_stage_transition_execution_plan.md)
+   决定 successor 的实验顺序、内部晋级门禁、证据择优和正式长训启动条件；在最终 v2
+   合同冻结前，它不改变现行 v1 runtime。
+3. `configs/waypoint_v1.json`、`src/conveyor_bench/conveyorvla/waypoint*.py` 和
    `scripts/*waypoint*.py` 是现行可执行实现。
-3. [当前状态](status.md) 只记录哪些实现和门禁已有证据、哪些仍未通过，不修改合同。
-4. 本索引中标为“历史”的页面只用于解释来源和失败，不得作为现行启动命令或接口规范。
+4. [当前状态](status.md) 只记录哪些实现和门禁已有证据、哪些仍未通过，不修改合同。
+5. 本索引中标为“历史”的页面只用于解释来源和失败，不得作为现行启动命令或接口规范。
 
-合同中 2026-08-20 实施前写下的“尚未实现”等状态句应按第 3 项读取；合同的动作、
+合同中 2026-08-20 实施前写下的“尚未实现”等状态句应按第 4 项读取；合同的动作、
 输入和执行决议本身没有被更改。
 
 ## 现行文档
 
+- [Waypoint v2 阶段切换执行与长训计划](waypoint_v2_stage_transition_execution_plan.md)：
+  已批准执行；冻结 v1 基线，从全新 v2 schema 开始，依次验证 train/inference suffix
+  语义、边界进度、动态 prefix、PRTS 方法启发的局部 CRL、训练 FM Monte Carlo sample
+  `1→4` 和 on-policy correction，并以证据选择正式长训组合。PRTS 权重不在范围内。
 - [架构说明](architecture.md)：模型、协议、planner/executor 与旧采集 runtime 的边界。
 - [数据格式与质量门禁](data.md)：无 state waypoint schema、冻结数据身份、split、hash
   和 legacy canonical 数据边界。

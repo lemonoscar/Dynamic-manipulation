@@ -11,8 +11,8 @@ inference export、PCT/DWA、真实 cuRobo/IK 和模型自主 Isaac rollout 均�
 证据。默认 checkpoint 间隔为 500 effective optimizer step。
 
 四卡 resume run 已按用户指令在 step 2090 后停止，最后一个完整 checkpoint 是 step 2000；
-step 2001–2090 只有训练 event、没有 durable checkpoint，不能恢复。当前 4×H20 没有本任务
-进程或显存占用。
+step 2001–2090 只有训练 event、没有 durable checkpoint，不能恢复。2026-08-21 最后一次
+远端核验时，4×H20 没有本任务进程或显存占用；这不是 2026-08-22 的实时状态。
 
 针对 action horizon 20 的最新执行策略不再固定取首点：在可信前 10 点中寻找不小于
 `2 × 到达容差` 且最接近 `0.50 m` 的候选，按顺序交给 PCT，执行首个可规划点后重新推理。
@@ -54,7 +54,7 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | save | 每 500 effective optimizer step |
 | stopped | 用户授权停止；最后有效训练 event 为 step 2090 |
 | durable | step 2000；load/export 通过 |
-| current GPU state | 四卡 0 MiB，无本任务 tmux/端口占用 |
+| last observed GPU state | 2026-08-21 四卡 0 MiB，无本任务 tmux/端口占用；操作前须重查 |
 
 resume 正确恢复了 Qwen、双 head、optimizer、scheduler 和随机状态；从 step 1000 后重新
 计算，不声称保留旧父 run 中没有 checkpoint 的 1001–1181。若未来续训，必须从 step 2000
@@ -109,12 +109,23 @@ front/overview/wrist 分别为 1856/1855/1856 帧，远端/本地 SHA-256 一致
 最小物距、PICK 和末帧目检。视频、trace、日志、checkpoint 和运行资产均在 Git ignore 中，
 没有加入公开仓库。
 
-## 7. 下一步边界
+## 7. 已批准的下一步边界
 
-当前没有训练或评测任务在运行。下一次训练/评测若由用户重新授权，应优先修正模型本身：
+2026-08-22 用户已批准
+[Waypoint v2 阶段切换执行与长训计划](waypoint_v2_stage_transition_execution_plan.md)：
+冻结上述 v1 数据、checkpoint 和结果为基线，从相同只读 source 构建全新 v2
+schema/manifest，并在保留内部门禁的前提下自主执行到 4×H20 正式长训健康启动。本次文档
+更新没有实时连接远端，因此任何“空闲”判断都必须在操作前重新核验。
 
-1. 提高连续 query 的 NAV waypoint 方向一致性，使真实目标距离稳定下降；
-2. 校准接近源物体后的 route 切换距离，避免过早或振荡后 PICK；
-3. 改善 ARM absolute TCP chunk 的相邻 RPY 连续性和 cuRobo 可达率；
-4. 再做多 seed 开环、NAV、ARM staged 和完整自主 pick-place；
-5. production `contract` 仍须单独通过，reference/diagnostic profile 不能替代正式门禁。
+执行优先级为：
+
+1. 修复跨 route suffix 的 train/inference 语义不一致，并保留 original prefix `K*`；
+2. 依次验证 boundary/progress、可信 prefix、PRTS 方法启发的局部 CRL、FM 训练 sample
+   `1→4` 和 on-policy correction，按证据选择最小有效组合；
+3. 提高 NAV 方向一致性、route 切换校准和 ARM RPY/curobo 可执行性；
+4. 完成多 seed 开环、planner、NAV/ARM staged 和完整自主 pick-place 门禁；
+5. 冻结最终 v2 合同和 resolved config，在 4×H20 启动每 500 step 保存的正式长训；连续
+   至少 20 个健康有效 optimizer step 后保持训练运行。
+
+取消的是中途汇报和逐阶段审批，不是数据、overfit、分布式、开环或闭环门禁。
+production `contract` 仍须单独通过，reference/diagnostic profile 不能替代正式门禁。
