@@ -9,6 +9,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -259,6 +260,9 @@ def main(argv: list[str] | None = None) -> int:
         _set_status(accelerator, output, "running", global_step)
         model.train()
         optimizer.zero_grad(set_to_none=True)
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats(accelerator.device)
+        optimizer_step_started = time.perf_counter()
         active_loader = first_loader
         while global_step < args.max_steps:
             for examples in active_loader:
@@ -342,6 +346,48 @@ def main(argv: list[str] | None = None) -> int:
                 if not accelerator.sync_gradients:
                     continue
                 global_step += 1
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize(accelerator.device)
+                local_step_seconds = torch.tensor(
+                    time.perf_counter() - optimizer_step_started,
+                    device=accelerator.device,
+                    dtype=torch.float64,
+                )
+                optimizer_step_time_s = float(
+                    accelerator.reduce(local_step_seconds, reduction="max").item()
+                )
+                common._finite(optimizer_step_time_s, "optimizer step time")
+                if optimizer_step_time_s <= 0.0:
+                    raise M0MobileError("optimizer step time must be positive")
+                local_peak_allocated = torch.tensor(
+                    (
+                        torch.cuda.max_memory_allocated(accelerator.device) / 2**20
+                        if torch.cuda.is_available()
+                        else 0.0
+                    ),
+                    device=accelerator.device,
+                    dtype=torch.float64,
+                )
+                local_peak_reserved = torch.tensor(
+                    (
+                        torch.cuda.max_memory_reserved(accelerator.device) / 2**20
+                        if torch.cuda.is_available()
+                        else 0.0
+                    ),
+                    device=accelerator.device,
+                    dtype=torch.float64,
+                )
+                peak_allocated_memory_mib = float(
+                    accelerator.reduce(local_peak_allocated, reduction="max").item()
+                )
+                peak_reserved_memory_mib = float(
+                    accelerator.reduce(local_peak_reserved, reduction="max").item()
+                )
+                effective_batch_size = (
+                    args.batch_size
+                    * accelerator.num_processes
+                    * args.gradient_accumulation_steps
+                )
                 learning_rates = [float(group["lr"]) for group in optimizer.param_groups]
                 if not learning_rates or any(
                     not math.isfinite(value) or value <= 0.0 for value in learning_rates
@@ -355,6 +401,13 @@ def main(argv: list[str] | None = None) -> int:
                     gradient_norm,
                     component_norms,
                     learning_rates,
+                    optimizer_step_time_s=optimizer_step_time_s,
+                    peak_allocated_memory_mib=peak_allocated_memory_mib,
+                    peak_reserved_memory_mib=peak_reserved_memory_mib,
+                    samples_per_second=effective_batch_size / optimizer_step_time_s,
+                    gpu_hours_per_step=(
+                        accelerator.num_processes * optimizer_step_time_s / 3600.0
+                    ),
                 )
                 if global_step == 1 or global_step % args.log_interval_steps == 0:
                     _event(
@@ -373,6 +426,9 @@ def main(argv: list[str] | None = None) -> int:
                     last_checkpoint_step = global_step
                 if global_step >= args.max_steps:
                     break
+                if torch.cuda.is_available():
+                    torch.cuda.reset_peak_memory_stats(accelerator.device)
+                optimizer_step_started = time.perf_counter()
             active_loader = loader
         if last_checkpoint_step != global_step:
             _save_waypoint_checkpoint(accelerator, output, global_step)
@@ -826,6 +882,12 @@ def _step_metrics(
     gradient_norm: torch.Tensor,
     component_norms: Mapping[str, torch.Tensor],
     learning_rates: list[float],
+    *,
+    optimizer_step_time_s: float,
+    peak_allocated_memory_mib: float,
+    peak_reserved_memory_mib: float,
+    samples_per_second: float,
+    gpu_hours_per_step: float,
 ) -> dict[str, Any]:
     oracle_loss = _tensor(oracle["loss"], "oracle loss")
     self_loss = _tensor(self_conditioned["loss"], "self-conditioned loss")
@@ -851,6 +913,11 @@ def _step_metrics(
         "lambda_self": self_weight,
         "gradient_norm": common._distributed_mean(accelerator, gradient_norm),
         "learning_rates": learning_rates,
+        "optimizer_step_time_s": optimizer_step_time_s,
+        "peak_allocated_memory_mib": peak_allocated_memory_mib,
+        "peak_reserved_memory_mib": peak_reserved_memory_mib,
+        "samples_per_second": samples_per_second,
+        "gpu_hours_per_step": gpu_hours_per_step,
     }
     result.update(
         {

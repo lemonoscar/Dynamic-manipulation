@@ -115,6 +115,7 @@ def _example(route: WaypointRoute, index: int) -> dict:
     return {
         "video": ((object(), object()), (object(), object())),
         "lang": "test task",
+        "sample_id": f"episode:test:{index}",
         "solution": canonical_solution(route),
         "route": route.value,
         "action_domain": domain if active else "NONE",
@@ -232,3 +233,28 @@ def test_prefix_targets_reward_long_safe_prefix_and_penalize_overrun() -> None:
     assert distribution[0, 5] < distribution[0, 0]
     assert distribution[1, 3] == pytest.approx(distribution[1, 4])
     assert distribution[1, 4] == pytest.approx(distribution[1, 5])
+
+
+def test_fixed_validation_bank_is_order_seed_and_training_draw_independent() -> None:
+    torch.manual_seed(19)
+    s1 = _policy(repeats=1, auxiliary=False)
+    s4 = _policy(repeats=4, auxiliary=False)
+    s4.load_state_dict(s1.state_dict())
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+        _example(WaypointRoute.NAV_TO_TARGET, 2),
+        _example(WaypointRoute.PLACE, 3),
+    ]
+    first = s1.fixed_bank_fm_losses(examples, bank_seed=20260822)
+    torch.manual_seed(999)
+    reordered = s1.fixed_bank_fm_losses(
+        list(reversed(examples)), bank_seed=20260822
+    )
+    four_draw_training = s4.fixed_bank_fm_losses(examples, bank_seed=20260822)
+    for domain in ("navigation", "manipulation"):
+        key = f"{domain}_fixed_bank_loss"
+        assert first[key].item() == pytest.approx(reordered[key].item())
+        assert first[key].item() == pytest.approx(four_draw_training[key].item())
+        assert first[f"{domain}_fixed_bank_draw_std"].item() > 0.0
+    assert first["fixed_bank_draws"] == 4

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
@@ -646,6 +647,145 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         return torch.stack([zero if value is None else value for value in values])
 
     @torch.inference_mode()
+    def fixed_bank_fm_losses(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        *,
+        bank_seed: int,
+        draws: int = 4,
+    ) -> Mapping[str, torch.Tensor | int]:
+        """Evaluate both FM heads against an order-independent noise/time bank."""
+
+        if not examples or draws <= 0 or bank_seed < 0:
+            raise ValueError("fixed FM bank needs examples, positive draws, and a seed")
+        inputs = dict(
+            self.qwen.build_waypoint_inputs(
+                examples,
+                solutions=[str(example["solution"]) for example in examples],
+                supervise_solutions=False,
+            )
+        )
+        inputs.pop("labels", None)
+        outputs = self.qwen(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=True,
+            use_cache=False,
+            return_dict=True,
+        )
+        layers = self._last_action_layers(outputs.hidden_states)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            raise RuntimeError("Qwen processor did not return an attention mask")
+        result: dict[str, torch.Tensor | int] = {"fixed_bank_draws": draws}
+        for name, domain, head in (
+            (
+                "navigation",
+                WaypointActionDomain.NAVIGATION,
+                self.navigation_head,
+            ),
+            (
+                "manipulation",
+                WaypointActionDomain.MANIPULATION,
+                self.manipulation_head,
+            ),
+        ):
+            per_draw, sample_count = self._fixed_bank_domain_loss(
+                examples,
+                layers,
+                attention_mask,
+                domain=domain,
+                head=head,
+                bank_seed=bank_seed,
+                draws=draws,
+            )
+            result[f"{name}_fixed_bank_loss"] = per_draw.mean()
+            result[f"{name}_fixed_bank_draw_std"] = per_draw.float().std(
+                unbiased=False
+            )
+            result[f"{name}_fixed_bank_samples"] = sample_count
+            for index, value in enumerate(per_draw):
+                result[f"{name}_fixed_bank_draw_{index}_loss"] = value
+        return result
+
+    def _fixed_bank_domain_loss(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        layers: Sequence[torch.Tensor],
+        attention_mask: torch.Tensor,
+        *,
+        domain: WaypointActionDomain,
+        head: LayerwiseFlowMatchingActionHead,
+        bank_seed: int,
+        draws: int,
+    ) -> tuple[torch.Tensor, int]:
+        if not math.isclose(head.config.noise_beta_beta, 1.0):
+            raise ValueError("fixed FM bank currently requires beta_beta=1")
+        indices = [
+            index
+            for index, example in enumerate(examples)
+            if str(example["action_domain"]) == domain.value
+            and example.get("action") is not None
+            and any(bool(value) for value in example["action_valid_mask"])
+        ]
+        if not indices:
+            zero = _zero_domain_loss(layers, attention_mask, head).detach()
+            return zero.expand(draws), 0
+        index_tensor = torch.as_tensor(indices, device=layers[0].device)
+        parameter = next(head.parameters())
+        device, dtype = parameter.device, parameter.dtype
+        selected_layers = tuple(
+            layer.index_select(0, index_tensor).to(device=device, dtype=dtype)
+            for layer in layers
+        )
+        actions = torch.as_tensor(
+            [examples[index]["action"] for index in indices],
+            device=device,
+            dtype=dtype,
+        )
+        valid = torch.as_tensor(
+            [examples[index]["action_valid_mask"] for index in indices],
+            device=device,
+            dtype=torch.bool,
+        )
+        noise_rows = []
+        time_rows = []
+        for draw in range(draws):
+            draw_noise = []
+            draw_time = []
+            for index in indices:
+                sample_id = str(examples[index]["sample_id"])
+                generator = torch.Generator(device="cpu").manual_seed(
+                    _fixed_bank_seed(bank_seed, domain.value, sample_id, draw)
+                )
+                draw_noise.append(
+                    torch.randn(
+                        (ACTION_HORIZON, head.config.action_dim),
+                        generator=generator,
+                        dtype=torch.float32,
+                    )
+                )
+                beta_uniform = torch.rand((), generator=generator).clamp_min(1.0e-12)
+                beta = beta_uniform.pow(1.0 / head.config.noise_beta_alpha)
+                draw_time.append((head.config.noise_s - beta) / head.config.noise_s)
+            noise_rows.append(torch.stack(draw_noise))
+            time_rows.append(torch.stack(draw_time))
+        noise = torch.stack(noise_rows).to(device=device, dtype=dtype)
+        time = torch.stack(time_rows).to(device=device, dtype=dtype)
+        selected_attention = attention_mask.index_select(0, index_tensor).to(device)
+        with _action_autocast(device, dtype):
+            per_sample = head(
+                tuple(layer.repeat(draws, 1, 1) for layer in selected_layers),
+                actions.repeat(draws, 1, 1),
+                encoder_attention_mask=selected_attention.repeat(draws, 1),
+                action_valid_mask=valid.repeat(draws, 1),
+                noise=noise.flatten(0, 1),
+                time=time.flatten(),
+                reduction="none",
+            )
+        return per_sample.reshape(draws, len(indices)).mean(dim=1), len(indices)
+
+    @torch.inference_mode()
     def predict_v2(
         self, examples: Sequence[Mapping[str, Any]]
     ) -> tuple[WaypointV2Prediction, ...]:
@@ -871,6 +1011,18 @@ def _multi_positive_nce(logits: torch.Tensor, positive: torch.Tensor) -> torch.T
     positive_logits = logits.masked_fill(~positive, -torch.inf)
     return torch.logsumexp(logits, dim=-1) - torch.logsumexp(
         positive_logits, dim=-1
+    )
+
+
+def _fixed_bank_seed(
+    bank_seed: int,
+    domain: str,
+    sample_id: str,
+    draw: int,
+) -> int:
+    payload = f"waypoint-v2-fixed-fm-v1\0{bank_seed}\0{domain}\0{sample_id}\0{draw}"
+    return int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:8], "big") % (
+        2**63 - 1
     )
 
 
