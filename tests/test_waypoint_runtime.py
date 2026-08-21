@@ -13,6 +13,7 @@ from conveyor_bench.conveyorvla.waypoint_execution import (
     ArmPlan,
     CuRoboIKRecedingHorizonExecutor,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
+    NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION,
     NavigationExecutionConfig,
     PCTDWARecedingHorizonExecutor,
     PCTPlan,
@@ -254,6 +255,26 @@ def test_nav_diagnostic_profile_executes_only_a_legal_prefix_and_reports_bad_tai
     assert diagnostic.trace["selected_waypoint_index"] == 0
     assert diagnostic.trace["full_horizon_contract_passed"] is False
     assert "segment 5 exceeds translation limit" in diagnostic.trace[
+        "full_horizon_violation"
+    ]
+
+
+def test_nav_unbounded_translation_profile_executes_over_limit_first_waypoint():
+    response = _response(
+        WaypointRoute.NAV_TO_SOURCE,
+        [(1.2, 0.0, 0.0)] * ACTION_HORIZON,
+    )
+    diagnostic = PCTDWARecedingHorizonExecutor(
+        _PCT(),
+        _DWA(),
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
+        ),
+    ).begin(response, (0.0, 0.0, 0.0), now_s=0.0)
+    assert not diagnostic.failed
+    assert diagnostic.trace["translation_limit_disabled"] is True
+    assert diagnostic.trace["selected_waypoint_body"] == [1.2, 0.0, 0.0]
+    assert "segment 0 exceeds translation limit" in diagnostic.trace[
         "full_horizon_violation"
     ]
 

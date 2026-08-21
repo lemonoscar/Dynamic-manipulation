@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Protocol, Sequence
 
 from conveyor_bench.conveyorvla.waypoint import (
@@ -27,9 +27,13 @@ BaseVelocity = tuple[float, float, float]
 
 NAVIGATION_SAFETY_PROFILE_CONTRACT = "contract"
 NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX = "executable-prefix-diagnostic"
+NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION = (
+    "unbounded-translation-diagnostic"
+)
 NAVIGATION_SAFETY_PROFILES = (
     NAVIGATION_SAFETY_PROFILE_CONTRACT,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
+    NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION,
 )
 
 
@@ -233,10 +237,18 @@ class PCTDWARecedingHorizonExecutor:
                 ):
                     raise
                 full_horizon_violation = str(error)
+                retry_safety = self.config.waypoint_safety
+                if (
+                    self.config.safety_profile
+                    == NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
+                ):
+                    retry_safety = replace(
+                        retry_safety, max_segment_translation_m=math.inf
+                    )
                 selected_index, selected_body = select_navigation_waypoint(
                     waypoints,
                     mask,
-                    safety=self.config.waypoint_safety,
+                    safety=retry_safety,
                     validate_full_horizon=False,
                 )
             predicted_goal = nav_waypoint_world(
@@ -257,8 +269,7 @@ class PCTDWARecedingHorizonExecutor:
             if (
                 translation < self.config.waypoint_safety.minimum_translation_m
                 or (
-                    self.config.safety_profile
-                    == NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX
+                    self.config.safety_profile != NAVIGATION_SAFETY_PROFILE_CONTRACT
                     and translation <= self.config.goal_tolerance_m
                 )
             )
@@ -286,6 +297,10 @@ class PCTDWARecedingHorizonExecutor:
                 else "carry_closed"
             ),
             "safety_profile": self.config.safety_profile,
+            "translation_limit_disabled": (
+                self.config.safety_profile
+                == NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
+            ),
             "full_horizon_contract_passed": full_horizon_violation is None,
             "full_horizon_violation": full_horizon_violation,
             "selected_index": selected_index,
@@ -404,6 +419,7 @@ class PCTDWARecedingHorizonExecutor:
             "route": active["route"],
             "execution_mode": active["execution_mode"],
             "safety_profile": active["safety_profile"],
+            "translation_limit_disabled": active["translation_limit_disabled"],
             "full_horizon_contract_passed": active[
                 "full_horizon_contract_passed"
             ],
@@ -753,6 +769,7 @@ __all__ = [
     "ManipulationExecutionConfig",
     "NAVIGATION_SAFETY_PROFILE_CONTRACT",
     "NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX",
+    "NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION",
     "NAVIGATION_SAFETY_PROFILES",
     "NavigationExecutionConfig",
     "PCTDWARecedingHorizonExecutor",

@@ -72,7 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "contract validates all 20 predicted waypoints; "
             "executable-prefix-diagnostic still audits all 20 but permits only "
-            "a legal first non-degenerate waypoint to reach PCT/DWA"
+            "a legal first non-degenerate waypoint to reach PCT/DWA; "
+            "unbounded-translation-diagnostic additionally disables the "
+            "translation cap for that executed waypoint"
         ),
     )
     parser.add_argument(

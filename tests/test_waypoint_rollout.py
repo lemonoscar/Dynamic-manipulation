@@ -35,7 +35,11 @@ def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
         for action in parser._actions
         if action.dest == "navigation_safety_profile"
     )
-    assert tuple(choices) == ("contract", "executable-prefix-diagnostic")
+    assert tuple(choices) == (
+        "contract",
+        "executable-prefix-diagnostic",
+        "unbounded-translation-diagnostic",
+    )
 
 
 def test_temporal_buffer_requires_exact_synchronized_point_two_second_pair():
