@@ -484,6 +484,7 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
     episode_splits: dict[str, set[str]] = defaultdict(set)
     episode_row_counts: Counter[str] = Counter()
     episode_route_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    episode_suffix_counts: dict[str, Counter[str]] = defaultdict(Counter)
     counts: Counter[str] = Counter()
     boundaries: Counter[str] = Counter()
     suffixes: Counter[str] = Counter()
@@ -525,6 +526,7 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
                 boundaries[f"{split}:{transition}"] += 1
             reason = str(record.get("suffix_reason"))
             suffixes[f"{split}:{reason}"] += 1
+            episode_suffix_counts[episode_id][reason] += 1
             original_k_value = record.get("original_valid_prefix_k")
             if original_k_value is not None:
                 original_prefixes[
@@ -671,8 +673,23 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
             problems.append(f"manifest row count is wrong for {episode_id}")
         if dict(sorted(episode_route_counts[episode_id].items())) != report.get("route_counts"):
             problems.append(f"manifest route counts are wrong for {episode_id}")
-        if len(episode_transition_ids[episode_id]) != len(BOUNDARY_EVENTS):
-            problems.append(f"source episode does not expose all four transitions: {episode_id}")
+        transition_names = {
+            transition_id_contracts[transition_id][1]
+            for transition_id in episode_transition_ids[episode_id]
+        }
+        expected_transitions = set(BOUNDARY_EVENTS)
+        has_done = episode_route_counts[episode_id][WaypointRoute.DONE.value] > 0
+        if not has_done:
+            expected_transitions.remove("PLACE->DONE")
+        if transition_names != expected_transitions:
+            problems.append(
+                f"source episode transition set is inconsistent: {episode_id}: "
+                f"expected={sorted(expected_transitions)}, actual={sorted(transition_names)}"
+            )
+        if not has_done and episode_suffix_counts[episode_id]["episode-tail"] == 0:
+            problems.append(
+                f"source episode without DONE does not preserve episode-tail: {episode_id}"
+            )
     for split in ("train", "val", "test"):
         for route in WaypointRoute:
             if counts[f"{split}:{route.value}"] == 0:
