@@ -26,12 +26,14 @@ PCTWorldPose = tuple[float, float, float, float]
 BaseVelocity = tuple[float, float, float]
 
 NAVIGATION_SAFETY_PROFILE_CONTRACT = "contract"
+NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE = "arm-vla-reference"
 NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX = "executable-prefix-diagnostic"
 NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION = (
     "unbounded-translation-diagnostic"
 )
 NAVIGATION_SAFETY_PROFILES = (
     NAVIGATION_SAFETY_PROFILE_CONTRACT,
+    NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
     NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION,
 )
@@ -116,6 +118,7 @@ class NavigationExecutionConfig:
     chunk_timeout_s: float = 12.0
     stall_timeout_s: float = 3.0
     stall_progress_m: float = 0.01
+    max_chunk_execution_steps: int = 250
     stow_joint_target: tuple[float, ...] | None = None
     carry_joint_target: tuple[float, ...] | None = None
     open_gripper_target: float = 1.0
@@ -143,6 +146,8 @@ class NavigationExecutionConfig:
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in values):
             raise ValueError("navigation execution limits must be finite and positive")
+        if self.max_chunk_execution_steps <= 0:
+            raise ValueError("navigation chunk step limit must be positive")
         if not math.isfinite(self.closed_gripper_target):
             raise ValueError("closed gripper target must be finite")
         if not 0.0 <= self.closed_gripper_target <= self.open_gripper_target <= 1.0:
@@ -194,10 +199,18 @@ class PCTDWARecedingHorizonExecutor:
         pct_planner: PCTPlanner,
         dwa_controller: DWAController,
         config: NavigationExecutionConfig = NavigationExecutionConfig(),
+        stall_detector: Any | None = None,
     ) -> None:
         self.pct_planner = pct_planner
         self.dwa_controller = dwa_controller
         self.config = config
+        self.stall_detector = stall_detector
+        if (
+            self.config.safety_profile
+            == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+            and self.stall_detector is None
+        ):
+            raise ValueError("arm-vla-reference requires arm-vla's stall detector")
         self._active: dict[str, Any] | None = None
         self._last_sequence = -1
 
@@ -224,33 +237,49 @@ class PCTDWARecedingHorizonExecutor:
             current = _world_pose(current_base_world)
             waypoints, mask = _fixed_navigation_chunk(response)
             full_horizon_violation: str | None = None
-            try:
-                selected_index, selected_body = select_navigation_waypoint(
-                    waypoints,
-                    mask,
-                    safety=self.config.waypoint_safety,
+            if (
+                self.config.safety_profile
+                == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+            ):
+                original_safety = replace(
+                    self.config.waypoint_safety,
+                    minimum_translation_m=1.0e-3,
+                    minimum_yaw_rad=1.0e-3,
                 )
-            except (ValueError, TypeError) as error:
-                if (
-                    self.config.safety_profile
-                    == NAVIGATION_SAFETY_PROFILE_CONTRACT
-                ):
-                    raise
-                full_horizon_violation = str(error)
-                retry_safety = self.config.waypoint_safety
-                if (
-                    self.config.safety_profile
-                    == NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
-                ):
-                    retry_safety = replace(
-                        retry_safety, max_segment_translation_m=math.inf
-                    )
                 selected_index, selected_body = select_navigation_waypoint(
                     waypoints,
-                    mask,
-                    safety=retry_safety,
+                    (mask[0],) + (False,) * (ACTION_HORIZON - 1),
+                    safety=original_safety,
                     validate_full_horizon=False,
                 )
+            else:
+                try:
+                    selected_index, selected_body = select_navigation_waypoint(
+                        waypoints,
+                        mask,
+                        safety=self.config.waypoint_safety,
+                    )
+                except (ValueError, TypeError) as error:
+                    if (
+                        self.config.safety_profile
+                        == NAVIGATION_SAFETY_PROFILE_CONTRACT
+                    ):
+                        raise
+                    full_horizon_violation = str(error)
+                    retry_safety = self.config.waypoint_safety
+                    if (
+                        self.config.safety_profile
+                        == NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
+                    ):
+                        retry_safety = replace(
+                            retry_safety, max_segment_translation_m=math.inf
+                        )
+                    selected_index, selected_body = select_navigation_waypoint(
+                        waypoints,
+                        mask,
+                        safety=retry_safety,
+                        validate_full_horizon=False,
+                    )
             predicted_goal = nav_waypoint_world(
                 (current[0], current[1], current[2], *_yaw_quaternion(current[3])),
                 selected_body,
@@ -280,7 +309,16 @@ class PCTDWARecedingHorizonExecutor:
             try:
                 planned_at = time.perf_counter()
                 plan = self.pct_planner.plan(current, predicted_goal)
-                _validate_pct_plan(plan, predicted_goal, self.config.pct_snap_max_m)
+                _validate_pct_plan(
+                    plan,
+                    predicted_goal,
+                    (
+                        math.inf
+                        if self.config.safety_profile
+                        == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+                        else self.config.pct_snap_max_m
+                    ),
+                )
                 pct_elapsed_ms = (time.perf_counter() - planned_at) * 1000.0
             except Exception as error:
                 return _stop(f"pct_plan_failed:{type(error).__name__}:{error}", failed=True)
@@ -297,11 +335,20 @@ class PCTDWARecedingHorizonExecutor:
                 else "carry_closed"
             ),
             "safety_profile": self.config.safety_profile,
+            "arm_vla_reference_rules": (
+                self.config.safety_profile
+                == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+            ),
             "translation_limit_disabled": (
                 self.config.safety_profile
                 == NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION
             ),
-            "full_horizon_contract_passed": full_horizon_violation is None,
+            "full_horizon_contract_passed": (
+                None
+                if self.config.safety_profile
+                == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+                else full_horizon_violation is None
+            ),
             "full_horizon_violation": full_horizon_violation,
             "selected_index": selected_index,
             "selected_body": selected_body,
@@ -312,7 +359,18 @@ class PCTDWARecedingHorizonExecutor:
             "started_s": now,
             "last_progress_s": now,
             "best_distance_m": distance,
+            "chunk_step_count": 0,
+            "stall_diagnostics": None,
         }
+        if (
+            self.config.safety_profile
+            == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+        ):
+            reset_dwa = getattr(self.dwa_controller, "reset", None)
+            if callable(reset_dwa):
+                reset_dwa()
+        if self.stall_detector is not None:
+            self.stall_detector.reset()
         arm_target, gripper_target = self._posture()
         return ExecutionCommand(
             arm_joint_target=arm_target,
@@ -338,7 +396,20 @@ class PCTDWARecedingHorizonExecutor:
         goal: PCTWorldPose = active["predicted_goal"]
         distance = math.hypot(goal[0] - current[0], goal[1] - current[1])
         yaw_error = abs(wrap_to_pi(goal[3] - current[3]))
-        if now - active["started_s"] > self.config.chunk_timeout_s:
+        active["chunk_step_count"] += 1
+        arm_vla_reference = (
+            self.config.safety_profile
+            == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+        )
+        if (
+            arm_vla_reference
+            and active["chunk_step_count"] > self.config.max_chunk_execution_steps
+        ):
+            return self._finish("navigation_chunk_timeout", failed=False)
+        if (
+            not arm_vla_reference
+            and now - active["started_s"] > self.config.chunk_timeout_s
+        ):
             return self._finish("navigation_chunk_timeout", failed=True)
         if distance <= self.config.goal_tolerance_m and yaw_error <= self.config.yaw_tolerance_rad:
             return self._finish("first_waypoint_reached", failed=False)
@@ -346,14 +417,15 @@ class PCTDWARecedingHorizonExecutor:
             active["mode"] == "terminal_yaw"
             or distance <= self.config.goal_tolerance_m
         )
-        if distance + self.config.stall_progress_m < active["best_distance_m"]:
-            active["best_distance_m"] = distance
-            active["last_progress_s"] = now
-        elif (
-            not terminal_yaw_active
-            and now - active["last_progress_s"] > self.config.stall_timeout_s
-        ):
-            return self._finish("navigation_stall", failed=True)
+        if not arm_vla_reference:
+            if distance + self.config.stall_progress_m < active["best_distance_m"]:
+                active["best_distance_m"] = distance
+                active["last_progress_s"] = now
+            elif (
+                not terminal_yaw_active
+                and now - active["last_progress_s"] > self.config.stall_timeout_s
+            ):
+                return self._finish("navigation_stall", failed=True)
         if terminal_yaw_active:
             command = (
                 0.0,
@@ -372,7 +444,11 @@ class PCTDWARecedingHorizonExecutor:
                     velocity,
                     local_map,
                 )
-                command = _bounded_velocity(raw, self.config)
+                command = (
+                    _velocity(raw)
+                    if arm_vla_reference
+                    else _bounded_velocity(raw, self.config)
+                )
                 dwa_elapsed_ms = (time.perf_counter() - commanded_at) * 1000.0
             except Exception as error:
                 return self._finish(
@@ -381,6 +457,17 @@ class PCTDWARecedingHorizonExecutor:
         if terminal_yaw_active:
             raw = command
             dwa_elapsed_ms = 0.0
+        elif arm_vla_reference:
+            stalled, diagnostics = self.stall_detector.update(
+                current[0],
+                current[1],
+                command[0],
+                current[3],
+                command[2],
+            )
+            active["stall_diagnostics"] = dict(vars(diagnostics))
+            if stalled:
+                return self._finish("navigation_stall", failed=False)
         arm_target, gripper_target = self._posture()
         return ExecutionCommand(
             base_velocity=command,
@@ -419,11 +506,17 @@ class PCTDWARecedingHorizonExecutor:
             "route": active["route"],
             "execution_mode": active["execution_mode"],
             "safety_profile": active["safety_profile"],
+            "arm_vla_reference_rules": active["arm_vla_reference_rules"],
             "translation_limit_disabled": active["translation_limit_disabled"],
             "full_horizon_contract_passed": active[
                 "full_horizon_contract_passed"
             ],
             "full_horizon_violation": active["full_horizon_violation"],
+            "chunk_step_count": active["chunk_step_count"],
+            "stall_diagnostics": active["stall_diagnostics"],
+            "goal_tolerance_m": self.config.goal_tolerance_m,
+            "yaw_tolerance_rad": self.config.yaw_tolerance_rad,
+            "max_chunk_execution_steps": self.config.max_chunk_execution_steps,
             "selected_waypoint_index": active["selected_index"],
             "selected_waypoint_body": list(active["selected_body"]),
             "predicted_goal_world": list(active["predicted_goal"]),
@@ -767,6 +860,7 @@ __all__ = [
     "DWAController",
     "ExecutionCommand",
     "ManipulationExecutionConfig",
+    "NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE",
     "NAVIGATION_SAFETY_PROFILE_CONTRACT",
     "NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX",
     "NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION",

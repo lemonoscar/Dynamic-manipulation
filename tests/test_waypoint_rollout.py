@@ -37,6 +37,7 @@ def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
     )
     assert tuple(choices) == (
         "contract",
+        "arm-vla-reference",
         "executable-prefix-diagnostic",
         "unbounded-translation-diagnostic",
     )

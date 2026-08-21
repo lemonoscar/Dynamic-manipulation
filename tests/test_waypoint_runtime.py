@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from conveyor_bench.conveyorvla.waypoint import (
 from conveyor_bench.conveyorvla.waypoint_execution import (
     ArmPlan,
     CuRoboIKRecedingHorizonExecutor,
+    NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
     NAVIGATION_SAFETY_PROFILE_UNBOUNDED_TRANSLATION,
     NavigationExecutionConfig,
@@ -179,6 +181,27 @@ class _DWA:
         return self.value
 
 
+class _ArmVLAStallDetector:
+    def __init__(self, stall_after=2):
+        self.stall_after = stall_after
+        self.calls = []
+        self.reset_count = 0
+
+    def reset(self):
+        self.calls.clear()
+        self.reset_count += 1
+
+    def update(self, x, y, cmd_vx, yaw, cmd_wz):
+        self.calls.append((x, y, cmd_vx, yaw, cmd_wz))
+        return len(self.calls) >= self.stall_after, SimpleNamespace(
+            sample_count=len(self.calls),
+            max_displacement_m=0.0,
+            forward_command_ratio=1.0,
+            max_yaw_displacement_rad=0.0,
+            angular_command_ratio=1.0,
+        )
+
+
 def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_first_waypoint():
     pct, dwa = _PCT(), _DWA()
     executor = PCTDWARecedingHorizonExecutor(pct, dwa)
@@ -257,6 +280,87 @@ def test_nav_diagnostic_profile_executes_only_a_legal_prefix_and_reports_bad_tai
     assert "segment 5 exceeds translation limit" in diagnostic.trace[
         "full_horizon_violation"
     ]
+
+
+def test_nav_arm_vla_reference_uses_only_original_gates_and_requeries_on_stall():
+    rows = [(0.3, 0.0, 0.0)] * ACTION_HORIZON
+    rows[5] = (1.2, 0.0, 0.0)
+    response = _response(WaypointRoute.NAV_TO_SOURCE, rows)
+    detector = _ArmVLAStallDetector()
+    executor = PCTDWARecedingHorizonExecutor(
+        _PCT(snap=0.5),
+        _DWA((99.0, 0.0, 0.0)),
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
+            goal_tolerance_m=0.18,
+            yaw_tolerance_rad=math.pi,
+        ),
+        stall_detector=detector,
+    )
+    planned = executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0)
+    assert not planned.failed
+    assert planned.trace["arm_vla_reference_rules"] is True
+    assert planned.trace["full_horizon_contract_passed"] is None
+    assert planned.trace["pct_snap_distance_m"] == 0.5
+    assert detector.reset_count == 1
+
+    moving = executor.step(
+        (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), object(), now_s=0.1
+    )
+    assert not moving.failed
+    assert moving.base_velocity == (99.0, 0.0, 0.0)
+    stalled = executor.step(
+        (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), object(), now_s=0.2
+    )
+    assert not stalled.failed
+    assert stalled.requires_requery
+    assert stalled.reason == "navigation_stall"
+    assert stalled.trace["stall_diagnostics"]["sample_count"] == 2
+
+
+def test_nav_arm_vla_reference_requeries_instead_of_failing_on_chunk_timeout():
+    detector = _ArmVLAStallDetector(stall_after=999)
+    executor = PCTDWARecedingHorizonExecutor(
+        _PCT(),
+        _DWA(),
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
+            max_chunk_execution_steps=1,
+        ),
+        stall_detector=detector,
+    )
+    response = _response(
+        WaypointRoute.NAV_TO_SOURCE,
+        [(0.3, 0.0, 0.0)] * ACTION_HORIZON,
+    )
+    assert not executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0).failed
+    assert not executor.step(
+        (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), object(), now_s=0.1
+    ).failed
+    timed_out = executor.step(
+        (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), object(), now_s=0.2
+    )
+    assert not timed_out.failed
+    assert timed_out.requires_requery
+    assert timed_out.reason == "navigation_chunk_timeout"
+
+
+def test_nav_arm_vla_reference_keeps_the_original_first_waypoint_limit():
+    executor = PCTDWARecedingHorizonExecutor(
+        _PCT(),
+        _DWA(),
+        NavigationExecutionConfig(
+            safety_profile=NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+        ),
+        stall_detector=_ArmVLAStallDetector(),
+    )
+    response = _response(
+        WaypointRoute.NAV_TO_SOURCE,
+        [(1.2, 0.0, 0.0)] * ACTION_HORIZON,
+    )
+    rejected = executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0)
+    assert rejected.failed
+    assert "segment 0 exceeds translation limit" in rejected.reason
 
 
 def test_nav_unbounded_translation_profile_executes_over_limit_first_waypoint():

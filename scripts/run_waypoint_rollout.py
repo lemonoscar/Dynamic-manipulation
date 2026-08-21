@@ -29,6 +29,7 @@ from conveyor_bench.conveyorvla.waypoint import (  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint_execution import (  # noqa: E402
     CuRoboIKRecedingHorizonExecutor,
     ManipulationExecutionConfig,
+    NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_CONTRACT,
     NAVIGATION_SAFETY_PROFILES,
     NavigationExecutionConfig,
@@ -71,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=NAVIGATION_SAFETY_PROFILE_CONTRACT,
         help=(
             "contract validates all 20 predicted waypoints; "
+            "arm-vla-reference applies only arm-vla 388b681's first-waypoint "
+            "limits, tolerances, DWA bounds, stall detector, and requery behavior; "
             "executable-prefix-diagnostic still audits all 20 but permits only "
             "a legal first non-degenerate waypoint to reach PCT/DWA; "
             "unbounded-translation-diagnostic additionally disables the "
@@ -165,6 +168,7 @@ class WaypointRolloutPipeline:
         stop_after_route: str | None,
         required_first_route: str | None,
         navigation_safety_profile: str,
+        navigation_max_chunk_steps: int,
         close_simulation_on_exit: bool,
     ) -> None:
         from source.interfaces import NavGoal, RobotAction, SimulationState
@@ -204,13 +208,36 @@ class WaypointRolloutPipeline:
             reference_executor.dwa_config,
             reference_commit=APPROVED_ARM_VLA_COMMIT,
         )
+        arm_vla_reference = (
+            navigation_safety_profile
+            == NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE
+        )
         self.navigation = PCTDWARecedingHorizonExecutor(
             self.pct_adapter,
             self.dwa_adapter,
             NavigationExecutionConfig(
                 safety_profile=navigation_safety_profile,
+                goal_tolerance_m=(
+                    float(reference_executor.position_tolerance)
+                    if arm_vla_reference
+                    else 0.12
+                ),
+                yaw_tolerance_rad=(
+                    float(reference_executor.yaw_tolerance)
+                    if arm_vla_reference
+                    else 0.14
+                ),
+                terminal_yaw_max_radps=(
+                    float(reference_executor.dwa_config.max_angular_velocity)
+                    if arm_vla_reference
+                    else 0.60
+                ),
+                max_chunk_execution_steps=int(navigation_max_chunk_steps),
                 stow_joint_target=None,
                 carry_joint_target=None,
+            ),
+            stall_detector=(
+                reference_executor.stall_detector if arm_vla_reference else None
             ),
         )
         transport = JsonLineCuRoboTransport(
@@ -1040,7 +1067,6 @@ def main(argv: list[str] | None = None) -> int:
             connect_timeout_s,
             response_timeout_s,
             max_replans_per_navigation,
-            max_chunk_execution_steps,
             arm_mode,
             first_waypoint_only,
         )
@@ -1064,6 +1090,7 @@ def main(argv: list[str] | None = None) -> int:
             stop_after_route=args.stop_after_route,
             required_first_route=args.required_first_route,
             navigation_safety_profile=args.navigation_safety_profile,
+            navigation_max_chunk_steps=max_chunk_execution_steps,
             close_simulation_on_exit=close_simulation_on_exit,
         )
 

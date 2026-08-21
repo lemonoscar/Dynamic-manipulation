@@ -122,6 +122,11 @@ class ArmVLADWAControllerAdapter:
         self._controller: Any | None = None
         self.last_trace: dict[str, Any] = {}
 
+    def reset(self) -> None:
+        self._key = None
+        self._controller = None
+        self.last_trace = {}
+
     def command(
         self,
         path_world: Sequence[Sequence[float]],
