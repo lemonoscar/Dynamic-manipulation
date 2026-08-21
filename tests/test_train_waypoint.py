@@ -133,6 +133,73 @@ def test_v2_b2_b3_b4_configs_add_exactly_one_rollbackable_mechanism(
         _validate_args(_args(tmp_path), config)
 
 
+def test_v2_b5_adds_only_manifest_bound_on_policy_sampling(tmp_path: Path):
+    b4 = _load_config(Path("configs/waypoint_v2_b4_s1.json"))
+    b5 = _load_config(Path("configs/waypoint_v2_b5_s1.json"))
+    expected = copy.deepcopy(b4)
+    expected["sampling"] = {
+        "original_success": 0.60,
+        "transition_window": 0.25,
+        "on_policy_correction": 0.15,
+    }
+    assert expected == b5
+    _validate_args(_args(tmp_path), b5)
+
+
+def test_correction_mixture_preserves_event_pairs_and_target_ratios():
+    routes = []
+    transition_ids = []
+    signed_times = []
+    categories = []
+    for event in range(40):
+        left, right = (
+            ("NAV_TO_SOURCE", "PICK")
+            if event % 2 == 0
+            else ("PICK", "NAV_TO_TARGET")
+        )
+        routes.extend((left, right))
+        transition_ids.extend((f"event-{event}", f"event-{event}"))
+        signed_times.extend((-0.2, 0.0))
+        categories.extend(("transition_window", "transition_window"))
+    for category in ("original_success", "on_policy_correction"):
+        for _repeat in range(40):
+            routes.extend(("NAV_TO_SOURCE", "PICK", "DONE"))
+            transition_ids.extend((None, None, None))
+            signed_times.extend((None, None, None))
+            categories.extend((category, category, category))
+    sampler = DomainBalancedSampler(
+        routes,
+        [1.0] * len(routes),
+        batch_size=3,
+        seed=31,
+        transition_ids=transition_ids,
+        boundary_signed_times=signed_times,
+        mixture_categories=categories,
+        mixture_fractions={
+            "original_success": 0.60,
+            "transition_window": 0.25,
+            "on_policy_correction": 0.15,
+        },
+    )
+    indices = list(sampler)
+    counts = {category: 0 for category in set(categories)}
+    paired_batches = 0
+    for start in range(0, len(indices), 3):
+        batch = indices[start : start + 3]
+        for index in batch:
+            counts[categories[index]] += 1
+        ids = [transition_ids[index] for index in batch if transition_ids[index]]
+        paired_batches += int(len(ids) == 2 and ids[0] == ids[1])
+        batch_routes = {routes[index] for index in batch}
+        assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
+        assert batch_routes.intersection({"PICK", "PLACE"})
+    total = len(indices)
+    assert counts["original_success"] / total == pytest.approx(0.60, abs=0.08)
+    assert counts["transition_window"] / total == pytest.approx(0.25, abs=0.08)
+    assert counts["on_policy_correction"] / total == pytest.approx(0.15, abs=0.06)
+    assert paired_batches > 0
+
+
 def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():
     routes = [
         "NAV_TO_SOURCE",

@@ -173,9 +173,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         loader_weights = (
-            _v2_row_sample_weights(dataset, train_indices)
+            _v2_row_sample_weights(
+                dataset,
+                train_indices,
+                mixture=config.get("sampling"),
+            )
             if is_v2
             else _row_sample_weights(loader_routes, loader_boundaries)
+        )
+        loader_categories = (
+            _v2_sampling_categories(dataset, train_indices)
+            if is_v2 and config.get("sampling") is not None
+            else None
         )
         sampler = DomainBalancedSampler(
             loader_routes,
@@ -184,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             transition_ids=loader_transition_ids,
             boundary_signed_times=loader_boundary_signed_times,
+            mixture_categories=loader_categories,
+            mixture_fractions=config.get("sampling"),
         )
         loader = DataLoader(
             loader_dataset,
@@ -674,6 +685,8 @@ class DomainBalancedSampler(Sampler[int]):
         seed: int,
         transition_ids: Sequence[str | None] | None = None,
         boundary_signed_times: Sequence[float | None] | None = None,
+        mixture_categories: Sequence[str] | None = None,
+        mixture_fractions: Mapping[str, float] | None = None,
     ) -> None:
         if len(routes) != len(weights) or not routes:
             raise M0MobileError("domain-balanced sampler rows and weights do not align")
@@ -729,6 +742,60 @@ class DomainBalancedSampler(Sampler[int]):
             for before, after in event_rows.values()
             if before and after
         )
+        if (mixture_categories is None) != (mixture_fractions is None):
+            raise M0MobileError(
+                "correction sampler needs categories and target fractions"
+            )
+        self.mixture_fractions = (
+            None
+            if mixture_fractions is None
+            else _validated_sampling_fractions(mixture_fractions)
+        )
+        if mixture_categories is not None and len(mixture_categories) != len(routes):
+            raise M0MobileError("correction sampler categories are not aligned")
+        self.category_indices = {
+            category: tuple(
+                index
+                for index, value in enumerate(mixture_categories or ())
+                if value == category
+            )
+            for category in (
+                "original_success",
+                "transition_window",
+                "on_policy_correction",
+            )
+        }
+        if self.mixture_fractions is not None:
+            transition_rows = set(self.category_indices["transition_window"])
+            self.transition_events = tuple(
+                (
+                    tuple(index for index in before if index in transition_rows),
+                    tuple(index for index in after if index in transition_rows),
+                )
+                for before, after in self.transition_events
+            )
+            self.transition_events = tuple(
+                (before, after)
+                for before, after in self.transition_events
+                if before and after
+            )
+            if (
+                batch_size < 3
+                or self.mixture_fractions["transition_window"] * batch_size > 2.0
+                or not self.transition_events
+                or any(not values for values in self.category_indices.values())
+            ):
+                raise M0MobileError(
+                    "correction mixture needs a one-pair-feasible batch and all categories"
+                )
+            for domain in (self.navigation, self.manipulation):
+                if any(
+                    not set(domain).intersection(self.category_indices[category])
+                    for category in ("original_success", "on_policy_correction")
+                ):
+                    raise M0MobileError(
+                        "correction mixture must cover NAV and ARM in original/correction data"
+                    )
 
     def __len__(self) -> int:
         return self.num_samples
@@ -738,6 +805,11 @@ class DomainBalancedSampler(Sampler[int]):
         self._iteration += 1
         all_indices = tuple(range(len(self.routes)))
         for batch_index in range(self.num_samples // self.batch_size):
+            if self.mixture_fractions is not None:
+                batch = self._mixture_batch(generator)
+                order = torch.randperm(self.batch_size, generator=generator).tolist()
+                yield from (batch[index] for index in order)
+                continue
             if self.transition_events and batch_index % 2 == 0:
                 event_index = int(
                     torch.randint(
@@ -779,6 +851,53 @@ class DomainBalancedSampler(Sampler[int]):
             )
             order = torch.randperm(self.batch_size, generator=generator).tolist()
             yield from (batch[index] for index in order)
+
+    def _mixture_batch(self, generator: torch.Generator) -> list[int]:
+        fractions = self.mixture_fractions
+        if fractions is None:
+            raise AssertionError("mixture batch requested without fractions")
+        pair_probability = min(
+            1.0,
+            fractions["transition_window"] * self.batch_size / 2.0,
+        )
+        paired = bool(torch.rand((), generator=generator).item() < pair_probability)
+        if paired:
+            event_index = int(
+                torch.randint(
+                    len(self.transition_events), (1,), generator=generator
+                ).item()
+            )
+            before, after = self.transition_events[event_index]
+            batch = [self._draw(before, generator), self._draw(after, generator)]
+        else:
+            batch = []
+        non_transition_total = (
+            fractions["original_success"] + fractions["on_policy_correction"]
+        )
+        while len(batch) < self.batch_size:
+            category = (
+                "on_policy_correction"
+                if torch.rand((), generator=generator).item()
+                < fractions["on_policy_correction"] / non_transition_total
+                else "original_success"
+            )
+            present = {self.routes[index] for index in batch}
+            if present.isdisjoint(
+                {WaypointRoute.NAV_TO_SOURCE.value, WaypointRoute.NAV_TO_TARGET.value}
+            ):
+                domain = self.navigation
+            elif present.isdisjoint(
+                {WaypointRoute.PICK.value, WaypointRoute.PLACE.value}
+            ):
+                domain = self.manipulation
+            else:
+                domain = tuple(range(len(self.routes)))
+            category_set = set(self.category_indices[category])
+            candidates = tuple(index for index in domain if index in category_set)
+            if not candidates:
+                candidates = self.category_indices[category]
+            batch.append(self._draw(candidates, generator))
+        return batch
 
     def _draw(
         self,
@@ -823,6 +942,8 @@ def _row_sample_weights(
 def _v2_row_sample_weights(
     dataset: ConveyorVLAWaypointV2Dataset,
     selected_indices: Sequence[int] | None,
+    *,
+    mixture: Mapping[str, Any] | None = None,
 ) -> tuple[float, ...]:
     """Balance routes, episodes, progress, and transition events—not frames."""
 
@@ -875,7 +996,60 @@ def _v2_row_sample_weights(
                 len(interior_bin_counts) * interior_bin_counts[progress_bin]
             )
         weights.append(weight)
-    return tuple(weights)
+    if mixture is None:
+        return tuple(weights)
+    fractions = _validated_sampling_fractions(mixture)
+    categories = _v2_sampling_categories(dataset, selected_indices)
+    totals = {
+        category: sum(
+            weight
+            for weight, current in zip(weights, categories, strict=True)
+            if current == category
+        )
+        for category in fractions
+    }
+    if any(value <= 0.0 for value in totals.values()):
+        raise M0MobileError("correction mixture is missing a required data category")
+    return tuple(
+        weight * fractions[category] / totals[category]
+        for weight, category in zip(weights, categories, strict=True)
+    )
+
+
+def _v2_sampling_categories(
+    dataset: ConveyorVLAWaypointV2Dataset,
+    selected_indices: Sequence[int] | None,
+) -> tuple[str, ...]:
+    indices = list(range(len(dataset))) if selected_indices is None else list(selected_indices)
+    corrections = getattr(dataset, "on_policy_corrections", None)
+    if not isinstance(corrections, list) or len(corrections) != len(dataset):
+        raise M0MobileError("waypoint-v2 dataset does not expose correction identities")
+    return tuple(
+        "on_policy_correction"
+        if corrections[index]
+        else "transition_window"
+        if dataset.transition_ids[index] is not None
+        else "original_success"
+        for index in indices
+    )
+
+
+def _validated_sampling_fractions(
+    value: Mapping[str, Any],
+) -> dict[str, float]:
+    expected = {
+        "original_success",
+        "transition_window",
+        "on_policy_correction",
+    }
+    if set(value) != expected:
+        raise M0MobileError("waypoint-v2 sampling mixture keys are not exact")
+    result = {key: float(value[key]) for key in expected}
+    if any(not math.isfinite(item) or item <= 0.0 for item in result.values()) or not math.isclose(
+        sum(result.values()), 1.0, rel_tol=0.0, abs_tol=1.0e-9
+    ):
+        raise M0MobileError("waypoint-v2 sampling fractions must be positive and sum to one")
+    return result
 
 
 def _episode_subset_indices(dataset: Any, limit: int) -> list[int]:
@@ -1292,6 +1466,19 @@ def _validate_v2_dataset_config(
             "tau_route_s"
         ):
             raise M0MobileError("waypoint-v2 CRL tau does not match the dataset manifest")
+    sampling = config.get("sampling")
+    if sampling is not None:
+        fractions = _validated_sampling_fractions(sampling)
+        contract = manifest.get("on_policy_correction_contract")
+        if (
+            not isinstance(contract, Mapping)
+            or contract.get("oracle_labels_are_offline_only") is not True
+            or contract.get("truth_written_to_runtime") is not False
+            or contract.get("sampling_fractions") != fractions
+        ):
+            raise M0MobileError(
+                "waypoint-v2 correction sampling does not match its immutable manifest"
+            )
 
 
 def _qwen_base_identity(model_dir: Path) -> dict[str, Any]:
@@ -1409,6 +1596,8 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         auxiliary = config.get("auxiliary")
         if not isinstance(auxiliary, Mapping):
             raise M0MobileError("waypoint-v2 auxiliary config is missing")
+        if config.get("sampling") is not None:
+            _validated_sampling_fractions(config["sampling"])
     schedule = config["loss"]["lambda_self_schedule"]
     if schedule != {
         "zero_until_progress": 0.05,

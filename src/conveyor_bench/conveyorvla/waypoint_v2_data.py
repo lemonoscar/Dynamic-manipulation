@@ -775,6 +775,7 @@ class ConveyorVLAWaypointV2Dataset:
         self.boundaries: list[str | None] = []
         self.transition_ids: list[str | None] = []
         self.boundary_signed_times: list[float | None] = []
+        self.on_policy_corrections: list[bool] = []
         self.source_episode_ids: list[str] = []
         self.phase_progress: list[float] = []
         self.suffix_reasons: list[str] = []
@@ -794,6 +795,9 @@ class ConveyorVLAWaypointV2Dataset:
                 signed_time = record.get("boundary_signed_time_s")
                 self.boundary_signed_times.append(
                     None if signed_time is None else float(signed_time)
+                )
+                self.on_policy_corrections.append(
+                    bool(record.get("on_policy_correction", False))
                 )
                 self.source_episode_ids.append(str(record["source_episode_id"]))
                 self.phase_progress.append(float(record["phase_progress"]))
