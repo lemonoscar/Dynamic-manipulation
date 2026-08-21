@@ -1,8 +1,8 @@
 # 数据、训练与测评操作
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`。正式 step 1000 checkpoint 的训练 source
-仍为 `724ead21be2c27d9b40c200375ee4ab49ccedc84`。所有命令从干净仓库根目录执行，输出必须
+`ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`。当前 step 2000 checkpoint 的训练 source
+为 `a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。所有命令从干净仓库根目录执行，输出必须
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
 
@@ -152,8 +152,8 @@ v1 event 的自动门禁。2026-08-20 正式启动使用独立的严格 JSONL �
 验证；后续若恢复自动化，应先扩展该脚本并加测试。
 
 健康启动只说明训练过程正常。fresh run 前 5% 进度 `lambda_self=0`，因此 fresh step
-1–20 不验证 self-conditioned route；resume 窗口按全局进度计算。当前 step 1001–1020
-的 `lambda_self=0.0714–0.0741`，已经真实执行 self-conditioned 分支。
+1–20 不验证 self-conditioned route；resume 窗口按全局进度计算。已记录的 step 1001–1020
+健康窗口中，`lambda_self=0.0714–0.0741`，已经真实执行 self-conditioned 分支。
 
 ## 5. Checkpoint 与开环
 
@@ -286,14 +286,28 @@ python scripts/run_waypoint_rollout.py \
 terminal-yaw。production `contract` 仍只对平移 `<0.03 m` 的纯旋转目标绕过 PCT。诊断
 profile 不能替代 contract profile 的完整自主闭环门禁。
 
+需要与固定 arm-vla reference 的原始执行行为做对照时，使用显式 profile：
+
+```bash
+python scripts/run_waypoint_rollout.py \
+  --navigation-safety-profile arm-vla-reference \
+  --max-queries 64 \
+  <其余服务与批准 reference pipeline 参数>
+```
+
+它只读取第一个 raw waypoint，使用 reference 的 0.8 m/45°首点上限、0.18 m/`pi` 到达
+容差、原始 DWA/stall detector 和 250-step chunk；stall/timeout 停车并重新 query。它不
+执行本地完整 horizon、0.10 m PCT snap、重复 DWA 速度或 3 s/1 cm stall 拒绝。协议有限值、
+ARM workspace/0.15 m/35°、cuRobo/IK collision 和关节限值仍保留。不得把
+`arm-vla-reference` 结果报告成默认 `contract` 通过。
+
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
 ready 的 Waypoint 服务，并逐项校验 capability；身份或 frame 不匹配立即 fail-closed。
 
-step 1000 的真实 cuRobo known-pose 已通过；strict 完整自主 Isaac 测试也已执行并生成
-三路视频，但首个预测 NAV chunk 因尾部 yaw segment 超限而安全失败。随后
-`executable-prefix-diagnostic` staged run 证明首点可安全执行并在 step 75 达到
-`first_waypoint_reached`；完整 horizon 仍明确记为失败。oracle-route、ARM route 和完整
-自主 episode 仍未通过。测试链或单 route staged 成功不等于完整 episode 成功。
+step 2000 的 strict、prefix、unbounded 和 `arm-vla-reference` 闭环均已生成三路视频。
+最后一种 profile 不再被额外导航门控提前结束：22 次 NAV 均重询后模型自主切到 PICK，
+但机器人没有接近物体，首个 ARM target 又违反原始 35° rate gate。完整数值和证据见
+[step 002000 原始 arm-vla 规则复测](checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)。
 
 ## 8. 正式 run 记录
 
@@ -313,20 +327,21 @@ step 1000 的真实 cuRobo known-pose 已通过；strict 完整自主 Isaac 测�
 停止证据。
 
 step 1001–1181 没有 checkpoint，不能从内存状态恢复；实际 resume 从 durable step 1000
-开始。当前 run：
+开始。恢复 run（现已停止）：
 
 | 项目 | 值 |
 |---|---|
 | source | `feature/conveyorvla-waypoint-v1@a8d57a22c515e46a9ad20be6f6892a067e02b3c3`，clean |
 | parent | 上表 run 的 `output/checkpoints/step_001000` |
 | run | `runs/conveyorvla-waypoint-v1-resume-step1000-a8d57a2-s10000-20260821T015929` |
-| tmux | `codex_cvla_wp_resume_a8d57a2_20260821` |
+| tmux | 已按用户指令停止；原 session 不再存在 |
 | contract | 4×H20、bf16 ZeRO-3、micro 3、accumulation 2、global batch 24、max step 10000 |
-| save | 每 500 effective optimizer step；下一个新 checkpoint 为 step 1500 |
+| save | 每 500 effective optimizer step；durable checkpoint 为 step 2000 |
 
 resume 实测记录了 `scheduler loaded_step=1000, repaired=false`，sampler 在 9,050 个
-micro-batch/loader pass 中跳过 2,000 个，随后从 optimizer step 1001 连续训练。当前健康
-窗口和进度以 [status.md](status.md) 为准；训练期间不要 fast-forward 远端 worktree。
+micro-batch/loader pass 中跳过 2,000 个，随后从 optimizer step 1001 连续训练。用户在
+step 2090 后要求停止，step 2000 是最后一个完整 checkpoint；当前四张 H20 空闲。后续若
+恢复训练，必须从 step 2000 严格 resume 到新 run，不能声称恢复 2001–2090 的内存状态。
 
 ## 9. ConveyorBench 采集链
 

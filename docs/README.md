@@ -1,9 +1,9 @@
 # ConveyorVLA 文档索引
 
 更新时间：2026-08-21。现行 runtime/eval 实现基线：
-`feature/conveyorvla-waypoint-v1@0deec5ec60f771826b4c5d2ff47fe731dfa7e477`；正式
-step 1000 checkpoint 的训练 source 为 `724ead21be2c27d9b40c200375ee4ab49ccedc84`，
-四卡 resume run 固定在 `a8d57a2`。
+`feature/conveyorvla-waypoint-v1@ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`；当前 durable
+checkpoint 为 `step_002000@a8d57a22c515`。四卡训练已按用户指令在 step 2090 后停止，
+当前没有训练任务占用 H20。
 
 ## 权威性顺序
 
@@ -27,7 +27,9 @@ step 1000 checkpoint 的训练 source 为 `724ead21be2c27d9b40c200375ee4ab49cced
   和 legacy canonical 数据边界。
 - [操作手册](operations.md)：数据构建、四卡训练、checkpoint/open-loop、单卡服务、
   PCT/DWA、cuRobo 和 rollout 命令。
-- [当前状态](status.md)：step 1000 严格/诊断闭环根因、四卡 resume 状态和未完成门禁。
+- [当前状态](status.md)：step 2000 原始 reference 复测、训练停止状态和未完成门禁。
+- [step 002000 原始 arm-vla 规则闭环复测](checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)：
+  额外导航门控与原始 reference 规则的边界、NAV→PICK 行为、ARM rate failure 和三路视频。
 - [step 001000 开环与真实 Isaac 闭环评测](checkpoint_step1000_evaluation_20260821.md)：
   四卡 load、动作质量、StarVLA/动力学复核、executor 修复及两组三路视频证据。
 - [Benchmark 规范](benchmark.md)：任务、场景、时钟与成功定义；不等同于模型闭环结果。

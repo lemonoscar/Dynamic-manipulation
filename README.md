@@ -8,16 +8,16 @@ ConveyorVLA AL0 是面向 Go2-X5 移动操作机器人的视觉语言 waypoint �
 
 截至 2026-08-21，Waypoint Policy v1 的 runtime/eval 基线为分支
 `feature/conveyorvla-waypoint-v1` 的提交
-`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`；父 step 1000 checkpoint 仍绑定干净提交
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`。4×H20 resume source 固定为 clean
-`a8d57a22c515e46a9ad20be6f6892a067e02b3c3`，step 1001–1020 连续健康后继续运行；新
-checkpoint 每 500 step 保存。
+`ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`。当前 durable checkpoint 为
+`step_002000@a8d57a22c515`；四卡训练已按用户指令在 step 2090 后停止，checkpoint 仍按
+每 500 effective optimizer step 保存。
 
-step 1000 的四卡 load、route/格式开环、inference service 和真实 cuRobo known-pose
-已经通过；NAV/ARM 完整 horizon 动作质量仍差，strict 自主 Isaac 测试在首个 NAV chunk
-的尾部 yaw 安全门失败。显式 staged 诊断已证明合法首点和 terminal-yaw 执行链可用，
-但不能据此声明完整闭环成功。两组三路视频均已下载。准确边界见
-[当前状态](docs/status.md)和 [step 001000 评测](docs/checkpoint_step1000_evaluation_20260821.md)。
+step 2000 的 checkpoint load、inference export、服务和真实 cuRobo known-pose 已通过。
+移除额外导航门控并改用原始 arm-vla 规则后，模型完成 22 次 NAV query 并自主切到 PICK；
+但首点都小于 reference 的 0.18 m 到达容差，机器人没有接近可乐，首个 ARM target 又超过
+原始 35° rate gate。三路视频与完整 trace 已下载。准确边界见
+[当前状态](docs/status.md)和
+[step 002000 reference 复测](docs/checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)。
 
 ## 现行合同
 
@@ -95,6 +95,7 @@ python -m pytest -p no:cacheprovider \
 - [文档索引与权威性](docs/README.md)
 - [已批准且冻结的 Waypoint Policy v1 合同](docs/conveyorvla_waypoint_policy_contract_v1.md)
 - [当前状态、证据和未通过门禁](docs/status.md)
+- [step 002000 原始 arm-vla 规则闭环复测](docs/checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)
 - [step 001000 开环与真实 Isaac 闭环评测](docs/checkpoint_step1000_evaluation_20260821.md)
 - [模型、协议与执行架构](docs/architecture.md)
 - [Waypoint 数据 schema 与质量门禁](docs/data.md)

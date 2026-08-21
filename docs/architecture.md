@@ -1,8 +1,8 @@
 # 架构说明
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`0deec5ec60f771826b4c5d2ff47fe731dfa7e477`；正式 step 1000 checkpoint 的模型实现绑定
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`。批准语义以
+`ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`；当前 step 2000 checkpoint 的模型实现绑定
+`a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。批准语义以
 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为准；本页说明
 合同在仓库中的落点。旧 `state28 + 20×10 direct action` 结构只作为历史兼容面保留。
 
@@ -143,6 +143,13 @@ PCT snap 门禁。导航时执行器可分别维持 `stow_open` 或 `carry_close
 阈值；为检验已经落在 0.12 m 执行到达容差内的首点，它可以直接使用 terminal-yaw 而不
 要求 0.2 m 栅格 snap。该行为不能用于声明 production 完整 horizon/PCT 通过。默认
 `contract` profile 对任意尾部违规继续 fail-closed。
+
+`arm-vla-reference` 是另一种显式对照 profile：它只采用 reference 首个 raw waypoint，
+保留 arm-vla 的 0.8 m/45°首点规则、执行到达容差、DWA 限幅、stall detector 和 250-step
+chunk；stall/timeout 停车后重新 query。它不叠加本地完整 horizon、PCT snap、重复 DWA
+速度或 3 s/1 cm stall 门禁。该 profile 用于回答“原始 arm-vla 规则下模型会怎样”，不
+替代冻结合同的 production `contract` 门禁。ARM 侧仍保留 reference/合同共同规定的
+workspace、0.15 m/35° rate gate，以及真实 cuRobo/IK 和关节限制。
 
 Manipulation executor：
 
