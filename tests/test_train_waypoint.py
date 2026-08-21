@@ -13,6 +13,7 @@ from torch import nn
 from scripts.train_waypoint import (
     DomainBalancedSampler,
     _balanced_subset_indices,
+    _deepspeed_zero_stage,
     _episode_subset_indices,
     _load_config,
     _optimizer,
@@ -337,6 +338,20 @@ def test_gradient_accumulation_has_one_runtime_source_of_truth():
             SimpleNamespace(gradient_accumulation_steps=lambda: 8),
             2,
         )
+
+
+def test_deepspeed_zero_stage_is_resolved_from_runtime_config():
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            deepspeed_plugin=SimpleNamespace(
+                deepspeed_config={"zero_optimization": {"stage": 2}}
+            )
+        )
+    )
+
+    assert _deepspeed_zero_stage(accelerator) == 2
+    accelerator.state.deepspeed_plugin = None
+    assert _deepspeed_zero_stage(accelerator) is None
 
 
 def test_resume_data_position_skips_exact_completed_micro_batches():

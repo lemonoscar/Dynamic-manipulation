@@ -25,6 +25,7 @@ def _resolved(repeats: int) -> dict:
         "qwen_base": {"sha256": "qwen"},
         "source_git": {"commit": "abc"},
         "world_size": 4,
+        "deepspeed_zero_stage": 2,
         "batch_size_per_process": 3,
         "gradient_accumulation_steps": 2,
         "effective_batch_size": 24,

@@ -1266,6 +1266,20 @@ def _validate_accumulation_config(
         )
 
 
+def _deepspeed_zero_stage(accelerator: Accelerator) -> int | None:
+    plugin = getattr(accelerator.state, "deepspeed_plugin", None)
+    config = getattr(plugin, "deepspeed_config", None)
+    if not isinstance(config, Mapping):
+        return None
+    zero = config.get("zero_optimization")
+    if not isinstance(zero, Mapping) or "stage" not in zero:
+        return None
+    stage = int(zero["stage"])
+    if stage not in {1, 2, 3}:
+        raise M0MobileError(f"unsupported DeepSpeed ZeRO stage: {stage}")
+    return stage
+
+
 def _validate_accumulation_runtime(
     accelerator: Accelerator,
     deepspeed_engine: Any,
@@ -1401,6 +1415,7 @@ def _resolved_run(
         "max_steps": args.max_steps,
         "warmup_steps": warmup_steps,
         "mixed_precision": accelerator.mixed_precision,
+        "deepspeed_zero_stage": _deepspeed_zero_stage(accelerator),
         "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "visible_gpu_uuids": os.environ.get("CONVEYORVLA_GPU_UUIDS"),
         "conda_environment": os.environ.get("CONVEYORVLA_CONDA_ENV"),
