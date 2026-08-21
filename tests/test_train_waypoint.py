@@ -387,6 +387,18 @@ def test_v2_optimizer_adds_only_enabled_auxiliary_parameters():
     assert [group["name"] for group in optimizer.param_groups][-1] == "manipulation_head"
 
 
+def test_overfit_fast_aux_config_changes_only_auxiliary_head_lr():
+    regular = _load_config(
+        Path("configs/waypoint_v2_overfit_all_s1_full.json")
+    )
+    fast = _load_config(
+        Path("configs/waypoint_v2_overfit_all_s1_fast_aux.json")
+    )
+    expected = copy.deepcopy(regular)
+    expected["optimization"]["auxiliary_head_learning_rate"] = 2.0e-4
+    assert expected == fast
+
+
 def test_v2_sampler_weights_events_and_episode_subset_without_state():
     routes = []
     boundaries = []
