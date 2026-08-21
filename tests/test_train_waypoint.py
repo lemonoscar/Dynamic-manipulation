@@ -1,3 +1,4 @@
+import copy
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,6 +100,39 @@ def test_v2_s1_s4_configs_change_only_independent_fm_draw_count(tmp_path: Path):
     _validate_args(_args(tmp_path), s4)
 
 
+def test_v2_b2_b3_b4_configs_add_exactly_one_rollbackable_mechanism(
+    tmp_path: Path,
+):
+    b1 = _load_config(Path("configs/waypoint_v2_b1_s1.json"))
+    b2 = _load_config(Path("configs/waypoint_v2_b2_s1.json"))
+    b3 = _load_config(Path("configs/waypoint_v2_b3_s1.json"))
+    b4 = _load_config(Path("configs/waypoint_v2_b4_s1.json"))
+
+    expected = copy.deepcopy(b1)
+    expected["auxiliary"]["enable_boundary_progress"] = True
+    expected["loss"]["lambda_boundary"] = 0.2
+    expected["loss"]["lambda_progress"] = 0.1
+    assert expected == b2
+
+    expected = copy.deepcopy(b2)
+    expected["auxiliary"]["enable_prefix"] = True
+    expected["loss"]["lambda_prefix"] = 0.2
+    assert expected == b3
+
+    expected = copy.deepcopy(b3)
+    expected["auxiliary"]["enable_crl"] = True
+    expected["auxiliary"]["tau_route_s"] = {
+        "NAV_TO_SOURCE": 6.199999999999999,
+        "PICK": 7.199999999999999,
+        "NAV_TO_TARGET": 20.2,
+        "PLACE": 6.400000000000006,
+    }
+    expected["loss"]["lambda_crl"] = 0.1
+    assert expected == b4
+    for config in (b2, b3, b4):
+        _validate_args(_args(tmp_path), config)
+
+
 def test_training_subset_is_deterministic_and_covers_routes_and_boundaries():
     routes = [
         "NAV_TO_SOURCE",
@@ -154,6 +188,60 @@ def test_domain_balanced_sampler_keeps_both_experts_in_every_batch():
             assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
             assert batch_routes.intersection({"PICK", "PLACE"})
             assert "DONE" in batch_routes
+
+
+def test_transition_sampler_emits_before_after_pairs_as_event_units():
+    routes = [
+        "NAV_TO_SOURCE",
+        "PICK",
+        "PICK",
+        "NAV_TO_TARGET",
+        "NAV_TO_TARGET",
+        "PLACE",
+        "PLACE",
+        "DONE",
+        "NAV_TO_SOURCE",
+        "PICK",
+        "DONE",
+        "NAV_TO_TARGET",
+    ]
+    transition_ids = [
+        "event-0",
+        "event-0",
+        "event-1",
+        "event-1",
+        "event-2",
+        "event-2",
+        "event-3",
+        "event-3",
+        None,
+        None,
+        None,
+        None,
+    ]
+    signed_times = [-0.2, 0.0, -0.2, 0.0, -0.2, 0.0, -0.2, 0.0] + [None] * 4
+    sampler = DomainBalancedSampler(
+        routes,
+        [1.0] * len(routes),
+        batch_size=3,
+        seed=19,
+        transition_ids=transition_ids,
+        boundary_signed_times=signed_times,
+    )
+    indices = list(sampler)
+    for batch_number, start in enumerate(range(0, len(indices), 3)):
+        batch = indices[start : start + 3]
+        batch_routes = {routes[index] for index in batch}
+        assert batch_routes.intersection({"NAV_TO_SOURCE", "NAV_TO_TARGET"})
+        assert batch_routes.intersection({"PICK", "PLACE"})
+        assert "DONE" in batch_routes
+        if batch_number % 2 == 0:
+            event_counts = {}
+            for index in batch:
+                event = transition_ids[index]
+                if event is not None:
+                    event_counts[event] = event_counts.get(event, 0) + 1
+            assert 2 in event_counts.values()
 
 
 def test_gradient_accumulation_has_one_runtime_source_of_truth():

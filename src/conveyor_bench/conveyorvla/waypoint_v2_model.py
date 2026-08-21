@@ -119,6 +119,7 @@ class WaypointV2Prediction:
     prefix_scores: tuple[float, ...] | None
     boundary_probs: Mapping[str, float] | None
     phase_progress: float | None
+    time_to_boundary_s: float | None
 
 
 class WaypointV2AuxiliaryHeads(nn.Module):
@@ -132,7 +133,13 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         self.boundary_head = nn.Sequential(
             nn.Linear(cross, hidden), nn.GELU(), nn.Linear(hidden, 3)
         )
+        self.boundary_rank_head = nn.Sequential(
+            nn.Linear(cross, hidden), nn.GELU(), nn.Linear(hidden, 1)
+        )
         self.progress_head = nn.Sequential(
+            nn.Linear(cross, hidden), nn.GELU(), nn.Linear(hidden, 1)
+        )
+        self.time_to_boundary_head = nn.Sequential(
             nn.Linear(cross, hidden), nn.GELU(), nn.Linear(hidden, 1)
         )
         self.route_embedding = nn.Embedding(len(_ACTIVE_ROUTES), 32)
@@ -160,7 +167,12 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         self._set_trainable_groups()
 
     def _set_trainable_groups(self) -> None:
-        boundary_modules = (self.boundary_head, self.progress_head)
+        boundary_modules = (
+            self.boundary_head,
+            self.boundary_rank_head,
+            self.progress_head,
+            self.time_to_boundary_head,
+        )
         prefix_modules = (
             self.route_embedding,
             self.prefix_embedding,
@@ -196,6 +208,7 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         pooled: torch.Tensor,
         examples: Sequence[Mapping[str, Any]],
         *,
+        predicted_decision_probabilities: torch.Tensor | None = None,
         predicted_route_probabilities: torch.Tensor | None = None,
         fm_action_features: torch.Tensor | None = None,
     ) -> Mapping[str, torch.Tensor]:
@@ -204,10 +217,18 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         zero = pooled.sum() * 0.0
         result = {
             "boundary_loss": zero,
+            "boundary_classification_loss": zero,
+            "boundary_rank_loss": zero,
+            "boundary_pairwise_loss": zero,
+            "route_crossover_loss": zero,
+            "time_to_boundary_loss": zero,
             "progress_loss": zero,
             "prefix_loss": zero,
             "crl_loss": zero,
             "boundary_accuracy": zero.detach(),
+            "boundary_pairwise_accuracy": zero.detach(),
+            "route_crossover_accuracy": zero.detach(),
+            "time_to_boundary_mae_s": zero.detach(),
             "progress_mae": zero.detach(),
             "prefix_mae_k": zero.detach(),
             "prefix_overrun_rate": zero.detach(),
@@ -219,14 +240,101 @@ class WaypointV2AuxiliaryHeads(nn.Module):
                 device=pooled.device,
             )
             boundary_logits = self.boundary_head(pooled)
+            signed_targets = _jittered_boundary_signed_times(examples)
+            soft_boundary_targets = _soft_boundary_targets(
+                examples, signed_targets, pooled
+            )
+            classification_loss = -(
+                soft_boundary_targets
+                * F.log_softmax(boundary_logits.float(), dim=-1)
+            ).sum(dim=-1).mean()
+            transition_indices = [
+                index
+                for index, example in enumerate(examples)
+                if bool(example["transition_window"])
+                and example.get("boundary_signed_time_s") is not None
+            ]
+            boundary_rank = torch.tanh(
+                self.boundary_rank_head(pooled).squeeze(-1)
+            )
+            if transition_indices:
+                transition_tensor = torch.tensor(
+                    transition_indices, device=pooled.device
+                )
+                rank_targets = torch.tensor(
+                    [
+                        max(
+                            -1.0,
+                            min(
+                                1.0,
+                                float(signed_targets[index]),
+                            ),
+                        )
+                        for index in transition_indices
+                    ],
+                    device=pooled.device,
+                    dtype=pooled.dtype,
+                )
+                rank_loss = F.smooth_l1_loss(
+                    boundary_rank.index_select(0, transition_tensor).float(),
+                    rank_targets.float(),
+                )
+            else:
+                rank_loss = zero
+            pairwise_loss, pairwise_accuracy = _boundary_pairwise_loss(
+                boundary_rank, examples, pooled
+            )
+            crossover_loss, crossover_accuracy = self._route_crossover_loss(
+                examples,
+                pooled,
+                predicted_decision_probabilities,
+                predicted_route_probabilities,
+                signed_targets,
+            )
+            predicted_time = F.softplus(
+                self.time_to_boundary_head(pooled).squeeze(-1)
+            )
+            valid_time_indices = [
+                index
+                for index, example in enumerate(examples)
+                if bool(example["time_to_boundary_valid"])
+            ]
+            if valid_time_indices:
+                time_tensor = torch.tensor(valid_time_indices, device=pooled.device)
+                time_targets = torch.tensor(
+                    [
+                        float(examples[index]["time_to_boundary_s"])
+                        for index in valid_time_indices
+                    ],
+                    device=pooled.device,
+                    dtype=pooled.dtype,
+                )
+                selected_time = predicted_time.index_select(0, time_tensor)
+                time_loss = F.smooth_l1_loss(
+                    torch.log1p(selected_time.float()),
+                    torch.log1p(time_targets.float()),
+                )
+                time_mae = (selected_time - time_targets).abs().mean()
+            else:
+                time_loss = zero
+                time_mae = zero.detach()
             progress_targets = torch.tensor(
                 [float(example["phase_progress"]) for example in examples],
                 device=pooled.device,
                 dtype=pooled.dtype,
             )
             progress = torch.sigmoid(self.progress_head(pooled).squeeze(-1))
-            result["boundary_loss"] = F.cross_entropy(
-                boundary_logits.float(), boundary_targets
+            result["boundary_classification_loss"] = classification_loss
+            result["boundary_rank_loss"] = rank_loss
+            result["boundary_pairwise_loss"] = pairwise_loss
+            result["route_crossover_loss"] = crossover_loss
+            result["time_to_boundary_loss"] = time_loss
+            result["boundary_loss"] = (
+                classification_loss
+                + 0.25 * rank_loss
+                + 0.25 * pairwise_loss
+                + 0.5 * crossover_loss
+                + 0.25 * time_loss
             )
             result["progress_loss"] = F.smooth_l1_loss(
                 progress.float(), progress_targets.float()
@@ -234,6 +342,9 @@ class WaypointV2AuxiliaryHeads(nn.Module):
             result["boundary_accuracy"] = (
                 boundary_logits.argmax(dim=-1) == boundary_targets
             ).float().mean()
+            result["boundary_pairwise_accuracy"] = pairwise_accuracy
+            result["route_crossover_accuracy"] = crossover_accuracy
+            result["time_to_boundary_mae_s"] = time_mae
             result["progress_mae"] = (progress - progress_targets).abs().mean()
 
         active = [
@@ -317,6 +428,53 @@ class WaypointV2AuxiliaryHeads(nn.Module):
             )
             result["crl_goal_margin"] = (positive_mean - finite_negative).mean()
         return result
+
+    def _route_crossover_loss(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        reference: torch.Tensor,
+        decision_probabilities: torch.Tensor | None,
+        route_probabilities: torch.Tensor | None,
+        signed_targets: Sequence[float | None],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        zero = reference.sum() * 0.0
+        expected_shape = (len(examples), len(_ACTIVE_ROUTES))
+        if (
+            decision_probabilities is None
+            or decision_probabilities.shape != (len(examples), 2)
+            or route_probabilities is None
+            or route_probabilities.shape != expected_shape
+        ):
+            raise ValueError(
+                "waypoint-v2 boundary needs predicted decision and route probabilities"
+            )
+        predicted = []
+        targets = []
+        for index, example in enumerate(examples):
+            transition = example.get("boundary_transition")
+            signed = signed_targets[index]
+            if transition is None or signed is None:
+                continue
+            old_route, new_route = str(transition).split("->", maxsplit=1)
+            if new_route == WaypointRoute.DONE.value:
+                new_probability = decision_probabilities[index, 1]
+            else:
+                old_index = _ROUTE_INDEX[old_route]
+                new_index = _ROUTE_INDEX[new_route]
+                old_probability = route_probabilities[index, old_index]
+                new_probability = route_probabilities[index, new_index]
+                new_probability = new_probability / (
+                    old_probability + new_probability
+                ).clamp_min(1.0e-6)
+            predicted.append(new_probability)
+            targets.append(torch.sigmoid(reference.new_tensor(float(signed) / 0.2)))
+        if not predicted:
+            return zero, zero.detach()
+        prediction = torch.stack(predicted).float().clamp(1.0e-6, 1.0 - 1.0e-6)
+        target = torch.stack(targets).float()
+        loss = F.binary_cross_entropy(prediction, target)
+        accuracy = ((prediction >= 0.5) == (target >= 0.5)).float().mean()
+        return loss, accuracy
 
     def prefix_scores(
         self,
@@ -483,6 +641,9 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
             head=self.manipulation_head,
         )
         pooled = self.auxiliary_heads.pool(layers[-1], attention_mask)
+        decision_probabilities = self._predicted_decision_probabilities(
+            examples, inputs["labels"], outputs.logits
+        ).to(pooled)
         route_probabilities = self._predicted_route_probabilities(
             examples, inputs["labels"], outputs.logits
         ).to(pooled)
@@ -494,6 +655,7 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         auxiliary = self.auxiliary_heads.losses(
             pooled,
             examples,
+            predicted_decision_probabilities=decision_probabilities,
             predicted_route_probabilities=route_probabilities,
             fm_action_features=fm_action_features,
         )
@@ -600,6 +762,38 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
             position = _label_position(
                 labels[row_index], self.router.token_ids.route_ids[route_index]
             )
+            rows.append(
+                torch.softmax(
+                    logits[row_index, position - 1]
+                    .index_select(0, candidates)
+                    .float(),
+                    dim=-1,
+                )
+            )
+        return torch.stack(rows)
+
+    def _predicted_decision_probabilities(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        labels: torch.Tensor,
+        logits: torch.Tensor,
+    ) -> torch.Tensor:
+        candidates = torch.tensor(
+            (
+                self.router.token_ids.pred_action,
+                self.router.token_ids.pred_done,
+            ),
+            device=logits.device,
+        )
+        rows = []
+        for row_index, example in enumerate(examples):
+            route = WaypointRoute(str(example["route"]))
+            target = (
+                self.router.token_ids.pred_done
+                if route is WaypointRoute.DONE
+                else self.router.token_ids.pred_action
+            )
+            position = _label_position(labels[row_index], target)
             rows.append(
                 torch.softmax(
                     logits[row_index, position - 1]
@@ -890,6 +1084,7 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         prefix_values: list[tuple[float, ...] | None] = [None] * len(examples)
         boundary_values: list[Mapping[str, float] | None] = [None] * len(examples)
         progress_values: list[float | None] = [None] * len(examples)
+        time_values: list[float | None] = [None] * len(examples)
         device = next(self.qwen.parameters()).device
         if _distributed_any(bool(active_indices), device):
             selected_indices = active_indices or [0]
@@ -944,6 +1139,9 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 progress = torch.sigmoid(
                     self.auxiliary_heads.progress_head(pooled).squeeze(-1)
                 ).float().cpu().tolist()
+                predicted_time = F.softplus(
+                    self.auxiliary_heads.time_to_boundary_head(pooled).squeeze(-1)
+                ).float().cpu().tolist()
                 for local, global_index in enumerate(selected_indices):
                     if not active_indices:
                         continue
@@ -952,6 +1150,7 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                         for name, index in _BOUNDARY_INDEX.items()
                     }
                     progress_values[global_index] = float(progress[local])
+                    time_values[global_index] = float(predicted_time[local])
             if self.auxiliary_heads.config.enable_prefix:
                 padded = []
                 route_indices = []
@@ -1011,6 +1210,7 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 prefix_scores=prefix_values[index],
                 boundary_probs=boundary_values[index],
                 phase_progress=progress_values[index],
+                time_to_boundary_s=time_values[index],
             )
             for index, decision in enumerate(decisions)
         )
@@ -1089,6 +1289,71 @@ def _prefix_target_distribution(
     uncertain = transition[:, None] & ((candidates - target).abs() <= 1)
     utility = torch.where(uncertain, torch.ones_like(utility), utility)
     return torch.softmax(utility.float() / 0.2, dim=-1).to(dtype)
+
+
+def _jittered_boundary_signed_times(
+    examples: Sequence[Mapping[str, Any]],
+) -> tuple[float | None, ...]:
+    """Apply a stable 50 ms label jitter without perturbing FM RNG streams."""
+
+    values = []
+    for example in examples:
+        signed = example.get("boundary_signed_time_s")
+        if not bool(example["transition_window"]) or signed is None:
+            values.append(None)
+            continue
+        identity = str(example.get("sample_id", example.get("transition_id", "")))
+        digest = hashlib.sha256(
+            f"waypoint-v2-boundary-jitter-v1:{identity}".encode("utf-8")
+        ).digest()
+        unit = int.from_bytes(digest[:8], "big") / float(2**64 - 1)
+        values.append(float(signed) + (unit - 0.5) * 0.1)
+    return tuple(values)
+
+
+def _soft_boundary_targets(
+    examples: Sequence[Mapping[str, Any]],
+    signed_targets: Sequence[float | None],
+    reference: torch.Tensor,
+) -> torch.Tensor:
+    if len(examples) != len(signed_targets):
+        raise ValueError("waypoint-v2 boundary targets are not aligned")
+    rows = []
+    for example, signed in zip(examples, signed_targets, strict=True):
+        if not bool(example["transition_window"]) or signed is None:
+            rows.append(reference.new_tensor((0.0, 1.0, 0.0)))
+            continue
+        after = torch.sigmoid(reference.new_tensor(float(signed) / 0.2))
+        rows.append(torch.stack((1.0 - after, after * 0.0, after)))
+    return torch.stack(rows)
+
+
+def _boundary_pairwise_loss(
+    scores: torch.Tensor,
+    examples: Sequence[Mapping[str, Any]],
+    reference: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    losses = []
+    correct = []
+    for left in range(len(examples)):
+        left_id = examples[left].get("transition_id")
+        left_time = examples[left].get("boundary_signed_time_s")
+        if left_id is None or left_time is None:
+            continue
+        for right in range(left + 1, len(examples)):
+            if examples[right].get("transition_id") != left_id:
+                continue
+            right_time = examples[right].get("boundary_signed_time_s")
+            if right_time is None or float(right_time) == float(left_time):
+                continue
+            direction = 1.0 if float(right_time) > float(left_time) else -1.0
+            difference = direction * (scores[right] - scores[left])
+            losses.append(F.relu(reference.new_tensor(0.05) - difference))
+            correct.append((difference > 0.0).to(reference.dtype))
+    if not losses:
+        zero = reference.sum() * 0.0
+        return zero, zero.detach()
+    return torch.stack(losses).mean(), torch.stack(correct).mean()
 
 
 def _multi_positive_nce(logits: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:

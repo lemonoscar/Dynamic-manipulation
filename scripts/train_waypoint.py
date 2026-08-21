@@ -154,6 +154,24 @@ def main(argv: list[str] | None = None) -> int:
             if train_indices is None
             else [dataset.boundaries[index] for index in train_indices]
         )
+        loader_transition_ids = (
+            None
+            if not is_v2
+            else (
+                dataset.transition_ids
+                if train_indices is None
+                else [dataset.transition_ids[index] for index in train_indices]
+            )
+        )
+        loader_boundary_signed_times = (
+            None
+            if not is_v2
+            else (
+                dataset.boundary_signed_times
+                if train_indices is None
+                else [dataset.boundary_signed_times[index] for index in train_indices]
+            )
+        )
         loader_weights = (
             _v2_row_sample_weights(dataset, train_indices)
             if is_v2
@@ -164,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
             loader_weights,
             batch_size=args.batch_size,
             seed=args.seed,
+            transition_ids=loader_transition_ids,
+            boundary_signed_times=loader_boundary_signed_times,
         )
         loader = DataLoader(
             loader_dataset,
@@ -640,7 +660,7 @@ def _optimizer(
 
 
 class DomainBalancedSampler(Sampler[int]):
-    """Replacement sampler with NAV and ARM in every micro-batch."""
+    """Replacement sampler with NAV/ARM coverage and event-paired batches."""
 
     def __init__(
         self,
@@ -649,6 +669,8 @@ class DomainBalancedSampler(Sampler[int]):
         *,
         batch_size: int,
         seed: int,
+        transition_ids: Sequence[str | None] | None = None,
+        boundary_signed_times: Sequence[float | None] | None = None,
     ) -> None:
         if len(routes) != len(weights) or not routes:
             raise M0MobileError("domain-balanced sampler rows and weights do not align")
@@ -682,6 +704,28 @@ class DomainBalancedSampler(Sampler[int]):
         )
         if not self.navigation or not self.manipulation or not self.done:
             raise M0MobileError("domain-balanced sampler requires NAV, ARM, and DONE rows")
+        if (transition_ids is None) != (boundary_signed_times is None):
+            raise M0MobileError(
+                "transition-aware sampler needs both event IDs and signed times"
+            )
+        if transition_ids is not None and (
+            len(transition_ids) != len(routes)
+            or len(boundary_signed_times or ()) != len(routes)
+        ):
+            raise M0MobileError("transition-aware sampler metadata is not aligned")
+        event_rows: dict[str, tuple[list[int], list[int]]] = {}
+        for index, (transition_id, signed_time) in enumerate(
+            zip(transition_ids or (), boundary_signed_times or (), strict=True)
+        ):
+            if transition_id is None or signed_time is None:
+                continue
+            before, after = event_rows.setdefault(str(transition_id), ([], []))
+            (before if float(signed_time) < 0.0 else after).append(index)
+        self.transition_events = tuple(
+            (tuple(before), tuple(after))
+            for before, after in event_rows.values()
+            if before and after
+        )
 
     def __len__(self) -> int:
         return self.num_samples
@@ -690,13 +734,42 @@ class DomainBalancedSampler(Sampler[int]):
         generator = torch.Generator().manual_seed(self.seed + self._iteration)
         self._iteration += 1
         all_indices = tuple(range(len(self.routes)))
-        for _batch in range(self.num_samples // self.batch_size):
-            batch = [
-                self._draw(self.navigation, generator),
-                self._draw(self.manipulation, generator),
-            ]
-            if self.batch_size >= 3:
-                batch.append(self._draw(self.done, generator))
+        for batch_index in range(self.num_samples // self.batch_size):
+            if self.transition_events and batch_index % 2 == 0:
+                event_index = int(
+                    torch.randint(
+                        len(self.transition_events), (1,), generator=generator
+                    ).item()
+                )
+                before, after = self.transition_events[event_index]
+                batch = [self._draw(before, generator), self._draw(after, generator)]
+            else:
+                batch = [
+                    self._draw(self.navigation, generator),
+                    self._draw(self.manipulation, generator),
+                ]
+            present = {self.routes[index] for index in batch}
+            required = (
+                (
+                    self.navigation,
+                    {
+                        WaypointRoute.NAV_TO_SOURCE.value,
+                        WaypointRoute.NAV_TO_TARGET.value,
+                    },
+                ),
+                (
+                    self.manipulation,
+                    {WaypointRoute.PICK.value, WaypointRoute.PLACE.value},
+                ),
+                (self.done, {WaypointRoute.DONE.value}),
+            )
+            for candidates, route_names in required:
+                if len(batch) >= self.batch_size:
+                    break
+                if present.isdisjoint(route_names):
+                    selected = self._draw(candidates, generator)
+                    batch.append(selected)
+                    present.add(self.routes[selected])
             batch.extend(
                 self._draw(all_indices, generator)
                 for _ in range(self.batch_size - len(batch))
@@ -933,7 +1006,16 @@ def _step_metrics(
         ):
             continue
         if key.endswith(
-            ("_loss", "_std", "_accuracy", "_mae", "_mae_k", "_rate", "_margin")
+            (
+                "_loss",
+                "_std",
+                "_accuracy",
+                "_mae",
+                "_mae_k",
+                "_mae_s",
+                "_rate",
+                "_margin",
+            )
         ):
             result[key] = common._distributed_mean(accelerator, value.detach())
     for key in (

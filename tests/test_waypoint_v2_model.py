@@ -23,7 +23,9 @@ from conveyor_bench.conveyorvla.waypoint_v2_model import (
     WaypointV2AuxiliaryConfig,
     WaypointV2AuxiliaryHeads,
     WaypointV2LossConfig,
+    _jittered_boundary_signed_times,
     _prefix_target_distribution,
+    _soft_boundary_targets,
 )
 
 
@@ -113,6 +115,13 @@ def _example(route: WaypointRoute, index: int) -> dict:
     active = route is not WaypointRoute.DONE
     width = 3 if route in {WaypointRoute.NAV_TO_SOURCE, WaypointRoute.NAV_TO_TARGET} else 7
     domain = "NAVIGATION" if width == 3 else "MANIPULATION"
+    boundary_class = ("BEFORE", "AFTER", "INTERIOR")[index % 3]
+    transition = boundary_class != "INTERIOR"
+    transition_name = (
+        "NAV_TO_SOURCE->PICK"
+        if index < 2
+        else "PLACE->DONE"
+    )
     return {
         "video": ((object(), object()), (object(), object())),
         "lang": "test task",
@@ -126,10 +135,15 @@ def _example(route: WaypointRoute, index: int) -> dict:
             else None
         ),
         "action_valid_mask": [active] * ACTION_HORIZON,
-        "boundary_class": ("BEFORE", "AFTER", "INTERIOR")[index % 3],
+        "boundary_class": boundary_class,
+        "boundary_transition": transition_name if transition else None,
+        "boundary_signed_time_s": (
+            None if not transition else -0.5 if boundary_class == "BEFORE" else 0.5
+        ),
         "phase_progress": index / 4.0,
         "prefix_target_k": 4 + index if active else 0,
-        "transition_window": index % 2 == 0,
+        "transition_id": f"episode:{transition_name}" if transition else None,
+        "transition_window": transition,
         "time_to_boundary_s": float(index + 1),
         "time_to_boundary_valid": active,
         "on_policy_correction": False,
@@ -191,7 +205,9 @@ def test_s4_uses_one_qwen_forward_and_means_four_independent_draws() -> None:
         policy.navigation_head,
         policy.manipulation_head,
         policy.auxiliary_heads.boundary_head,
+        policy.auxiliary_heads.boundary_rank_head,
         policy.auxiliary_heads.progress_head,
+        policy.auxiliary_heads.time_to_boundary_head,
         policy.auxiliary_heads.prefix_head,
         policy.auxiliary_heads.crl_state,
         policy.auxiliary_heads.crl_goal,
@@ -202,6 +218,25 @@ def test_s4_uses_one_qwen_forward_and_means_four_independent_draws() -> None:
             and parameter.grad.abs().sum() > 0
             for parameter in module.parameters()
         )
+
+
+def test_boundary_soft_labels_use_stable_small_jitter_without_hard_flip() -> None:
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+        _example(WaypointRoute.NAV_TO_TARGET, 2),
+    ]
+    first = _jittered_boundary_signed_times(examples)
+    second = _jittered_boundary_signed_times(examples)
+    assert first == second
+    assert first[0] is not None and abs(first[0] + 0.5) <= 0.05
+    assert first[1] is not None and abs(first[1] - 0.5) <= 0.05
+    assert first[2] is None
+    targets = _soft_boundary_targets(examples, first, torch.zeros(()))
+    torch.testing.assert_close(targets.sum(dim=-1), torch.ones(3))
+    assert targets[0, 0] > targets[0, 2]
+    assert targets[1, 2] > targets[1, 0]
+    torch.testing.assert_close(targets[2], torch.tensor((0.0, 1.0, 0.0)))
 
 
 def test_b1_freezes_all_auxiliary_parameters() -> None:

@@ -75,6 +75,7 @@ MODEL_BATCH_KEYS_V2 = frozenset(
         "split",
         "source_episode_id",
         "next_route",
+        "boundary_transition",
         "boundary_class",
         "boundary_signed_time_s",
         "time_to_boundary_s",
@@ -773,6 +774,7 @@ class ConveyorVLAWaypointV2Dataset:
         self.routes: list[str] = []
         self.boundaries: list[str | None] = []
         self.transition_ids: list[str | None] = []
+        self.boundary_signed_times: list[float | None] = []
         self.source_episode_ids: list[str] = []
         self.phase_progress: list[float] = []
         self.suffix_reasons: list[str] = []
@@ -789,6 +791,10 @@ class ConveyorVLAWaypointV2Dataset:
                 self.routes.append(str(record["route"]))
                 self.boundaries.append(record.get("boundary_transition"))
                 self.transition_ids.append(record.get("transition_id"))
+                signed_time = record.get("boundary_signed_time_s")
+                self.boundary_signed_times.append(
+                    None if signed_time is None else float(signed_time)
+                )
                 self.source_episode_ids.append(str(record["source_episode_id"]))
                 self.phase_progress.append(float(record["phase_progress"]))
                 self.suffix_reasons.append(str(record["suffix_reason"]))
@@ -835,6 +841,7 @@ class ConveyorVLAWaypointV2Dataset:
             "split": self.split,
             "source_episode_id": str(record["source_episode_id"]),
             "next_route": record.get("next_route"),
+            "boundary_transition": record.get("boundary_transition"),
             "boundary_class": str(record["boundary_class"]),
             "boundary_signed_time_s": record.get("boundary_signed_time_s"),
             "time_to_boundary_s": (

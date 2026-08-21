@@ -226,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
                     "prefix_scores": prediction.prefix_scores,
                     "boundary_probs": prediction.boundary_probs,
                     "predicted_phase_progress": prediction.phase_progress,
+                    "predicted_time_to_boundary_s": prediction.time_to_boundary_s,
                     "suffix_reason": example["suffix_reason"],
                     "crl": crl_row,
                 }
@@ -616,6 +617,7 @@ def _boundary_metrics(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             "boundary_f1": None,
             "boundary_auroc": None,
             "progress_mae": None,
+            "time_to_boundary_mae_s": None,
         }
     labels = [bool(row["transition_window"]) for row in scored]
     scores = [
@@ -636,11 +638,22 @@ def _boundary_metrics(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         for row in scored
         if row["predicted_phase_progress"] is not None
     ]
+    time_errors = [
+        abs(
+            float(row["predicted_time_to_boundary_s"])
+            - max(0.0, -float(row["boundary_signed_time_s"]))
+        )
+        for row in scored
+        if row["predicted_time_to_boundary_s"] is not None
+        and row["boundary_signed_time_s"] is not None
+        and float(row["boundary_signed_time_s"]) <= 0.0
+    ]
     return {
         "enabled": True,
         "boundary_f1": None if not denominator else 2 * true_positive / denominator,
         "boundary_auroc": _binary_auc(labels, scores),
         "progress_mae": _mean(progress_errors),
+        "time_to_boundary_mae_s": _mean(time_errors),
         "rows": len(scored),
     }
 
