@@ -12,8 +12,8 @@
 
 公开开发分支为 `feature/conveyorvla-waypoint-v1`，批准起点为
 `7d7617d8c4225ff6105497c2e3dcce252fb6cd92`。2026-08-20 正式训练 source 为
-`724ead21be2c27d9b40c200375ee4ab49ccedc84`；2026-08-21 runtime/eval 与严格 resume 基线
-推进到 `0deec5ec60f771826b4c5d2ff47fe731dfa7e477`，没有改写 checkpoint 的 source 身份。
+`724ead21be2c27d9b40c200375ee4ab49ccedc84`；2026-08-21 runtime/eval 基线推进到
+`cfed498eff780d390426962f309a3002173e9ed3`，没有改写 checkpoint 的 source 身份。
 
 主要历史节点：
 
@@ -38,6 +38,8 @@
 | `92ba25f` | PCT/DWA 行进后在位置容差内完成 terminal-yaw |
 | `a8d57a2` | 位置已到的首目标直接绕过 PCT 栅格 snap，保留原 snap 门禁 |
 | `0deec5e` | 把 0.03–0.12 m 近目标旁路限定为 diagnostic；production 保持合同边界 |
+| `ace7d6e` | 增加仅使用原始 arm-vla 下游规则的首点对照 profile |
+| `cfed498` | 可信前缀、2×容差、0.50 m 目标 lookahead 和 PCT 候选选点；正面 seed preflight |
 
 这些 commit 记录实现演化；最终结果仍须读取 checkpoint、数据和运行 manifest，不能只靠
 branch 名或最新 commit 猜测。

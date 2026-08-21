@@ -1,7 +1,7 @@
 # 数据、训练与测评操作
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`。当前 step 2000 checkpoint 的训练 source
+`cfed498eff780d390426962f309a3002173e9ed3`。当前 step 2000 checkpoint 的训练 source
 为 `a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。所有命令从干净仓库根目录执行，输出必须
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
@@ -327,10 +327,11 @@ ARM workspace/0.15 m/35°、cuRobo/IK collision 和关节限值仍保留。不�
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
 ready 的 Waypoint 服务，并逐项校验 capability；身份或 frame 不匹配立即 fail-closed。
 
-step 2000 的 strict、prefix、unbounded 和 `arm-vla-reference` 闭环均已生成三路视频。
-最后一种 profile 不再被额外导航门控提前结束：22 次 NAV 均重询后模型自主切到 PICK，
-但机器人没有接近物体，首个 ARM target 又违反原始 35° rate gate。完整数值和证据见
-[step 002000 原始 arm-vla 规则复测](checkpoint_step2000_arm_vla_reference_evaluation_20260821.md)。
+step 2000 的 strict、prefix、unbounded、旧首点 `arm-vla-reference` 和最新
+`lookahead-arm-vla-reference` 闭环均已生成三路视频。最新 run 完成 18 次真实 NAV 后由
+模型自主切到 PICK；物距最低 `0.3804 m`，PICK 时 `0.4931 m`，随后 ARM target 2 违反
+原始 35° rate gate。完整数值和 74.2 s 三路视频证据见
+[step 002000 lookahead 完整闭环复测](checkpoint_step2000_lookahead_evaluation_20260821.md)。
 
 ## 8. 正式 run 记录
 

@@ -1,7 +1,7 @@
 # 架构说明
 
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
-`ace7d6e9f2026b55be2f9cc55cf4a355b4dde339`；当前 step 2000 checkpoint 的模型实现绑定
+`cfed498eff780d390426962f309a3002173e9ed3`；当前 step 2000 checkpoint 的模型实现绑定
 `a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。批准语义以
 [Waypoint Policy v1 合同](conveyorvla_waypoint_policy_contract_v1.md) 为准；本页说明
 合同在仓库中的落点。旧 `state28 + 20×10 direct action` 结构只作为历史兼容面保留。
