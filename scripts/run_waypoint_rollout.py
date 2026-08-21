@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import functools
+import hashlib
 import importlib.util
 import json
 import math
@@ -317,6 +319,7 @@ class WaypointRolloutPipeline:
             failure_reason = "query_limit_exhausted"
             while self._query_count < self.max_queries:
                 request, query_state = self._next_request()
+                frame_artifacts = _persist_query_frames(self.episode_dir, request)
                 wire = self.client.infer(request)
                 response = wire.response
                 self._query_count += 1
@@ -332,6 +335,7 @@ class WaypointRolloutPipeline:
                             "image_count": 4,
                             "camera_calibration_id": request.camera_calibration_id,
                             "model_state_fields": 0,
+                            "frame_artifacts": frame_artifacts,
                         },
                         "response": response.to_mapping(),
                         "model_trace": dict(wire.trace),
@@ -1028,6 +1032,41 @@ def _state_snapshot(state: Any) -> dict[str, Any]:
         "joint_velocities": list(state.joint_velocities),
         "joint_names": list(state.metadata.get("joint_names", ())),
         "camera_keys": sorted(state.camera_images),
+    }
+
+
+def _persist_query_frames(
+    episode_dir: Path, request: Any
+) -> dict[str, Any]:
+    query_dir = (
+        episode_dir
+        / "query_frames"
+        / f"query_{int(request.sequence_id):06d}"
+    )
+    query_dir.mkdir(parents=True, exist_ok=False)
+    files = []
+    for camera, images in (
+        ("head", request.head_images),
+        ("wrist", request.wrist_images),
+    ):
+        for temporal_index, encoded in enumerate(images):
+            raw = base64.b64decode(str(encoded), validate=True)
+            name = f"{camera}_{'tminus020' if temporal_index == 0 else 't'}.jpg"
+            path = query_dir / name
+            path.write_bytes(raw)
+            files.append(
+                {
+                    "camera": camera,
+                    "temporal_index": temporal_index,
+                    "relative_path": str(path.relative_to(episode_dir)),
+                    "bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                }
+            )
+    return {
+        "schema_version": "conveyorvla-waypoint-query-frames-v1",
+        "files": files,
+        "truth_fields": 0,
     }
 
 

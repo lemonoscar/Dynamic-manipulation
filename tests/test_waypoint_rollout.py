@@ -8,6 +8,7 @@ from PIL import Image
 from scripts.run_waypoint_rollout import (
     _ExternalWaypointCuRoboLifecycle,
     _initial_source_front_sector_report,
+    _persist_query_frames,
     _simulation_curobo_safety_gate,
     build_parser,
 )
@@ -82,7 +83,7 @@ def test_temporal_buffer_requires_exact_synchronized_point_two_second_pair():
                 assert image.format == "JPEG" and image.size == (12, 8)
 
 
-def test_rollout_request_contains_only_task_and_four_images():
+def test_rollout_request_contains_only_task_and_four_images(tmp_path):
     buffer = TemporalJPEGBuffer(separation_steps=10)
     buffer.add(0, {"front": _image(1), "wrist": _image(2)})
     buffer.add(10, {"front": _image(3), "wrist": _image(4)})
@@ -109,6 +110,13 @@ def test_rollout_request_contains_only_task_and_four_images():
     assert payload["camera_calibration_id"] == CAMERA_CALIBRATION_ID
     forbidden = {"state", "phase", "operation", "history", "locked_route"}
     assert forbidden.isdisjoint(payload)
+    artifacts = _persist_query_frames(tmp_path, request)
+    assert artifacts["truth_fields"] == 0
+    assert len(artifacts["files"]) == 4
+    for row in artifacts["files"]:
+        path = tmp_path / row["relative_path"]
+        assert path.is_file() and path.stat().st_size == row["bytes"]
+        assert len(row["sha256"]) == 64
 
 
 def test_query_tcp_pose_and_planner_transform_use_live_executor_frames():
