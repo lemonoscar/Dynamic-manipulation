@@ -1081,11 +1081,24 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
             and example.get("action") is not None
         ]
         result: list[Mapping[str, float] | None] = [None] * len(examples)
-        if not active:
-            return tuple(result)
-        index_tensor = torch.tensor(active, device=pooled.device)
+        actual = bool(active)
+        selected = active if actual else [0]
+        index_tensor = torch.tensor(selected, device=pooled.device)
         active_pooled = pooled.index_select(0, index_tensor)
-        actions, valid = _padded_actions(examples, active, pooled)
+        if actual:
+            actions, valid = _padded_actions(examples, active, pooled)
+            route_indices = torch.tensor(
+                [_ROUTE_INDEX[str(examples[index]["route"])] for index in active],
+                device=pooled.device,
+            )
+        else:
+            actions = torch.zeros(
+                (1, ACTION_HORIZON, 7), device=pooled.device, dtype=pooled.dtype
+            )
+            valid = torch.ones(
+                (1, ACTION_HORIZON), device=pooled.device, dtype=torch.bool
+            )
+            route_indices = torch.zeros(1, device=pooled.device, dtype=torch.long)
         action_summary = (actions * valid[:, :, None]).sum(dim=1) / valid.sum(
             dim=1, keepdim=True
         ).clamp_min(1)
@@ -1096,24 +1109,19 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         )
         goal_embeddings = self.auxiliary_heads._goal_embeddings()
         similarities = state_action.float() @ goal_embeddings.float().T
-        route_indices = torch.tensor(
-            [_ROUTE_INDEX[str(examples[index]["route"])] for index in active],
-            device=pooled.device,
-        )
         correct = similarities.gather(1, route_indices[:, None]).squeeze(1)
         wrong = similarities.scatter(1, route_indices[:, None], -torch.inf).amax(dim=1)
-        if len(active) > 1:
-            shuffled_summary = action_summary.roll(1, dims=0)
-            shuffled_state_action = F.normalize(
-                self.auxiliary_heads.crl_state(active_pooled)
-                + self.auxiliary_heads.crl_action(shuffled_summary),
-                dim=-1,
-            )
-            shuffled_correct = (
-                shuffled_state_action.float() @ goal_embeddings.float().T
-            ).gather(1, route_indices[:, None]).squeeze(1)
-        else:
-            shuffled_correct = correct
+        shuffled_summary = action_summary.roll(1, dims=0)
+        shuffled_state_action = F.normalize(
+            self.auxiliary_heads.crl_state(active_pooled)
+            + self.auxiliary_heads.crl_action(shuffled_summary),
+            dim=-1,
+        )
+        shuffled_correct = (
+            shuffled_state_action.float() @ goal_embeddings.float().T
+        ).gather(1, route_indices[:, None]).squeeze(1)
+        if not actual:
+            return tuple(result)
         for local, global_index in enumerate(active):
             result[global_index] = {
                 "correct_goal_similarity": float(correct[local].item()),

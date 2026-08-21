@@ -365,3 +365,28 @@ def test_oracle_crl_diagnostics_are_aligned_and_finite() -> None:
             "action_shuffle_drop",
         }
         assert all(math.isfinite(value) for value in row.values())
+
+
+def test_oracle_crl_diagnostics_keep_zero3_module_order_for_done_batches() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    calls = {"state": 0, "action": 0, "goal": 0}
+    hooks = [
+        policy.auxiliary_heads.crl_state.register_forward_hook(
+            lambda *_args: calls.__setitem__("state", calls["state"] + 1)
+        ),
+        policy.auxiliary_heads.crl_action.register_forward_hook(
+            lambda *_args: calls.__setitem__("action", calls["action"] + 1)
+        ),
+        policy.auxiliary_heads.crl_goal.register_forward_hook(
+            lambda *_args: calls.__setitem__("goal", calls["goal"] + 1)
+        ),
+    ]
+    try:
+        diagnostics = policy.oracle_crl_diagnostics(
+            [_example(WaypointRoute.DONE, 0), _example(WaypointRoute.DONE, 1)]
+        )
+    finally:
+        for hook in hooks:
+            hook.remove()
+    assert diagnostics == (None, None)
+    assert calls == {"state": 2, "action": 2, "goal": 1}
