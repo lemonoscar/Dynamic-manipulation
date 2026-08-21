@@ -285,11 +285,49 @@ def _validate_binding(
             raise M0MobileError(f"Qwen base hash changed: {name}")
     world_size = int(resolved["world_size"])
     model_dir = checkpoint / "pytorch_model"
-    if len(tuple(model_dir.glob("zero_pp_rank_*_model_states.pt"))) != world_size:
-        raise M0MobileError("checkpoint model shard count is incomplete")
-    if len(tuple(model_dir.glob("bf16_zero_pp_rank_*_optim_states.pt"))) != world_size:
-        raise M0MobileError("checkpoint optimizer shard count is incomplete")
+    _validate_checkpoint_shards(
+        model_dir,
+        world_size=world_size,
+        zero_stage=resolved.get("deepspeed_zero_stage"),
+    )
     return manifest, resolved, dataset_root
+
+
+def _validate_checkpoint_shards(
+    model_dir: Path,
+    *,
+    world_size: int,
+    zero_stage: Any,
+) -> None:
+    if world_size <= 0:
+        raise M0MobileError("checkpoint world size is invalid")
+    replicated = tuple(model_dir.glob("mp_rank_*_model_states.pt"))
+    partitioned = tuple(model_dir.glob("zero_pp_rank_*_model_states.pt"))
+    optimizer = tuple(model_dir.glob("bf16_zero_pp_rank_*_optim_states.pt"))
+    if zero_stage is None:
+        if len(replicated) == 1 and not partitioned:
+            stage = 2
+        elif len(partitioned) == world_size and not replicated:
+            stage = 3
+        else:
+            raise M0MobileError(
+                "checkpoint ZeRO stage is missing and shard layout is ambiguous"
+            )
+    else:
+        try:
+            stage = int(zero_stage)
+        except (TypeError, ValueError) as error:
+            raise M0MobileError("checkpoint ZeRO stage is invalid") from error
+    if stage == 2:
+        if len(replicated) != 1 or partitioned:
+            raise M0MobileError("checkpoint ZeRO-2 model shard count is incomplete")
+    elif stage == 3:
+        if len(partitioned) != world_size or replicated:
+            raise M0MobileError("checkpoint ZeRO-3 model shard count is incomplete")
+    else:
+        raise M0MobileError(f"unsupported checkpoint ZeRO stage: {stage}")
+    if len(optimizer) != world_size:
+        raise M0MobileError("checkpoint optimizer shard count is incomplete")
 
 
 def _nonfinite_parameter_partitions(model: torch.nn.Module) -> tuple[int, int]:
