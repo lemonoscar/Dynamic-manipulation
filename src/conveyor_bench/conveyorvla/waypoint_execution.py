@@ -268,6 +268,11 @@ class PCTDWARecedingHorizonExecutor:
             current = _world_pose(current_base_world)
             waypoints, mask = _fixed_navigation_chunk(response)
             if self.config.safety_profile in _RANKED_LOOKAHEAD_PROFILES:
+                trusted_horizon_points = (
+                    response.trusted_prefix_k
+                    if response.trusted_prefix_k is not None
+                    else self.config.trusted_horizon_points
+                )
                 minimum_lookahead_m = (
                     self.config.minimum_lookahead_tolerance_factor
                     * self.config.goal_tolerance_m
@@ -275,7 +280,7 @@ class PCTDWARecedingHorizonExecutor:
                 candidates = rank_navigation_waypoints(
                     waypoints,
                     mask,
-                    trusted_horizon_points=self.config.trusted_horizon_points,
+                    trusted_horizon_points=trusted_horizon_points,
                     minimum_lookahead_m=minimum_lookahead_m,
                     target_lookahead_m=self.config.target_lookahead_m,
                     safety=self.config.waypoint_safety,
@@ -442,10 +447,15 @@ class PCTDWARecedingHorizonExecutor:
             "full_horizon_violation": full_horizon_violation,
             "selection_policy": selection_policy,
             "trusted_horizon_points": (
-                self.config.trusted_horizon_points
+                (
+                    response.trusted_prefix_k
+                    if response.trusted_prefix_k is not None
+                    else self.config.trusted_horizon_points
+                )
                 if self.config.safety_profile in _RANKED_LOOKAHEAD_PROFILES
                 else None
             ),
+            "model_trusted_prefix_k": response.trusted_prefix_k,
             "minimum_lookahead_m": minimum_lookahead_m,
             "target_lookahead_m": (
                 self.config.target_lookahead_m
@@ -620,6 +630,7 @@ class PCTDWARecedingHorizonExecutor:
             "full_horizon_violation": active["full_horizon_violation"],
             "selection_policy": active["selection_policy"],
             "trusted_horizon_points": active["trusted_horizon_points"],
+            "model_trusted_prefix_k": active["model_trusted_prefix_k"],
             "minimum_lookahead_m": active["minimum_lookahead_m"],
             "target_lookahead_m": active["target_lookahead_m"],
             "ranked_waypoint_indices": active["ranked_indices"],
@@ -713,6 +724,7 @@ class CuRoboIKRecedingHorizonExecutor:
             "request_id": response.request_id,
             "sequence_id": response.sequence_id,
             "route": response.route,
+            "model_trusted_prefix_k": response.trusted_prefix_k,
             "selected_target_index": 0,
             "target_tcp_base": target,
             "plan": plan,
@@ -777,6 +789,7 @@ class CuRoboIKRecedingHorizonExecutor:
             "request_id": active["request_id"],
             "sequence_id": active["sequence_id"],
             "route": active["route"],
+            "model_trusted_prefix_k": active["model_trusted_prefix_k"],
             "base_hold": [0.0, 0.0, 0.0],
             "selected_target_index": active["selected_target_index"],
             "target_tcp_base": list(active["target_tcp_base"]),

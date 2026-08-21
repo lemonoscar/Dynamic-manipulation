@@ -124,6 +124,7 @@ class WaypointResponse:
     action_valid_mask: tuple[bool, ...]
     checkpoint_id: str
     normalization_sha256: str
+    trusted_prefix_k: int | None = None
     label_frame_id: str = LABEL_FRAME_ID
     action_units: tuple[str, ...] = ()
     timing: Mapping[str, float] = field(default_factory=dict)
@@ -162,6 +163,7 @@ class WaypointResponse:
             "action_valid_mask": list(self.action_valid_mask),
             "checkpoint_id": self.checkpoint_id,
             "normalization_sha256": self.normalization_sha256,
+            "trusted_prefix_k": self.trusted_prefix_k,
             "label_frame_id": self.label_frame_id,
             "action_units": list(self.action_units),
             "timing": dict(self.timing),
@@ -194,6 +196,11 @@ class WaypointResponse:
             action_valid_mask=tuple(bool(item) for item in value.get("action_valid_mask", ())),
             checkpoint_id=str(value.get("checkpoint_id", "")),
             normalization_sha256=str(value.get("normalization_sha256", "")),
+            trusted_prefix_k=(
+                None
+                if value.get("trusted_prefix_k") is None
+                else value.get("trusted_prefix_k")
+            ),
             label_frame_id=str(value.get("label_frame_id", "")),
             action_units=tuple(str(item) for item in value.get("action_units", ())),
             timing=_timing(value.get("timing")),
@@ -230,6 +237,7 @@ def _validate_response(value: WaypointResponse) -> None:
             or value.arm_targets_base is not None
             or value.action_valid_mask
             or value.action_units
+            or value.trusted_prefix_k is not None
         ):
             raise WaypointProtocolError("terminal waypoint response must contain no action")
         if value.route == RECOVER_ROUTE and not value.recover_reason:
@@ -251,6 +259,16 @@ def _validate_response(value: WaypointResponse) -> None:
         raise WaypointProtocolError("active waypoint mask must contain a valid prefix")
     if any(not left and right for left, right in zip(value.action_valid_mask, value.action_valid_mask[1:])):
         raise WaypointProtocolError("waypoint action mask must be a true prefix")
+    if value.trusted_prefix_k is not None:
+        if (
+            isinstance(value.trusted_prefix_k, bool)
+            or not isinstance(value.trusted_prefix_k, int)
+            or not 1 <= value.trusted_prefix_k <= ACTION_HORIZON
+            or sum(value.action_valid_mask) != value.trusted_prefix_k
+        ):
+            raise WaypointProtocolError(
+                "trusted prefix must equal the active model-predicted mask"
+            )
     if domain is WaypointActionDomain.NAVIGATION:
         if value.nav_waypoints_body is None or value.arm_targets_base is not None:
             raise WaypointProtocolError("NAV response must contain only body waypoints")

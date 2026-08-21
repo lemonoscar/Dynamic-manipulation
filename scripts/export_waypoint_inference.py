@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consolidate a bound Waypoint v1 ZeRO checkpoint for single-GPU inference."""
+"""Consolidate a bound Waypoint v1/v2 ZeRO checkpoint for CUDA inference."""
 
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ from scripts import check_waypoint_checkpoint as checkpoint_gate  # noqa: E402
 from scripts import train_waypoint as training  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
+from conveyor_bench.conveyorvla.waypoint_v2 import MODEL_CONTRACT_ID_V2  # noqa: E402
 
 
 EXPORT_SCHEMA = "conveyorvla-waypoint-inference-export-v1"
+EXPORT_SCHEMA_V2 = "conveyorvla-waypoint-inference-export-v2"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +85,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     shutil.copytree(processor_source, output / "processor")
     export = {
-        "schema_version": EXPORT_SCHEMA,
+        "schema_version": (
+            EXPORT_SCHEMA_V2
+            if manifest["model_contract_id"] == MODEL_CONTRACT_ID_V2
+            else EXPORT_SCHEMA
+        ),
         "status": "complete",
         "source_checkpoint": str(checkpoint),
         "global_step": int(manifest["global_step"]),
@@ -94,6 +100,10 @@ def main(argv: list[str] | None = None) -> int:
         "normalization_sha256": manifest["normalization_sha256"],
         "camera_contract": manifest["camera_contract"],
         "dataset_action_contract": manifest["dataset_action_contract"],
+        "dataset_transition_contract": manifest.get("dataset_transition_contract"),
+        "dataset_crl_contract": manifest.get("dataset_crl_contract"),
+        "auxiliary_contract": manifest.get("auxiliary_contract"),
+        "loss_contract": manifest.get("loss_contract"),
         "qwen_base": manifest["qwen_base"],
         "model_root": resolved["model_root"],
         "attention_implementation": checkpoint_gate._mapping(

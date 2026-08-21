@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a consolidated state-free Waypoint v1 policy on localhost."""
+"""Serve a consolidated state-free Waypoint v1/v2 policy on localhost."""
 
 from __future__ import annotations
 
@@ -33,6 +33,10 @@ from conveyor_bench.conveyorvla.waypoint_protocol import (  # noqa: E402
 )
 from conveyor_bench.conveyorvla.waypoint_runtime import (  # noqa: E402
     WaypointInferenceSession,
+)
+from conveyor_bench.conveyorvla.waypoint_v2 import MODEL_CONTRACT_ID_V2  # noqa: E402
+from conveyor_bench.conveyorvla.waypoint_v2_data import (  # noqa: E402
+    WaypointV2Normalizer,
 )
 
 
@@ -194,7 +198,14 @@ def load_service(args: argparse.Namespace) -> tuple[WaypointPolicyService, dict[
     policy.requires_grad_(False)
     policy.eval()
     policy.to(device)
-    normalizer = WaypointNormalizer.from_path(root / "normalization.json")
+    is_v2 = manifest["model_contract_id"] == MODEL_CONTRACT_ID_V2
+    if training._is_v2_config(config) != is_v2:
+        raise M0MobileError("inference export config/model contract mismatch")
+    normalizer = (
+        WaypointV2Normalizer.from_path(root / "normalization.json")
+        if is_v2
+        else WaypointNormalizer.from_path(root / "normalization.json")
+    )
     camera = _mapping(manifest["camera_contract"], "camera contract")
     checkpoint_id = (
         f"step_{int(manifest['global_step']):06d}@"
@@ -214,6 +225,7 @@ def load_service(args: argparse.Namespace) -> tuple[WaypointPolicyService, dict[
         "device": str(device),
         "normalization_sha256": manifest["normalization_sha256"],
         "source_git": manifest["source_git"],
+        "trusted_prefix_runtime": is_v2,
     }
     return WaypointPolicyService(session, torch, report, args.seed), report
 
@@ -262,9 +274,14 @@ def _decode_jpeg(value: Any) -> Any:
 
 def _validate_export(root: Path) -> dict[str, Any]:
     manifest = _read_json(root / "inference_manifest.json")
-    if manifest.get("schema_version") != exporter.EXPORT_SCHEMA or manifest.get("status") != "complete":
+    contract = manifest.get("model_contract_id")
+    expected_schema = {
+        MODEL_CONTRACT_ID: exporter.EXPORT_SCHEMA,
+        MODEL_CONTRACT_ID_V2: exporter.EXPORT_SCHEMA_V2,
+    }.get(contract)
+    if manifest.get("schema_version") != expected_schema or manifest.get("status") != "complete":
         raise M0MobileError("waypoint inference export is incomplete or incompatible")
-    if manifest.get("model_contract_id") != MODEL_CONTRACT_ID:
+    if contract not in {MODEL_CONTRACT_ID, MODEL_CONTRACT_ID_V2}:
         raise M0MobileError("waypoint inference model contract is incompatible")
     if training.common._sha256(root / "policy_config.json") != manifest["policy_config_sha256"]:
         raise M0MobileError("waypoint inference policy config binding is corrupt")

@@ -55,7 +55,7 @@ def _request(sequence=1):
     }
 
 
-def _response(route, rows, *, sequence=1):
+def _response(route, rows, *, sequence=1, trusted_prefix_k=None):
     nav = route in {WaypointRoute.NAV_TO_SOURCE, WaypointRoute.NAV_TO_TARGET}
     return WaypointResponse(
         request_id=f"request-{sequence}",
@@ -69,9 +69,13 @@ def _response(route, rows, *, sequence=1):
         route_probs=ROUTE_PROBS,
         nav_waypoints_body=tuple(rows) if nav else None,
         arm_targets_base=tuple(rows) if not nav else None,
-        action_valid_mask=(True,) * len(rows),
+        action_valid_mask=tuple(
+            index < (len(rows) if trusted_prefix_k is None else trusted_prefix_k)
+            for index in range(len(rows))
+        ),
         checkpoint_id="step-20",
         normalization_sha256="a" * 64,
+        trusted_prefix_k=trusted_prefix_k,
         action_units=(
             ("m", "m", "rad")
             if nav
@@ -120,6 +124,16 @@ class _Policy:
         return (self.prediction,)
 
 
+class _V2Policy:
+    def __init__(self, prediction):
+        self.prediction = prediction
+        self.examples = []
+
+    def predict_v2(self, examples):
+        self.examples.extend(examples)
+        return (self.prediction,)
+
+
 class _Normalizer:
     def denormalize(self, _route, action):
         return action
@@ -153,6 +167,58 @@ def test_inference_session_uses_only_images_task_and_rejects_replay():
     assert replay.response.route == RECOVER_ROUTE
     assert replay.response.recover_reason == "stale_or_replayed_sequence"
     assert len(policy.examples) == 1
+
+
+def test_v2_inference_exposes_only_model_trusted_prefix_to_execution():
+    decision = ConstrainedRouteDecision(
+        route=WaypointRoute.NAV_TO_SOURCE,
+        assistant_prefix="prefix",
+        subtask_text="move now",
+        route_confidence=0.63,
+        decision_probs=DECISION_PROBS,
+        route_probs=ROUTE_PROBS,
+        valid=True,
+    )
+    action = tuple((0.2, 0.0, 0.0) for _ in range(ACTION_HORIZON))
+    prediction = SimpleNamespace(
+        decision=decision,
+        normalized_action=action,
+        trusted_prefix_k=4,
+        prefix_scores=tuple(float(index) for index in range(ACTION_HORIZON)),
+        boundary_probs={"BEFORE": 0.8, "INTERIOR": 0.1, "AFTER": 0.1},
+        phase_progress=0.9,
+        time_to_boundary_s=0.3,
+    )
+    policy = _V2Policy(prediction)
+    session = WaypointInferenceSession(
+        policy,
+        _Normalizer(),
+        checkpoint_id="step-20-v2",
+        normalization_sha256="b" * 64,
+        camera_calibration_id=CAMERA_CALIBRATION_ID,
+    )
+    result = session.infer(_request())
+    assert result.response.trusted_prefix_k == 4
+    assert result.response.action_valid_mask == (True,) * 4 + (False,) * 16
+    assert len(result.response.nav_waypoints_body) == ACTION_HORIZON
+    assert result.trace.prefix_scores == prediction.prefix_scores
+    assert result.trace.boundary_probs == prediction.boundary_probs
+    assert set(policy.examples[0]) == {"video", "lang"}
+
+
+def test_navigation_uses_dynamic_v2_prefix_instead_of_v1_fixed_ten():
+    pct, dwa = _PCT(), _DWA()
+    executor = PCTDWARecedingHorizonExecutor(pct, dwa)
+    response = _response(
+        WaypointRoute.NAV_TO_SOURCE,
+        [(0.05 * (index + 1), 0.0, 0.0) for index in range(ACTION_HORIZON)],
+        trusted_prefix_k=4,
+    )
+    planned = executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0)
+    assert not planned.failed
+    assert planned.trace["trusted_horizon_points"] == 4
+    assert planned.trace["model_trusted_prefix_k"] == 4
+    assert planned.trace["selected_waypoint_index"] < 4
 
 
 class _PCT:

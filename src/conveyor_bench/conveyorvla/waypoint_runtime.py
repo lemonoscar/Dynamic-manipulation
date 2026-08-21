@@ -36,6 +36,11 @@ class WaypointInferenceTrace:
     normalization_clip_rate: float
     recover_reason: str | None
     model_elapsed_ms: float
+    trusted_prefix_k: int | None = None
+    prefix_scores: tuple[float, ...] | None = None
+    boundary_probs: Mapping[str, float] | None = None
+    predicted_phase_progress: float | None = None
+    predicted_time_to_boundary_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -75,14 +80,18 @@ class WaypointInferenceSession:
         self._last_sequence_by_episode[request.episode_id] = request.sequence_id
         started = time.perf_counter()
         try:
-            prediction = self.policy.predict(
-                [
-                    {
-                        "video": (request.head_images, request.wrist_images),
-                        "lang": waypoint_prompt(request.instruction),
-                    }
-                ]
-            )[0]
+            examples = [
+                {
+                    "video": (request.head_images, request.wrist_images),
+                    "lang": waypoint_prompt(request.instruction),
+                }
+            ]
+            predict_v2 = getattr(self.policy, "predict_v2", None)
+            prediction = (
+                predict_v2(examples)[0]
+                if callable(predict_v2)
+                else self.policy.predict(examples)[0]
+            )
         except Exception as error:
             elapsed = (time.perf_counter() - started) * 1000.0
             return self._recover(request, f"model_inference_failed:{type(error).__name__}", elapsed)
@@ -140,7 +149,17 @@ class WaypointInferenceSession:
                 request, f"action_denormalization_failed:{type(error).__name__}", elapsed
             )
         domain = action_domain(decision.route)
-        mask = (True,) * ACTION_HORIZON
+        trusted_prefix = getattr(prediction, "trusted_prefix_k", None)
+        if trusted_prefix is not None and (
+            isinstance(trusted_prefix, bool)
+            or not isinstance(trusted_prefix, int)
+            or not 1 <= trusted_prefix <= ACTION_HORIZON
+        ):
+            return self._recover(request, "invalid_model_trusted_prefix", elapsed)
+        mask = tuple(
+            index < (ACTION_HORIZON if trusted_prefix is None else trusted_prefix)
+            for index in range(ACTION_HORIZON)
+        )
         clip_rate = _normalization_clip_rate(normalized, domain)
         response = WaypointResponse(
             request_id=request.request_id,
@@ -161,6 +180,7 @@ class WaypointInferenceSession:
             action_valid_mask=mask,
             checkpoint_id=self.checkpoint_id,
             normalization_sha256=self.normalization_sha256,
+            trusted_prefix_k=trusted_prefix,
             action_units=(
                 ("m", "m", "rad")
                 if domain is WaypointActionDomain.NAVIGATION
@@ -181,6 +201,13 @@ class WaypointInferenceSession:
                 normalization_clip_rate=clip_rate,
                 recover_reason=None,
                 model_elapsed_ms=elapsed,
+                trusted_prefix_k=trusted_prefix,
+                prefix_scores=getattr(prediction, "prefix_scores", None),
+                boundary_probs=getattr(prediction, "boundary_probs", None),
+                predicted_phase_progress=getattr(prediction, "phase_progress", None),
+                predicted_time_to_boundary_s=getattr(
+                    prediction, "time_to_boundary_s", None
+                ),
             ),
         )
 
