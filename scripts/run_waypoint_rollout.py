@@ -52,6 +52,7 @@ from conveyor_bench.conveyorvla.waypoint_protocol import (  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint_rollout import (  # noqa: E402
     TemporalJPEGBuffer,
     WaypointHTTPClient,
+    _encode_jpeg,
     measured_arm_joints,
     measured_body_velocity,
     planner_base_from_query_base,
@@ -105,6 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=30.0,
         help="maximum absolute settled source bearing for the visibility preflight",
+    )
+    parser.add_argument(
+        "--seed-preflight-only",
+        action="store_true",
+        help=(
+            "settle the scene and preserve initial head-view evidence without "
+            "querying the model or executing an action"
+        ),
     )
     return parser
 
@@ -189,6 +198,7 @@ class WaypointRolloutPipeline:
         navigation_max_chunk_steps: int,
         require_initial_source_visible: bool,
         initial_source_max_bearing_deg: float,
+        seed_preflight_only: bool,
         close_simulation_on_exit: bool,
     ) -> None:
         from source.interfaces import NavGoal, RobotAction, SimulationState
@@ -207,7 +217,9 @@ class WaypointRolloutPipeline:
         self.required_first_route = required_first_route
         self.require_initial_source_visible = bool(require_initial_source_visible)
         self.initial_source_max_bearing_deg = float(initial_source_max_bearing_deg)
+        self.seed_preflight_only = bool(seed_preflight_only)
         self.close_simulation_on_exit = bool(close_simulation_on_exit)
+        self.jpeg_quality = int(jpeg_quality)
         self.RobotAction = RobotAction
         self.SimulationState = SimulationState
 
@@ -316,8 +328,19 @@ class WaypointRolloutPipeline:
         try:
             self._start_video()
             self._prepare_episode()
-            failure_reason = "query_limit_exhausted"
-            while self._query_count < self.max_queries:
+            failure_reason = "" if self.seed_preflight_only else "query_limit_exhausted"
+            if self.seed_preflight_only:
+                success = True
+                self._record(
+                    "seed_preflight_complete",
+                    {
+                        "episode_seed": self.episode_seed,
+                        "model_queried": False,
+                        "action_executed_after_settle": False,
+                    },
+                )
+            query_limit = 0 if self.seed_preflight_only else self.max_queries
+            while self._query_count < query_limit:
                 request, query_state = self._next_request()
                 frame_artifacts = _persist_query_frames(self.episode_dir, request)
                 wire = self.client.infer(request)
@@ -413,14 +436,20 @@ class WaypointRolloutPipeline:
             summary = {
                 "schema_version": "conveyorvla-waypoint-rollout-summary-v2",
                 "execution_mode": (
-                    "waypoint_staged" if self.stop_after_route else "waypoint_autonomous"
+                    "waypoint_seed_preflight"
+                    if self.seed_preflight_only
+                    else "waypoint_staged"
+                    if self.stop_after_route
+                    else "waypoint_autonomous"
                 ),
                 "success": success,
                 "pure_physics_success": pure_physics_success,
+                "task_success_evaluated": not self.seed_preflight_only,
                 "failure_reason": failure_reason,
                 "final_state": "DONE" if success else "FAILED",
                 "state_trace": self._state_trace,
                 "query_count": self._query_count,
+                "episode_seed": self.episode_seed,
                 "control_steps": self._control_steps,
                 "duration_s": time.time() - started,
                 "trace_path": str(trace_path),
@@ -562,6 +591,11 @@ class WaypointRolloutPipeline:
             max_bearing_deg=self.initial_source_max_bearing_deg,
         )
         report["required"] = self.require_initial_source_visible
+        report["head_view_evidence"] = _persist_initial_head_view(
+            self.episode_dir,
+            state.camera_images["front"],
+            quality=self.jpeg_quality,
+        )
         self._initial_source_visibility = report
         self._record("initial_source_visibility_preflight", report)
         if self.require_initial_source_visible and not report["passed"]:
@@ -1070,6 +1104,24 @@ def _persist_query_frames(
     }
 
 
+def _persist_initial_head_view(
+    episode_dir: Path, image: Any, *, quality: int
+) -> dict[str, Any]:
+    path = episode_dir / "initial_head_view.jpg"
+    if path.exists():
+        raise RuntimeError("initial head-view evidence already exists")
+    raw = base64.b64decode(_encode_jpeg(image, int(quality)), validate=True)
+    path.write_bytes(raw)
+    return {
+        "schema_version": "conveyorvla-waypoint-initial-head-view-v1",
+        "relative_path": path.name,
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "captured_after_settle": True,
+        "sent_to_model": False,
+    }
+
+
 def _norm(values: Sequence[Any]) -> float:
     result = math.sqrt(sum(float(value) ** 2 for value in values))
     if not math.isfinite(result):
@@ -1226,6 +1278,7 @@ def main(argv: list[str] | None = None) -> int:
             navigation_max_chunk_steps=max_chunk_execution_steps,
             require_initial_source_visible=args.require_initial_source_visible,
             initial_source_max_bearing_deg=args.initial_source_max_bearing_deg,
+            seed_preflight_only=args.seed_preflight_only,
             close_simulation_on_exit=close_simulation_on_exit,
         )
 

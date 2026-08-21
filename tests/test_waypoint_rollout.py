@@ -8,6 +8,7 @@ from PIL import Image
 from scripts.run_waypoint_rollout import (
     _ExternalWaypointCuRoboLifecycle,
     _initial_source_front_sector_report,
+    _persist_initial_head_view,
     _persist_query_frames,
     _simulation_curobo_safety_gate,
     build_parser,
@@ -46,6 +47,7 @@ def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
     )
     assert parser.get_default("require_initial_source_visible") is True
     assert parser.get_default("initial_source_max_bearing_deg") == 30.0
+    assert parser.get_default("seed_preflight_only") is False
 
 
 def test_initial_source_visibility_requires_front_rgb_and_frontal_bearing():
@@ -117,6 +119,17 @@ def test_rollout_request_contains_only_task_and_four_images(tmp_path):
         path = tmp_path / row["relative_path"]
         assert path.is_file() and path.stat().st_size == row["bytes"]
         assert len(row["sha256"]) == 64
+
+
+def test_initial_head_view_is_immutable_evaluation_evidence(tmp_path):
+    report = _persist_initial_head_view(tmp_path, _image(17), quality=95)
+    path = tmp_path / report["relative_path"]
+    assert path.is_file() and path.stat().st_size == report["bytes"]
+    assert report["captured_after_settle"] is True
+    assert report["sent_to_model"] is False
+    assert len(report["sha256"]) == 64
+    with pytest.raises(RuntimeError, match="already exists"):
+        _persist_initial_head_view(tmp_path, _image(18), quality=95)
 
 
 def test_query_tcp_pose_and_planner_transform_use_live_executor_frames():
