@@ -75,7 +75,6 @@ MODEL_BATCH_KEYS_V2 = frozenset(
         "split",
         "source_episode_id",
         "next_route",
-        "boundary_transition",
         "boundary_class",
         "boundary_signed_time_s",
         "time_to_boundary_s",
@@ -845,7 +844,6 @@ class ConveyorVLAWaypointV2Dataset:
             "split": self.split,
             "source_episode_id": str(record["source_episode_id"]),
             "next_route": record.get("next_route"),
-            "boundary_transition": record.get("boundary_transition"),
             "boundary_class": str(record["boundary_class"]),
             "boundary_signed_time_s": record.get("boundary_signed_time_s"),
             "time_to_boundary_s": (

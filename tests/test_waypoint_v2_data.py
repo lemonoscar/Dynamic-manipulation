@@ -17,6 +17,11 @@ from conveyor_bench.conveyorvla.waypoint_v2_data import (
 )
 
 
+def test_model_input_contract_does_not_expand_after_materialization():
+    assert "transition_id" in MODEL_BATCH_KEYS_V2
+    assert "boundary_transition" not in MODEL_BATCH_KEYS_V2
+
+
 def _record(route: WaypointRoute, position: int, prefix_k: int) -> dict:
     width = 3 if route in {WaypointRoute.NAV_TO_SOURCE, WaypointRoute.NAV_TO_TARGET} else 7
     action = [

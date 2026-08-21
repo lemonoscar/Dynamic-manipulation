@@ -24,6 +24,7 @@ from conveyor_bench.conveyorvla.waypoint_v2_model import (
     WaypointV2AuxiliaryConfig,
     WaypointV2AuxiliaryHeads,
     WaypointV2LossConfig,
+    _boundary_transition,
     _jittered_boundary_signed_times,
     _prefix_target_distribution,
     _soft_boundary_targets,
@@ -31,6 +32,17 @@ from conveyor_bench.conveyorvla.waypoint_v2_model import (
 
 
 TOKEN_IDS = {token: index + 10 for index, token in enumerate(SPECIAL_TOKENS)}
+
+
+def test_boundary_transition_is_recovered_from_immutable_transition_id():
+    assert _boundary_transition(
+        {
+            "transition_id": (
+                "n200:episode_000001:NAV_TO_SOURCE->PICK:source-row-42"
+            )
+        }
+    ) == "NAV_TO_SOURCE->PICK"
+    assert _boundary_transition({"transition_id": None}) is None
 
 
 class _Tokenizer:

@@ -29,7 +29,7 @@ from conveyor_bench.conveyorvla.waypoint_model import (
     _sample_domain_actions,
     _zero_domain_loss,
 )
-from conveyor_bench.conveyorvla.waypoint_v2 import LOCAL_CRL_GOALS
+from conveyor_bench.conveyorvla.waypoint_v2 import BOUNDARY_EVENTS, LOCAL_CRL_GOALS
 
 
 _ACTIVE_ROUTES = tuple(LOCAL_CRL_GOALS)
@@ -455,7 +455,7 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         predicted = []
         targets = []
         for index, example in enumerate(examples):
-            transition = example.get("boundary_transition")
+            transition = _boundary_transition(example)
             signed = signed_targets[index]
             if transition is None or signed is None:
                 continue
@@ -1404,6 +1404,24 @@ def _soft_boundary_targets(
         after = torch.sigmoid(reference.new_tensor(float(signed) / 0.2))
         rows.append(torch.stack((1.0 - after, after * 0.0, after)))
     return torch.stack(rows)
+
+
+def _boundary_transition(example: Mapping[str, Any]) -> str | None:
+    explicit = example.get("boundary_transition")
+    if explicit is not None:
+        return str(explicit)
+    transition_id = example.get("transition_id")
+    if transition_id is None:
+        return None
+    identity = str(transition_id)
+    matches = [
+        transition
+        for transition in BOUNDARY_EVENTS
+        if f":{transition}:" in identity
+    ]
+    if len(matches) != 1:
+        raise ValueError("waypoint-v2 transition_id does not identify one boundary")
+    return matches[0]
 
 
 def _boundary_pairwise_loss(
