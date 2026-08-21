@@ -438,6 +438,9 @@ def main(argv: list[str] | None = None) -> int:
                         valid_optimizer_step=True,
                         **last_metrics,
                     )
+                    _write_running_progress(
+                        accelerator, output, global_step, last_metrics
+                    )
                 if (
                     global_step == args.save_first_checkpoint_step
                     or global_step % args.save_interval_steps == 0
@@ -1541,6 +1544,24 @@ def _set_status(
         )
         _event(accelerator, output, "status", status=status, step=step)
     accelerator.wait_for_everyone()
+
+
+def _write_running_progress(
+    accelerator: Accelerator,
+    output: Path,
+    step: int,
+    metrics: Mapping[str, Any],
+) -> None:
+    if accelerator.is_main_process:
+        common._write_json_atomic(
+            output / "run_state.json",
+            {
+                "schema_version": _training_state_schema(output),
+                "status": "running",
+                "global_step": step,
+                "metrics": dict(metrics),
+            },
+        )
 
 
 def _save_waypoint_checkpoint(
