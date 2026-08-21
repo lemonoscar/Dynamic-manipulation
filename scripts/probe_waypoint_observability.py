@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import json
 import math
+import os
+import platform
 import random
 import subprocess
 import sys
@@ -192,8 +194,29 @@ def _run(args: argparse.Namespace, output: Path) -> dict[str, Any]:
             "split_unit": "source_episode_id",
             "selected_rows": {key: len(value) for key, value in selected.items()},
             "selection_files": {key: f"{key}_selection.json" for key in selected},
+            "feature_sha256": {
+                key: _sha256(output / f"{key}_features.npy") for key in selected
+            },
+            "selection_sha256": {
+                key: _sha256(output / f"{key}_selection.json") for key in selected
+            },
         },
         "source_git": _git_identity(),
+        "command": [sys.executable, *sys.argv],
+        "environment": {
+            "hostname": platform.node(),
+            "python": sys.version,
+            "torch": torch.__version__,
+            "cuda_runtime": torch.version.cuda,
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "physical_gpu_uuids": os.environ.get("CONVEYORVLA_GPU_UUIDS"),
+            "device": str(probe_device),
+            "device_name": (
+                torch.cuda.get_device_name(probe_device)
+                if probe_device.type == "cuda"
+                else None
+            ),
+        },
         "seed": args.seed,
         "epochs": args.epochs,
         "probes": probes,
