@@ -416,6 +416,34 @@ def materialize_waypoint_v2_dataset(
         raise
 
 
+def select_waypoint_v2_episodes_per_split(
+    episode_roots: Iterable[str | Path], count: int
+) -> tuple[Path, ...]:
+    """Select a deterministic, source-order-preserving smoke subset."""
+
+    if count <= 0:
+        raise ValueError("waypoint-v2 per-split episode count must be positive")
+    selected: list[Path] = []
+    counts: Counter[str] = Counter()
+    for value in episode_roots:
+        root = Path(value).expanduser().resolve()
+        split = _episode_split(_source_episode_id(root))
+        if counts[split] >= count:
+            continue
+        selected.append(root)
+        counts[split] += 1
+        if all(counts[split_name] == count for split_name in ("train", "val", "test")):
+            break
+    missing = {
+        split: count - counts[split]
+        for split in ("train", "val", "test")
+        if counts[split] != count
+    }
+    if missing:
+        raise M0MobileError(f"waypoint-v2 source cannot fill split subset: {missing}")
+    return tuple(selected)
+
+
 def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
     """Audit v2 identity, suffix semantics, state boundary, hashes, and geometry."""
 
@@ -424,10 +452,45 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
     problems: list[str] = []
     if manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
         problems.append("dataset schema_version is not waypoint-v2")
+    transform = manifest.get("transform")
+    if not isinstance(transform, Mapping) or transform.get("identity") != DATASET_TRANSFORM_VERSION_V2:
+        problems.append("dataset transform identity is not waypoint-v2")
+    transition_contract = manifest.get("transition_contract")
+    if not isinstance(transition_contract, Mapping) or transition_contract.get(
+        "prefix_candidates"
+    ) != list(range(1, ACTION_HORIZON + 1)):
+        problems.append("manifest does not freeze all prefix candidates 1..20")
+    model_contract = manifest.get("model_input_contract")
+    if (
+        not isinstance(model_contract, Mapping)
+        or model_contract.get("keys") != sorted(MODEL_BATCH_KEYS_V2)
+        or model_contract.get("robot_state_field_count") != 0
+        or model_contract.get("robot_state_tensor_count") != 0
+    ):
+        problems.append("manifest model input contract is missing or leaks state")
+    reports = manifest.get("episodes")
+    if not isinstance(reports, Sequence) or isinstance(reports, (str, bytes)):
+        raise M0MobileError("waypoint-v2 manifest episodes must be a sequence")
+    report_by_episode: dict[str, Mapping[str, Any]] = {}
+    for report in reports:
+        episode_report = _mapping(report, "episodes[]")
+        episode_id = str(episode_report.get("source_episode_id", ""))
+        if not episode_id or episode_id in report_by_episode:
+            problems.append("manifest has an empty or duplicate source episode")
+            continue
+        if episode_report.get("split") != _episode_split(episode_id):
+            problems.append(f"manifest episode split is wrong: {episode_id}")
+        report_by_episode[episode_id] = episode_report
     episode_splits: dict[str, set[str]] = defaultdict(set)
+    episode_row_counts: Counter[str] = Counter()
+    episode_route_counts: dict[str, Counter[str]] = defaultdict(Counter)
     counts: Counter[str] = Counter()
     boundaries: Counter[str] = Counter()
     suffixes: Counter[str] = Counter()
+    original_prefixes: Counter[str] = Counter()
+    transition_id_contracts: dict[str, tuple[str, str, tuple[float, float]]] = {}
+    episode_transition_ids: dict[str, set[str]] = defaultdict(set)
+    segment_progress: dict[str, float] = {}
     max_nav_roundtrip = 0.0
     max_arm_roundtrip = 0.0
     row_count = 0
@@ -440,7 +503,15 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
         for line_number, record in enumerate(_read_jsonl(path), start=1):
             row_count += 1
             prefix = f"{split}:{line_number}"
-            episode_splits[str(record.get("source_episode_id", ""))].add(split)
+            episode_id = str(record.get("source_episode_id", ""))
+            episode_splits[episode_id].add(split)
+            episode_row_counts[episode_id] += 1
+            if episode_id not in report_by_episode:
+                problems.append(f"{prefix} references an undeclared source episode")
+            if record.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+                problems.append(f"{prefix} has a non-v2 row schema")
+            if record.get("split") != split:
+                problems.append(f"{prefix} row split does not match its file")
             try:
                 route = WaypointRoute(str(record.get("route")))
                 domain = WaypointActionDomain(str(record.get("action_domain")))
@@ -448,16 +519,40 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
                 problems.append(f"{prefix} has invalid route/domain: {error}")
                 continue
             counts[f"{split}:{route.value}"] += 1
+            episode_route_counts[episode_id][route.value] += 1
             transition = record.get("boundary_transition")
             if transition is not None:
                 boundaries[f"{split}:{transition}"] += 1
             reason = str(record.get("suffix_reason"))
             suffixes[f"{split}:{reason}"] += 1
+            original_k_value = record.get("original_valid_prefix_k")
+            if original_k_value is not None:
+                original_prefixes[
+                    f"{split}:{route.value}:{original_k_value}"
+                ] += 1
             if reason not in SUFFIX_REASONS:
                 problems.append(f"{prefix} has an invalid suffix_reason")
             forbidden = FORBIDDEN_MODEL_KEYS.intersection(record)
             if forbidden:
                 problems.append(f"{prefix} contains forbidden top-level fields {sorted(forbidden)}")
+            history = record.get("history_timestamps_s")
+            if (
+                not isinstance(history, Sequence)
+                or isinstance(history, (str, bytes))
+                or len(history) != 2
+                or not math.isclose(
+                    float(history[1]) - float(history[0]),
+                    HISTORY_SPAN_S,
+                    rel_tol=0.0,
+                    abs_tol=1.0e-6,
+                )
+            ):
+                problems.append(f"{prefix} has invalid visual history")
+            if any(
+                not isinstance(record.get(key), list) or len(record[key]) != 2
+                for key in ("head_images", "wrist_images")
+            ):
+                problems.append(f"{prefix} has invalid camera frame count")
             original = tuple(bool(value) for value in record.get("original_action_valid_mask", ()))
             valid = tuple(bool(value) for value in record.get("action_valid_mask", ()))
             terminal = tuple(bool(value) for value in record.get("terminal_hold_mask", ()))
@@ -484,12 +579,21 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
                 problems.append(f"{prefix} prefix target does not preserve the zero-K rule")
             width = 3 if domain is WaypointActionDomain.NAVIGATION else 7
             action_key = "nav_waypoints_body" if width == 3 else "arm_targets_base"
+            counterpart_key = "arm_targets_base" if width == 3 else "nav_waypoints_body"
             action = record.get(action_key)
-            if not _shape(action, (ACTION_HORIZON, width)) or record.get("padded_action") != action:
+            if (
+                not _shape(action, (ACTION_HORIZON, width))
+                or record.get(counterpart_key) is not None
+                or record.get("padded_action") != action
+            ):
                 problems.append(f"{prefix} has invalid or inconsistent padded action")
                 continue
             if reason == "boundary":
-                if int(original_k) >= ACTION_HORIZON or not all(valid):
+                if (
+                    int(original_k) >= ACTION_HORIZON
+                    or not all(valid)
+                    or record.get("terminal_hold_applied") is not True
+                ):
                     problems.append(f"{prefix} boundary suffix is not fully supervised")
                 expected_terminal = tuple(index >= int(original_k) for index in range(ACTION_HORIZON))
                 if terminal != expected_terminal:
@@ -497,11 +601,60 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
                 if any(action[index] != action[int(original_k)] for index in range(int(original_k), ACTION_HORIZON)):
                     problems.append(f"{prefix} boundary suffix is not a constant hold")
             elif reason in {"source-tail", "episode-tail", "none"}:
-                if valid != original or any(terminal):
+                if (
+                    valid != original
+                    or any(terminal)
+                    or record.get("terminal_hold_applied") is not False
+                    or record.get("terminal_hold_target") is not None
+                ):
                     problems.append(f"{prefix} non-boundary suffix changed supervision")
             progress = record.get("phase_progress")
             if not isinstance(progress, (int, float)) or not 0.0 <= float(progress) <= 1.0:
                 problems.append(f"{prefix} has invalid phase progress")
+            else:
+                segment_id = str(record.get("phase_segment_id", ""))
+                previous_progress = segment_progress.get(segment_id)
+                if previous_progress is not None and float(progress) + 1.0e-9 < previous_progress:
+                    problems.append(f"{prefix} phase progress is not monotonic")
+                segment_progress[segment_id] = float(progress)
+            transition_window = bool(record.get("transition_window"))
+            boundary_class = str(record.get("boundary_class"))
+            if transition_window:
+                transition_id = record.get("transition_id")
+                interval = record.get("boundary_interval_s")
+                transition_name = record.get("boundary_transition")
+                if (
+                    not isinstance(transition_id, str)
+                    or transition_name not in BOUNDARY_EVENTS
+                    or record.get("boundary_event") != BOUNDARY_EVENTS.get(str(transition_name))
+                    or not isinstance(interval, Sequence)
+                    or len(interval) != 2
+                    or not float(interval[0]) < float(interval[1])
+                    or boundary_class not in {"BEFORE", "AFTER"}
+                ):
+                    problems.append(f"{prefix} has invalid transition-window metadata")
+                else:
+                    contract = (
+                        episode_id,
+                        str(transition_name),
+                        (float(interval[0]), float(interval[1])),
+                    )
+                    if transition_id in transition_id_contracts and transition_id_contracts[transition_id] != contract:
+                        problems.append(f"{prefix} transition_id changes meaning")
+                    transition_id_contracts[transition_id] = contract
+                    episode_transition_ids[episode_id].add(transition_id)
+                signed = record.get("boundary_signed_time_s")
+                if not isinstance(signed, (int, float)) or (
+                    boundary_class == "BEFORE" and float(signed) > 1.0e-9
+                ) or (boundary_class == "AFTER" and float(signed) < -1.0e-9):
+                    problems.append(f"{prefix} boundary signed time has the wrong sign")
+            elif (
+                boundary_class != "INTERIOR"
+                or record.get("transition_id") is not None
+                or record.get("boundary_transition") is not None
+                or record.get("boundary_interval_s") is not None
+            ):
+                problems.append(f"{prefix} interior row exposes boundary metadata")
             roundtrip = record.get("roundtrip_error")
             if isinstance(roundtrip, Mapping):
                 max_nav_roundtrip = max(max_nav_roundtrip, float(roundtrip.get("navigation_max_m_or_rad", 0.0)))
@@ -509,6 +662,17 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
     leaked = [episode for episode, splits in episode_splits.items() if len(splits) != 1]
     if leaked:
         problems.append(f"source episodes leak across splits: {leaked[:3]}")
+    if len(report_by_episode) != int(manifest.get("episode_count", -1)):
+        problems.append("manifest episode_count does not match episode reports")
+    if set(episode_splits) != set(report_by_episode):
+        problems.append("manifest episode reports do not match record episodes")
+    for episode_id, report in report_by_episode.items():
+        if episode_row_counts[episode_id] != int(report.get("row_count", -1)):
+            problems.append(f"manifest row count is wrong for {episode_id}")
+        if dict(sorted(episode_route_counts[episode_id].items())) != report.get("route_counts"):
+            problems.append(f"manifest route counts are wrong for {episode_id}")
+        if len(episode_transition_ids[episode_id]) != len(BOUNDARY_EVENTS):
+            problems.append(f"source episode does not expose all four transitions: {episode_id}")
     for split in ("train", "val", "test"):
         for route in WaypointRoute:
             if counts[f"{split}:{route.value}"] == 0:
@@ -543,6 +707,14 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
                 problems.append("train normalization clip rate is not below 1%")
     if row_count != int(manifest.get("row_count", -1)):
         problems.append("manifest row_count does not match records")
+    for key, value in (
+        ("route_split_counts", counts),
+        ("boundary_split_counts", boundaries),
+        ("suffix_reason_split_counts", suffixes),
+        ("original_prefix_split_counts", original_prefixes),
+    ):
+        if manifest.get(key) != dict(sorted(value.items())):
+            problems.append(f"manifest {key} does not match records")
     return {
         "schema_version": "conveyorvla-waypoint-v2-data-audit-v1",
         "ok": not problems,
@@ -884,5 +1056,6 @@ __all__ = [
     "discover_eligible_waypoint_episodes",
     "iter_waypoint_v2_records",
     "materialize_waypoint_v2_dataset",
+    "select_waypoint_v2_episodes_per_split",
     "upgrade_waypoint_records",
 ]

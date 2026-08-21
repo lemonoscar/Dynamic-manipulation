@@ -12,6 +12,7 @@ from conveyor_bench.conveyorvla.waypoint_v2_data import (
     MODEL_BATCH_KEYS_V2,
     NORMALIZATION_SCHEMA_VERSION_V2,
     ConveyorVLAWaypointV2Dataset,
+    select_waypoint_v2_episodes_per_split,
     upgrade_waypoint_records,
 )
 
@@ -206,3 +207,24 @@ def test_v2_loader_exposes_supervision_without_robot_state(tmp_path: Path) -> No
     assert example["suffix_reason"] == "boundary"
     assert len(example["action"]) == ACTION_HORIZON
     assert all(len(clip) == 2 for clip in example["video"])
+
+
+def test_smoke_episode_selection_is_balanced_and_deterministic(tmp_path: Path) -> None:
+    roots = []
+    expected = {"train": [], "val": [], "test": []}
+    from conveyor_bench.conveyorvla.waypoint_data import _episode_split, _source_episode_id
+
+    for index in range(1000):
+        root = tmp_path / "liangzhu_0815_n200" / f"episode_{index:06d}"
+        split = _episode_split(_source_episode_id(root.resolve()))
+        roots.append(root)
+        if len(expected[split]) < 2:
+            expected[split].append(root.resolve())
+        if all(len(values) == 2 for values in expected.values()):
+            break
+    selected = select_waypoint_v2_episodes_per_split(roots, 2)
+    assert selected == tuple(
+        root.resolve()
+        for root in roots
+        if root.resolve() in {value for values in expected.values() for value in values}
+    )

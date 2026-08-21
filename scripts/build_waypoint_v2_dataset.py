@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from conveyor_bench.conveyorvla.waypoint_v2_data import (  # noqa: E402
     discover_eligible_waypoint_episodes,
     materialize_waypoint_v2_dataset,
+    select_waypoint_v2_episodes_per_split,
 )
 
 
@@ -23,15 +24,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-root", action="append", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--max-episodes", type=int)
+    parser.add_argument("--episodes-per-split", type=int)
     parser.add_argument("--audit-only", action="store_true")
     args = parser.parse_args(argv)
     episodes = discover_eligible_waypoint_episodes(args.source_root)
     if not episodes:
         parser.error("no eligible waypoint source episodes were found")
+    if args.max_episodes is not None and args.episodes_per_split is not None:
+        parser.error("--max-episodes and --episodes-per-split are mutually exclusive")
     if args.max_episodes is not None:
         if args.max_episodes <= 0:
             parser.error("--max-episodes must be positive")
         episodes = episodes[: args.max_episodes]
+    if args.episodes_per_split is not None:
+        if args.episodes_per_split <= 0:
+            parser.error("--episodes-per-split must be positive")
+        episodes = select_waypoint_v2_episodes_per_split(
+            episodes, args.episodes_per_split
+        )
     payload = (
         {
             "eligible_episode_count": len(episodes),
