@@ -362,8 +362,11 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         ).squeeze(-1)
 
     def _goal_embeddings(self) -> torch.Tensor:
-        embedded = self.goal_byte_embedding(self.goal_bytes)
-        mask = self.goal_mask.to(embedded.dtype)[:, :, None]
+        embedding_device = self.goal_byte_embedding.weight.device
+        embedded = self.goal_byte_embedding(self.goal_bytes.to(embedding_device))
+        mask = self.goal_mask.to(device=embedding_device, dtype=embedded.dtype)[
+            :, :, None
+        ]
         pooled = (embedded * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
         return F.normalize(self.crl_goal(pooled), dim=-1)
 

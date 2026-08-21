@@ -258,3 +258,21 @@ def test_fixed_validation_bank_is_order_seed_and_training_draw_independent() -> 
         assert first[key].item() == pytest.approx(four_draw_training[key].item())
         assert first[f"{domain}_fixed_bank_draw_std"].item() > 0.0
     assert first["fixed_bank_draws"] == 4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device alignment test")
+def test_crl_goal_buffers_follow_sharded_embedding_device() -> None:
+    config = WaypointV2AuxiliaryConfig(
+        cross_attention_dim=8,
+        action_hidden_size=8,
+        hidden_size=16,
+        crl_dim=8,
+        enable_crl=True,
+        tau_route_s={route.value: 4.0 for route in LOCAL_CRL_GOALS},
+    )
+    heads = WaypointV2AuxiliaryHeads(config).cuda()
+    heads.goal_bytes = heads.goal_bytes.cpu()
+    heads.goal_mask = heads.goal_mask.cpu()
+    goals = heads._goal_embeddings()
+    assert goals.device.type == "cuda"
+    assert goals.shape == (len(LOCAL_CRL_GOALS), config.crl_dim)
