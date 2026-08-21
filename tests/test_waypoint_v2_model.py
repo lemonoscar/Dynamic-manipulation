@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -276,3 +277,26 @@ def test_crl_goal_buffers_follow_sharded_embedding_device() -> None:
     goals = heads._goal_embeddings()
     assert goals.device.type == "cuda"
     assert goals.shape == (len(LOCAL_CRL_GOALS), config.crl_dim)
+
+
+def test_oracle_crl_diagnostics_are_aligned_and_finite() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+        _example(WaypointRoute.NAV_TO_TARGET, 2),
+        _example(WaypointRoute.PLACE, 3),
+        _example(WaypointRoute.DONE, 4),
+    ]
+    diagnostics = policy.oracle_crl_diagnostics(examples)
+    assert diagnostics[-1] is None
+    for row in diagnostics[:-1]:
+        assert row is not None
+        assert set(row) == {
+            "correct_goal_similarity",
+            "wrong_goal_max_similarity",
+            "goal_margin",
+            "shuffled_action_goal_similarity",
+            "action_shuffle_drop",
+        }
+        assert all(math.isfinite(value) for value in row.values())

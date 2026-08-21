@@ -789,6 +789,91 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         return per_sample.reshape(draws, len(indices)).mean(dim=1), len(indices)
 
     @torch.inference_mode()
+    def oracle_crl_diagnostics(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+    ) -> tuple[Mapping[str, float] | None, ...]:
+        """Measure local-goal separation without exposing CRL to runtime routing."""
+
+        if not examples:
+            raise ValueError("CRL diagnostics need a non-empty batch")
+        if not self.auxiliary_heads.config.enable_crl:
+            return tuple(None for _ in examples)
+        inputs = dict(
+            self.qwen.build_waypoint_inputs(
+                examples,
+                solutions=[str(example["solution"]) for example in examples],
+                supervise_solutions=False,
+            )
+        )
+        inputs.pop("labels", None)
+        outputs = self.qwen(
+            **inputs,
+            output_attentions=False,
+            output_hidden_states=True,
+            use_cache=False,
+            return_dict=True,
+        )
+        layers = self._last_action_layers(outputs.hidden_states)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            raise RuntimeError("Qwen processor did not return an attention mask")
+        pooled = self.auxiliary_heads.pool(layers[-1], attention_mask)
+        active = [
+            index
+            for index, example in enumerate(examples)
+            if str(example["route"]) in _ROUTE_INDEX
+            and example.get("action") is not None
+        ]
+        result: list[Mapping[str, float] | None] = [None] * len(examples)
+        if not active:
+            return tuple(result)
+        index_tensor = torch.tensor(active, device=pooled.device)
+        active_pooled = pooled.index_select(0, index_tensor)
+        actions, valid = _padded_actions(examples, active, pooled)
+        action_summary = (actions * valid[:, :, None]).sum(dim=1) / valid.sum(
+            dim=1, keepdim=True
+        ).clamp_min(1)
+        state_action = F.normalize(
+            self.auxiliary_heads.crl_state(active_pooled)
+            + self.auxiliary_heads.crl_action(action_summary),
+            dim=-1,
+        )
+        goal_embeddings = self.auxiliary_heads._goal_embeddings()
+        similarities = state_action.float() @ goal_embeddings.float().T
+        route_indices = torch.tensor(
+            [_ROUTE_INDEX[str(examples[index]["route"])] for index in active],
+            device=pooled.device,
+        )
+        correct = similarities.gather(1, route_indices[:, None]).squeeze(1)
+        wrong = similarities.scatter(1, route_indices[:, None], -torch.inf).amax(dim=1)
+        if len(active) > 1:
+            shuffled_summary = action_summary.roll(1, dims=0)
+            shuffled_state_action = F.normalize(
+                self.auxiliary_heads.crl_state(active_pooled)
+                + self.auxiliary_heads.crl_action(shuffled_summary),
+                dim=-1,
+            )
+            shuffled_correct = (
+                shuffled_state_action.float() @ goal_embeddings.float().T
+            ).gather(1, route_indices[:, None]).squeeze(1)
+        else:
+            shuffled_correct = correct
+        for local, global_index in enumerate(active):
+            result[global_index] = {
+                "correct_goal_similarity": float(correct[local].item()),
+                "wrong_goal_max_similarity": float(wrong[local].item()),
+                "goal_margin": float((correct[local] - wrong[local]).item()),
+                "shuffled_action_goal_similarity": float(
+                    shuffled_correct[local].item()
+                ),
+                "action_shuffle_drop": float(
+                    (correct[local] - shuffled_correct[local]).item()
+                ),
+            }
+        return tuple(result)
+
+    @torch.inference_mode()
     def predict_v2(
         self, examples: Sequence[Mapping[str, Any]]
     ) -> tuple[WaypointV2Prediction, ...]:
