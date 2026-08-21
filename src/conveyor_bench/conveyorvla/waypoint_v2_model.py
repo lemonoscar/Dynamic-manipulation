@@ -861,7 +861,13 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 device=parameter.device,
                 dtype=parameter.dtype,
             )
-            with _action_autocast(parameter.device, parameter.dtype):
+            # Prefix ranking consumes the current policy prediction as a
+            # stop-gradient input. FM parameters remain governed only by the
+            # paired FM objective, and the four-step sampler does not retain a
+            # prohibitively large inference graph for backward.
+            with torch.no_grad(), _action_autocast(
+                parameter.device, parameter.dtype
+            ):
                 sampled = head.sample(
                     selected_layers,
                     encoder_attention_mask=selected_attention,

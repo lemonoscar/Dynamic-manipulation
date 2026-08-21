@@ -339,6 +339,27 @@ def test_fixed_validation_bank_is_order_seed_and_training_draw_independent() -> 
     assert first["fixed_bank_draws"] == 4
 
 
+def test_training_prefix_policy_actions_are_stop_gradient() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+    ]
+    layers = tuple(
+        torch.randn(2, 3, 8, requires_grad=True) for _ in range(2)
+    )
+    actions, features = policy._training_prefix_inputs(
+        examples,
+        layers,
+        torch.ones(2, 3, dtype=torch.long),
+        torch.zeros(2, 8),
+    )
+    assert actions.shape == (2, ACTION_HORIZON, 7)
+    assert features.shape == (2, ACTION_HORIZON, 8)
+    assert not actions.requires_grad
+    assert not features.requires_grad
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device alignment test")
 def test_crl_goal_buffers_follow_sharded_embedding_device() -> None:
     config = WaypointV2AuxiliaryConfig(
