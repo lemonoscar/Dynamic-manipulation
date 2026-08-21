@@ -210,6 +210,7 @@ class WaypointV2AuxiliaryHeads(nn.Module):
         *,
         predicted_decision_probabilities: torch.Tensor | None = None,
         predicted_route_probabilities: torch.Tensor | None = None,
+        predicted_actions: torch.Tensor | None = None,
         fm_action_features: torch.Tensor | None = None,
     ) -> Mapping[str, torch.Tensor]:
         if pooled.shape[0] != len(examples):
@@ -366,6 +367,9 @@ class WaypointV2AuxiliaryHeads(nn.Module):
                 predicted_route_probabilities is None
                 or predicted_route_probabilities.shape
                 != (len(examples), len(_ACTIVE_ROUTES))
+                or predicted_actions is None
+                or predicted_actions.shape
+                != (len(examples), ACTION_HORIZON, 7)
                 or fm_action_features is None
                 or fm_action_features.shape
                 != (
@@ -380,7 +384,7 @@ class WaypointV2AuxiliaryHeads(nn.Module):
             scores = self.prefix_scores(
                 active_pooled,
                 route_indices,
-                actions,
+                predicted_actions.index_select(0, index_tensor),
                 route_probabilities=predicted_route_probabilities.index_select(
                     0, index_tensor
                 ),
@@ -647,16 +651,17 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         route_probabilities = self._predicted_route_probabilities(
             examples, inputs["labels"], outputs.logits
         ).to(pooled)
-        fm_action_features = (
-            self._training_fm_action_features(examples, pooled)
+        predicted_actions, fm_action_features = (
+            self._training_prefix_inputs(examples, layers, attention_mask, pooled)
             if self.auxiliary_heads.config.enable_prefix
-            else None
+            else (None, None)
         )
         auxiliary = self.auxiliary_heads.losses(
             pooled,
             examples,
             predicted_decision_probabilities=decision_probabilities,
             predicted_route_probabilities=route_probabilities,
+            predicted_actions=predicted_actions,
             fm_action_features=fm_action_features,
         )
         config = self.v2_loss_config
@@ -804,12 +809,17 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
             )
         return torch.stack(rows)
 
-    def _training_fm_action_features(
+    def _training_prefix_inputs(
         self,
         examples: Sequence[Mapping[str, Any]],
+        layers: Sequence[torch.Tensor],
+        attention_mask: torch.Tensor,
         reference: torch.Tensor,
-    ) -> torch.Tensor:
-        values: list[torch.Tensor | None] = [None] * len(examples)
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Build prefix features from model actions, never expert targets."""
+
+        actions: list[torch.Tensor | None] = [None] * len(examples)
+        features: list[torch.Tensor | None] = [None] * len(examples)
         for domain, head in (
             (WaypointActionDomain.NAVIGATION, self.navigation_head),
             (WaypointActionDomain.MANIPULATION, self.manipulation_head),
@@ -820,20 +830,66 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 if str(example["action_domain"]) == domain.value
                 and example.get("action") is not None
             ]
-            if not indices:
-                continue
+            actual = bool(indices)
+            selected_indices = indices if actual else [0]
+            index_tensor = torch.as_tensor(selected_indices, device=layers[0].device)
             parameter = next(head.parameters())
-            actions = torch.tensor(
-                [examples[index]["action"] for index in indices],
+            selected_layers = tuple(
+                layer.index_select(0, index_tensor).to(
+                    device=parameter.device, dtype=parameter.dtype
+                )
+                for layer in layers
+            )
+            selected_attention = attention_mask.index_select(0, index_tensor).to(
+                parameter.device
+            )
+            noise = torch.stack(
+                [
+                    torch.randn(
+                        (ACTION_HORIZON, head.config.action_dim),
+                        generator=torch.Generator(device="cpu").manual_seed(
+                            _prefix_training_seed(
+                                domain.value,
+                                str(examples[index].get("sample_id", index)),
+                            )
+                        ),
+                        dtype=torch.float32,
+                    )
+                    for index in selected_indices
+                ]
+            ).to(
                 device=parameter.device,
                 dtype=parameter.dtype,
             )
-            time = torch.zeros(len(indices), device=parameter.device, dtype=torch.long)
             with _action_autocast(parameter.device, parameter.dtype):
-                encoded = head.action_encoder(actions, time)
-            for index, feature in zip(indices, encoded, strict=True):
-                values[index] = feature.to(reference)
-        zero = torch.zeros(
+                sampled = head.sample(
+                    selected_layers,
+                    encoder_attention_mask=selected_attention,
+                    noise=noise,
+                )
+                encoded = head.action_encoder(
+                    sampled,
+                    torch.zeros(
+                        len(selected_indices),
+                        device=parameter.device,
+                        dtype=torch.long,
+                    ),
+                )
+            if not actual:
+                continue
+            for index, action, feature in zip(
+                indices, sampled, encoded, strict=True
+            ):
+                actions[index] = F.pad(action, (0, 7 - head.config.action_dim)).to(
+                    reference
+                )
+                features[index] = feature.to(reference)
+        zero_action = torch.zeros(
+            (ACTION_HORIZON, 7),
+            device=reference.device,
+            dtype=reference.dtype,
+        )
+        zero_feature = torch.zeros(
             (
                 ACTION_HORIZON,
                 self.auxiliary_heads.config.action_hidden_size,
@@ -841,7 +897,12 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
             device=reference.device,
             dtype=reference.dtype,
         )
-        return torch.stack([zero if value is None else value for value in values])
+        return (
+            torch.stack([zero_action if value is None else value for value in actions]),
+            torch.stack(
+                [zero_feature if value is None else value for value in features]
+            ),
+        )
 
     @torch.inference_mode()
     def fixed_bank_fm_losses(
@@ -1374,6 +1435,13 @@ def _fixed_bank_seed(
     draw: int,
 ) -> int:
     payload = f"waypoint-v2-fixed-fm-v1\0{bank_seed}\0{domain}\0{sample_id}\0{draw}"
+    return int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:8], "big") % (
+        2**63 - 1
+    )
+
+
+def _prefix_training_seed(domain: str, sample_id: str) -> int:
+    payload = f"waypoint-v2-prefix-model-action-v1\0{domain}\0{sample_id}"
     return int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:8], "big") % (
         2**63 - 1
     )

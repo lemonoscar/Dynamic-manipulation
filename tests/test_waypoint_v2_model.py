@@ -271,6 +271,36 @@ def test_prefix_targets_reward_long_safe_prefix_and_penalize_overrun() -> None:
     assert distribution[1, 4] == pytest.approx(distribution[1, 5])
 
 
+def test_prefix_training_uses_model_actions_without_consuming_fm_rng() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+    ]
+    layers = tuple(torch.randn(2, 6, 8) for _ in range(2))
+    attention_mask = torch.ones(2, 6, dtype=torch.long)
+    reference = layers[-1].mean(dim=1)
+    rng_before = torch.random.get_rng_state()
+    actions, features = policy._training_prefix_inputs(
+        examples, layers, attention_mask, reference
+    )
+    rng_after = torch.random.get_rng_state()
+
+    changed = [dict(example) for example in examples]
+    for example in changed:
+        width = len(example["action"][0])
+        example["action"] = [[99.0] * width for _ in range(ACTION_HORIZON)]
+    changed_actions, changed_features = policy._training_prefix_inputs(
+        changed, layers, attention_mask, reference
+    )
+
+    torch.testing.assert_close(actions, changed_actions)
+    torch.testing.assert_close(features, changed_features)
+    torch.testing.assert_close(rng_before, rng_after)
+    assert actions.shape == (2, ACTION_HORIZON, 7)
+    assert features.shape == (2, ACTION_HORIZON, 8)
+
+
 def test_fixed_validation_bank_is_order_seed_and_training_draw_independent() -> None:
     torch.manual_seed(19)
     s1 = _policy(repeats=1, auxiliary=False)
