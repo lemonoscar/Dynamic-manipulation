@@ -162,17 +162,31 @@ def main(argv: list[str] | None = None) -> int:
     else:
         candidates = list(range(len(evaluation)))
     selected = _transition_centric_selection(evaluation, candidates, args.rows)
-    local_indices = selected[accelerator.process_index :: accelerator.num_processes]
-    if len(local_indices) % args.batch_size:
-        raise M0MobileError("waypoint-v2 evaluation rank shard is not batch aligned")
+    batches = _synchronized_batches(
+        selected,
+        per_rank_batch_size=args.batch_size,
+        world_size=accelerator.num_processes,
+    )
 
     local_route_rows: list[dict[str, Any]] = []
     local_seed_rows: dict[int, list[dict[str, Any]]] = {
         seed: [] for seed in seeds
     }
     local_fixed_rows: list[dict[str, Any]] = []
-    for offset in range(0, len(local_indices), args.batch_size):
-        batch_indices = local_indices[offset : offset + args.batch_size]
+    for batch_number, batch_indices in enumerate(batches, start=1):
+        if accelerator.is_main_process:
+            print(
+                json.dumps(
+                    {
+                        "event": "waypoint_v2_evaluation_batch",
+                        "batch": batch_number,
+                        "batches": len(batches),
+                        "rows": len(batch_indices),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
         examples = [evaluation[index] for index in batch_indices]
         online = policy.predict_v2(examples)
         crl = policy.oracle_crl_diagnostics(examples)
@@ -181,80 +195,88 @@ def main(argv: list[str] | None = None) -> int:
             bank_seed=args.fixed_bank_seed,
             draws=args.fixed_bank_draws,
         )
-        local_fixed_rows.extend(
-            _fixed_rows(fixed, args.fixed_bank_draws)
-        )
-        for index, example, prediction, crl_row in zip(
-            batch_indices,
-            examples,
-            online,
-            crl,
-            strict=True,
-        ):
-            decision = prediction.decision
-            local_route_rows.append(
-                {
-                    "index": index,
-                    "sample_id": example["sample_id"],
-                    "source_episode_id": example["source_episode_id"],
-                    "target": example["route"],
-                    "next_route": example["next_route"],
-                    "predicted": (
-                        decision.route.value
-                        if decision.valid and decision.route is not None
-                        else "RECOVER"
-                    ),
-                    "valid": decision.valid,
-                    "recover_reason": decision.recover_reason,
-                    "format_invalid": (
-                        decision.recover_reason in base.FORMAT_RECOVER_REASONS
-                    ),
-                    "confidence": decision.route_confidence,
-                    "decision_probs": dict(decision.decision_probs),
-                    "route_probs": dict(decision.route_probs),
-                    "subtask": decision.subtask_text,
-                    "assistant_prefix": decision.assistant_prefix,
-                    "transition_id": example["transition_id"],
-                    "boundary_transition": evaluation.boundaries[index],
-                    "boundary_class": example["boundary_class"],
-                    "boundary_signed_time_s": example["boundary_signed_time_s"],
-                    "transition_window": example["transition_window"],
-                    "phase_progress": example["phase_progress"],
-                    "original_valid_prefix_k": example["original_valid_prefix_k"],
-                    "prefix_target_k": example["prefix_target_k"],
-                    "predicted_prefix_k": prediction.trusted_prefix_k,
-                    "prefix_scores": prediction.prefix_scores,
-                    "boundary_probs": prediction.boundary_probs,
-                    "predicted_phase_progress": prediction.phase_progress,
-                    "predicted_time_to_boundary_s": prediction.time_to_boundary_s,
-                    "suffix_reason": example["suffix_reason"],
-                    "crl": crl_row,
-                }
-            )
-        for seed in seeds:
-            batch_seed = seed + offset * 1009
-            torch.manual_seed(batch_seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(batch_seed)
-            actions = policy.predict_oracle_actions(examples)
-            for index, example, action in zip(
-                batch_indices, examples, actions, strict=True
+        if accelerator.is_main_process:
+            local_fixed_rows.extend(_fixed_rows(fixed, args.fixed_bank_draws))
+            for index, example, prediction, crl_row in zip(
+                batch_indices,
+                examples,
+                online,
+                crl,
+                strict=True,
             ):
-                row = base._action_row(evaluation, index, example, action, seed)
-                row.update(
+                decision = prediction.decision
+                local_route_rows.append(
                     {
+                        "index": index,
+                        "sample_id": example["sample_id"],
+                        "source_episode_id": example["source_episode_id"],
+                        "target": example["route"],
+                        "next_route": example["next_route"],
+                        "predicted": (
+                            decision.route.value
+                            if decision.valid and decision.route is not None
+                            else "RECOVER"
+                        ),
+                        "valid": decision.valid,
+                        "recover_reason": decision.recover_reason,
+                        "format_invalid": (
+                            decision.recover_reason in base.FORMAT_RECOVER_REASONS
+                        ),
+                        "confidence": decision.route_confidence,
+                        "decision_probs": dict(decision.decision_probs),
+                        "route_probs": dict(decision.route_probs),
+                        "subtask": decision.subtask_text,
+                        "assistant_prefix": decision.assistant_prefix,
+                        "transition_id": example["transition_id"],
                         "boundary_transition": evaluation.boundaries[index],
                         "boundary_class": example["boundary_class"],
+                        "boundary_signed_time_s": example[
+                            "boundary_signed_time_s"
+                        ],
                         "transition_window": example["transition_window"],
                         "phase_progress": example["phase_progress"],
                         "original_valid_prefix_k": example[
                             "original_valid_prefix_k"
                         ],
                         "prefix_target_k": example["prefix_target_k"],
+                        "predicted_prefix_k": prediction.trusted_prefix_k,
+                        "prefix_scores": prediction.prefix_scores,
+                        "boundary_probs": prediction.boundary_probs,
+                        "predicted_phase_progress": prediction.phase_progress,
+                        "predicted_time_to_boundary_s": (
+                            prediction.time_to_boundary_s
+                        ),
                         "suffix_reason": example["suffix_reason"],
+                        "crl": crl_row,
                     }
                 )
-                local_seed_rows[seed].append(row)
+        for seed in seeds:
+            batch_seed = seed + (batch_number - 1) * 1009
+            torch.manual_seed(batch_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(batch_seed)
+            actions = policy.predict_oracle_actions(examples)
+            if accelerator.is_main_process:
+                for index, example, action in zip(
+                    batch_indices, examples, actions, strict=True
+                ):
+                    row = base._action_row(
+                        evaluation, index, example, action, seed
+                    )
+                    row.update(
+                        {
+                            "boundary_transition": evaluation.boundaries[index],
+                            "boundary_class": example["boundary_class"],
+                            "transition_window": example["transition_window"],
+                            "phase_progress": example["phase_progress"],
+                            "original_valid_prefix_k": example[
+                                "original_valid_prefix_k"
+                            ],
+                            "prefix_target_k": example["prefix_target_k"],
+                            "suffix_reason": example["suffix_reason"],
+                        }
+                    )
+                    local_seed_rows[seed].append(row)
 
     route_rows = base._gather_rows(local_route_rows)
     seed_rows = {
@@ -358,6 +380,21 @@ def _transition_centric_selection(
     if boundaries != set(BOUNDARY_EVENTS):
         raise M0MobileError("waypoint-v2 evaluation does not cover every boundary")
     return selected
+
+
+def _synchronized_batches(
+    selected: Sequence[int], per_rank_batch_size: int, world_size: int
+) -> list[list[int]]:
+    """Keep ZeRO-3 ranks on identical examples and identical module branches."""
+    synchronized_batch_size = per_rank_batch_size * world_size
+    if synchronized_batch_size <= 0 or len(selected) % synchronized_batch_size:
+        raise M0MobileError(
+            "waypoint-v2 selection is not aligned to the synchronized batch size"
+        )
+    return [
+        list(selected[offset : offset + synchronized_batch_size])
+        for offset in range(0, len(selected), synchronized_batch_size)
+    ]
 
 
 def _fixed_rows(

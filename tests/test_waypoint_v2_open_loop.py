@@ -1,6 +1,16 @@
 from scripts import evaluate_waypoint_v2_open_loop as evaluation
 
 
+def test_synchronized_batches_keep_all_zero3_ranks_on_identical_examples():
+    selected = list(range(64))
+    batches = evaluation._synchronized_batches(
+        selected, per_rank_batch_size=2, world_size=4
+    )
+    assert len(batches) == 8
+    assert all(len(batch) == 8 for batch in batches)
+    assert [index for batch in batches for index in batch] == selected
+
+
 def _dataset():
     routes = []
     boundaries = []
