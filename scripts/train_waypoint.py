@@ -74,6 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-root", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--resume-from", type=Path)
+    parser.add_argument(
+        "--resume-extension",
+        action="store_true",
+        help=(
+            "resume a completed checkpoint into a longer run while allowing only "
+            "max-steps, batch-size, and gradient-accumulation changes"
+        ),
+    )
     parser.add_argument("--max-steps", type=int, default=10_000)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
@@ -267,12 +275,17 @@ def main(argv: list[str] | None = None) -> int:
                     scheduler,
                     optimizer,
                     global_step,
+                    force=bool(resume.get("extension", False)),
                 ),
             )
             data_position = _resume_data_position(
                 len(loader),
                 args.gradient_accumulation_steps,
-                global_step,
+                0 if resume.get("data_iteration_restart", False) else global_step,
+            )
+            data_position["checkpoint_global_step"] = global_step
+            data_position["extension_restart"] = bool(
+                resume.get("data_iteration_restart", False)
             )
             sampler._iteration = data_position["completed_loader_passes"]
             if data_position["skipped_micro_batches"]:
@@ -297,7 +310,12 @@ def main(argv: list[str] | None = None) -> int:
         active_loader = first_loader
         while global_step < args.max_steps:
             for examples in active_loader:
-                progress = global_step / args.max_steps
+                progress = max(
+                    global_step / args.max_steps,
+                    0.0
+                    if resume is None
+                    else float(resume.get("self_schedule_progress_floor", 0.0)),
+                )
                 self_weight = lambda_self_schedule(progress)
                 with accelerator.accumulate(model):
                     oracle = model(examples, objective="oracle")
@@ -1386,7 +1404,11 @@ def _resolved_run(
                 None
                 if not _is_v2_config(config)
                 else {
-                    "source": "new_random_waypoint_v2_auxiliary_heads",
+                    "source": (
+                        "new_random_waypoint_v2_auxiliary_heads"
+                        if resume is None
+                        else "restored_waypoint_checkpoint"
+                    ),
                     "enabled": config["auxiliary"],
                 }
             ),
@@ -1570,6 +1592,8 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
         raise M0MobileError("waypoint row and episode subsets are mutually exclusive")
     if args.limit_train_episodes and not _is_v2_config(config):
         raise M0MobileError("waypoint episode subsets require a v2 config")
+    if getattr(args, "resume_extension", False) and args.resume_from is None:
+        raise M0MobileError("waypoint resume extension needs --resume-from")
     if not 0 <= args.save_first_checkpoint_step <= args.max_steps:
         raise M0MobileError("first waypoint checkpoint step is outside the run")
     warmup = (
@@ -1659,7 +1683,7 @@ def _resume_binding(
     parent_args = resolved.get("arguments")
     if not isinstance(parent_args, Mapping):
         raise M0MobileError("resume checkpoint resolved arguments are invalid")
-    exact_arguments = {
+    requested_arguments = {
         "max_steps": args.max_steps,
         "batch_size": args.batch_size,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
@@ -1670,18 +1694,32 @@ def _resume_binding(
     }
     changed = sorted(
         name
-        for name, expected in exact_arguments.items()
+        for name, expected in requested_arguments.items()
         if parent_args.get(name) != expected
     )
-    if changed:
+    extension = bool(getattr(args, "resume_extension", False))
+    allowed_changes = (
+        {"max_steps", "batch_size", "gradient_accumulation_steps"}
+        if extension
+        else set()
+    )
+    unexpected = sorted(set(changed) - allowed_changes)
+    if unexpected:
         raise M0MobileError(
-            "resume checkpoint training contract changed: " + ", ".join(changed)
+            "resume checkpoint training contract changed: " + ", ".join(unexpected)
         )
     if int(resolved.get("warmup_steps", -1)) != warmup_steps:
         raise M0MobileError("resume checkpoint warmup schedule changed")
     global_step = common._checkpoint_step(checkpoint)
     if global_step != int(manifest.get("global_step", -1)):
         raise M0MobileError("resume checkpoint step binding is inconsistent")
+    parent_max_steps = int(parent_args.get("max_steps", -1))
+    if extension and (
+        parent_max_steps != global_step or args.max_steps <= parent_max_steps
+    ):
+        raise M0MobileError(
+            "waypoint resume extension needs a completed parent and a larger max-steps"
+        )
     if global_step >= args.max_steps:
         raise M0MobileError("resume checkpoint already reached max steps")
     parent_output = checkpoint.parents[1]
@@ -1699,6 +1737,20 @@ def _resume_binding(
         "parent_source_git": manifest["source_git"],
         "special_token_ids": manifest["special_token_ids"],
         "optimizer_and_scheduler_restored": True,
+        "extension": extension,
+        "contract_changes": {
+            name: {
+                "parent": parent_args.get(name),
+                "current": requested_arguments[name],
+            }
+            for name in changed
+        },
+        "scheduler_rebased_to_max_steps": args.max_steps if extension else None,
+        "data_iteration_restart": extension
+        and bool({"batch_size", "gradient_accumulation_steps"}.intersection(changed)),
+        "self_schedule_progress_floor": (
+            global_step / parent_max_steps if extension else 0.0
+        ),
     }
 
 

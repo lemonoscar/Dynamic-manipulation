@@ -61,6 +61,30 @@ def test_resume_keeps_already_aligned_scheduler_unchanged() -> None:
     assert scheduler.last_epoch == 3_000
 
 
+def test_resume_extension_rebases_aligned_scheduler_to_longer_schedule() -> None:
+    parameter = torch.nn.Parameter(torch.ones(1))
+    optimizer = torch.optim.AdamW([parameter], lr=2e-6)
+    learning_rate_lambda = TRAIN._schedule(max_steps=2_000, warmup_steps=20)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, learning_rate_lambda)
+    scheduler.last_epoch = 500
+    scheduler._step_count = 501
+    scheduler._last_lr = [2e-7]
+    optimizer.param_groups[0]["lr"] = 2e-7
+
+    report = TRAIN._align_scheduler_after_resume(
+        SimpleNamespace(scheduler=scheduler),
+        optimizer,
+        global_step=500,
+        force=True,
+    )
+
+    expected = 2e-6 * learning_rate_lambda(500)
+    assert report["repaired"] is True
+    assert scheduler.last_epoch == 500
+    assert scheduler.get_last_lr() == [pytest.approx(expected)]
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(expected)
+
+
 def test_teacher_forcing_schedule_reaches_zero_before_training_end() -> None:
     assert TRAIN._teacher_forcing_probability(0, 2, 6) == 1.0
     assert TRAIN._teacher_forcing_probability(2, 2, 6) == 1.0

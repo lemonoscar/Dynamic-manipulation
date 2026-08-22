@@ -1,4 +1,5 @@
 import copy
+import hashlib
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from scripts.train_waypoint import (
     _episode_subset_indices,
     _load_config,
     _optimizer,
+    _resume_binding,
     _resume_data_position,
     _validate_accumulation_config,
     _validate_accumulation_runtime,
@@ -49,6 +51,7 @@ def _args(tmp_path: Path) -> Namespace:
         model_root=model_root,
         config=Path("configs/waypoint_v1.json"),
         resume_from=None,
+        resume_extension=False,
         max_steps=1000,
         batch_size=8,
         gradient_accumulation_steps=8,
@@ -75,6 +78,7 @@ def test_waypoint_training_cli_has_no_legacy_checkpoint_or_state_argument():
         "model_root",
         "config",
         "resume_from",
+        "resume_extension",
     } <= destinations
     assert parser.get_default("save_interval_steps") == 500
 
@@ -365,6 +369,87 @@ def test_resume_data_position_skips_exact_completed_micro_batches():
     }
     assert _resume_data_position(9051, 2, 4526)["completed_loader_passes"] == 1
     assert _resume_data_position(9051, 2, 4526)["skipped_micro_batches"] == 0
+
+
+def test_resume_extension_allows_only_longer_schedule_and_batch_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from scripts import check_waypoint_checkpoint
+
+    args = _args(tmp_path)
+    args.config = Path("configs/waypoint_v2_overfit_all_s1_fast_aux.json").resolve()
+    args.resume_extension = True
+    args.max_steps = 2000
+    args.batch_size = 4
+    args.gradient_accumulation_steps = 4
+    args.limit_train_episodes = 8
+    checkpoint = tmp_path / "parent" / "checkpoints" / "step_000500"
+    checkpoint.mkdir(parents=True)
+    args.resume_from = checkpoint
+    (checkpoint / "trainer_state.json").write_text('{"global_step": 500}\n')
+    (checkpoint / "waypoint_checkpoint_manifest.json").write_text("{}\n")
+    (checkpoint.parents[1] / "resolved_run.json").write_text("{}\n")
+    config = _load_config(args.config)
+    manifest = {
+        "model_contract_id": config["model_contract_id"],
+        "dataset_schema_version": config["dataset_schema_version"],
+        "dataset_manifest_sha256": "dataset-sha",
+        "resolved_policy_config_sha256": hashlib.sha256(
+            args.config.read_bytes()
+        ).hexdigest(),
+        "global_step": 500,
+        "source_git": {"commit": "parent"},
+        "special_token_ids": {"pred_action": 1},
+    }
+    resolved = {
+        "model_root": str(args.model_root.resolve()),
+        "world_size": 4,
+        "warmup_steps": 20,
+        "arguments": {
+            "max_steps": 500,
+            "batch_size": 3,
+            "gradient_accumulation_steps": 2,
+            "limit_train_rows": 0,
+            "limit_train_episodes": 8,
+            "attention_implementation": "sdpa",
+            "seed": 1,
+        },
+    }
+    monkeypatch.setattr(
+        check_waypoint_checkpoint,
+        "_validate_binding",
+        lambda _checkpoint: (manifest, resolved, args.dataset_root),
+    )
+
+    result = _resume_binding(
+        args,
+        config,
+        {"manifest_sha256": "dataset-sha"},
+        SimpleNamespace(num_processes=4),
+        warmup_steps=20,
+    )
+
+    assert result is not None
+    assert result["global_step"] == 500
+    assert result["extension"] is True
+    assert result["scheduler_rebased_to_max_steps"] == 2000
+    assert result["data_iteration_restart"] is True
+    assert result["self_schedule_progress_floor"] == 1.0
+    assert set(result["contract_changes"]) == {
+        "batch_size",
+        "gradient_accumulation_steps",
+        "max_steps",
+    }
+
+    args.resume_extension = False
+    with pytest.raises(Exception, match="training contract changed"):
+        _resume_binding(
+            args,
+            config,
+            {"manifest_sha256": "dataset-sha"},
+            SimpleNamespace(num_processes=4),
+            warmup_steps=20,
+        )
 
 
 def test_optimizer_has_exact_qwen_nav_arm_groups_without_overlap():

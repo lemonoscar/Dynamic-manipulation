@@ -816,12 +816,14 @@ def _align_scheduler_after_resume(
     scheduler: Any,
     optimizer: torch.optim.Optimizer,
     global_step: int,
+    *,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Align a loaded scheduler with optimizer steps from trainer_state.json."""
 
     inner = getattr(scheduler, "scheduler", scheduler)
     loaded_step = int(inner.last_epoch)
-    if loaded_step == global_step:
+    if loaded_step == global_step and not force:
         return {
             "repaired": False,
             "loaded_scheduler_step": loaded_step,
