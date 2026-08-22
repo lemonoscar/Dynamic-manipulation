@@ -292,6 +292,34 @@ def test_nav_runs_body_to_world_pct_dwa_and_requeries_after_selected_waypoint():
     assert reached.reason == "selected_waypoint_reached"
 
 
+def test_nav_contract_has_no_local_progress_stall_gate():
+    executor = PCTDWARecedingHorizonExecutor(_PCT(), _DWA())
+    response = _response(
+        WaypointRoute.NAV_TO_SOURCE,
+        [(0.2, 0.0, 0.0)] * ACTION_HORIZON,
+    )
+    assert not executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0).failed
+
+    still_executing = executor.step(
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0),
+        object(),
+        now_s=3.1,
+    )
+    assert not still_executing.failed
+    assert not still_executing.requires_requery
+    assert still_executing.status == "navigation_executing"
+
+    timed_out = executor.step(
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0),
+        object(),
+        now_s=12.1,
+    )
+    assert timed_out.failed
+    assert timed_out.reason == "navigation_chunk_timeout"
+
+
 def test_nav_preserves_base_height_for_pct_local_goal():
     pct = _PCT()
     response = _response(

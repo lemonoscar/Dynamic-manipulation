@@ -306,8 +306,8 @@ python scripts/run_waypoint_rollout.py \
 
 它在前 10 点中优先选择超过 `2 × 0.18 m` 且最接近 `0.50 m` 的点，并按
 PCT 可规划性回退；后续使用 reference 的到达容差、DWA、stall detector 和 250-step
-重询。它不施加本地 3 s/1 cm stall、完整 horizon segment 或 PCT snap 拒绝。这是模型
-能力测试，结果必须与 `contract` 门禁分开报告。
+重询。废弃的本地 3 s/1 cm fatal stall 已从代码全局删除；该 profile 也不施加完整
+horizon segment 或 PCT snap 拒绝。这是模型能力测试，结果必须与 `contract` 门禁分开报告。
 
 需要与固定 arm-vla reference 的原始执行行为做对照时，使用显式 profile：
 
@@ -320,8 +320,9 @@ python scripts/run_waypoint_rollout.py \
 
 它只读取第一个 raw waypoint，使用 reference 的 0.8 m/45°首点上限、0.18 m/`pi` 到达
 容差、原始 DWA/stall detector 和 250-step chunk；stall/timeout 停车并重新 query。它不
-执行本地完整 horizon、0.10 m PCT snap、重复 DWA 速度或 3 s/1 cm stall 拒绝。协议有限值、
-ARM workspace/0.15 m/35°、cuRobo/IK collision 和关节限值仍保留。不得把
+执行本地完整 horizon、0.10 m PCT snap 或重复 DWA 速度拒绝；已删除的本地 fatal stall
+不再存在可启用路径。协议有限值、ARM workspace/0.15 m/35°、cuRobo/IK collision 和关节
+限值仍保留。不得把
 `arm-vla-reference` 结果报告成默认 `contract` 通过。
 
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经

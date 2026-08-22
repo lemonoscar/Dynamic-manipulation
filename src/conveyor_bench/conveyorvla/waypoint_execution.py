@@ -131,8 +131,6 @@ class NavigationExecutionConfig:
     terminal_yaw_kp: float = 1.5
     terminal_yaw_max_radps: float = 0.60
     chunk_timeout_s: float = 12.0
-    stall_timeout_s: float = 3.0
-    stall_progress_m: float = 0.01
     max_chunk_execution_steps: int = 250
     stow_joint_target: tuple[float, ...] | None = None
     carry_joint_target: tuple[float, ...] | None = None
@@ -157,8 +155,6 @@ class NavigationExecutionConfig:
             self.terminal_yaw_kp,
             self.terminal_yaw_max_radps,
             self.chunk_timeout_s,
-            self.stall_timeout_s,
-            self.stall_progress_m,
             self.open_gripper_target,
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in values):
@@ -416,7 +412,6 @@ class PCTDWARecedingHorizonExecutor:
                     "pct_candidate_rejections": candidate_rejections,
                 },
             )
-        distance = math.hypot(predicted_goal[0] - current[0], predicted_goal[1] - current[1])
         self._active = {
             "request_id": response.request_id,
             "sequence_id": response.sequence_id,
@@ -471,8 +466,6 @@ class PCTDWARecedingHorizonExecutor:
             "pct_elapsed_ms": pct_elapsed_ms,
             "mode": mode,
             "started_s": now,
-            "last_progress_s": now,
-            "best_distance_m": distance,
             "chunk_step_count": 0,
             "stall_diagnostics": None,
         }
@@ -533,15 +526,6 @@ class PCTDWARecedingHorizonExecutor:
             active["mode"] == "terminal_yaw"
             or distance <= self.config.goal_tolerance_m
         )
-        if not arm_vla_reference:
-            if distance + self.config.stall_progress_m < active["best_distance_m"]:
-                active["best_distance_m"] = distance
-                active["last_progress_s"] = now
-            elif (
-                not terminal_yaw_active
-                and now - active["last_progress_s"] > self.config.stall_timeout_s
-            ):
-                return self._finish("navigation_stall", failed=True)
         if terminal_yaw_active:
             command = (
                 0.0,

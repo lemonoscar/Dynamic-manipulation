@@ -71,9 +71,9 @@ resume 正确恢复了 Qwen、双 head、optimizer、scheduler 和随机状态�
 | `lookahead-arm-vla-reference` | 19 / 3712 | 18×真实 NAV 后自主 PICK；target 2 超过 35° |
 
 旧 `navigation_stall` 是本地 `a852b5b9` 引入的 3 s 内目标距离没有改善 1 cm 规则，不是
-reference 原始 detector。reference 对照 profile 已移除本地完整 horizon、PCT snap、重复
-DWA 速度和 3 s/1 cm stall 拒绝，同时继续保留 PCT/DWA、reference timeout/stall 和原始
-ARM workspace/rate/collision 规则。
+reference 原始 detector；其配置字段、进度状态和 fatal 执行分支现已从代码全局删除，任何
+profile 均不能再启用。reference 对照 profile 继续保留 PCT/DWA、reference timeout/stall
+重询语义和原始 ARM workspace/rate/collision 规则。
 
 ## 5. 最新 selector 与闭环结论
 

@@ -132,7 +132,8 @@ Navigation executor：
 3. 候选点按排名逐个 body→world 并尝试 PCT，执行第一个可规划 local goal；
 4. 平移小于 0.03 m 的纯旋转目标直接执行限幅 terminal-yaw；
 5. DWA 每个控制 tick 基于测量速度和局部地图输出有界 `[vx,vy,wz]`；
-6. 选中 waypoint 到达、超时、stall 或失败后停止并要求新 query。
+6. 选中 waypoint 到达、chunk 超时或失败后停止并要求新 query；仅 arm-vla reference
+   控制 profile 保留其原始非致命 stall detector。
 
 纯旋转 waypoint，以及 PCT/DWA 行进后进入位置容差但仍有偏航误差的终段，都走同一个
 限幅 terminal-yaw controller。同一 query 的 20 行都锚定同一起始位姿，未选行不是要依次
@@ -148,8 +149,9 @@ production 选点策略。
 `arm-vla-reference` 是另一种显式对照 profile：它只采用 reference 首个 raw waypoint，
 保留 arm-vla 的 0.8 m/45°首点规则、执行到达容差、DWA 限幅、stall detector 和 250-step
 chunk；stall/timeout 停车后重新 query。它不叠加本地完整 horizon、PCT snap、重复 DWA
-速度或 3 s/1 cm stall 门禁。该 profile 用于回答“原始 arm-vla 规则下模型会怎样”，不
-替代 production `contract` 选点策略。ARM 侧仍保留 reference/合同共同规定的
+速度门禁。废弃的本地 3 s/1 cm fatal stall 实现已从代码全局删除，任何 profile 均不能再
+启用。该 profile 用于回答“原始 arm-vla 规则下模型会怎样”，不替代 production
+`contract` 选点策略。ARM 侧仍保留 reference/合同共同规定的
 workspace、0.15 m/35° rate gate，以及真实 cuRobo/IK 和关节限制。
 
 `lookahead-arm-vla-reference` 是完整能力测试 profile：它使用 production 的前 10 点

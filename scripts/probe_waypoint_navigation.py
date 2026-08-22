@@ -120,7 +120,6 @@ def _run_probe(args: argparse.Namespace) -> dict[str, Any]:
             dwa,
             NavigationExecutionConfig(
                 chunk_timeout_s=30.0,
-                stall_timeout_s=5.0,
             ),
         )
         response = _known_waypoint_response()
