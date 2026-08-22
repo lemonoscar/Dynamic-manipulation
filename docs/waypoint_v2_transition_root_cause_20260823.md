@@ -123,6 +123,8 @@ data/model/runtime/planner 的本地相关测试为 63 passed；完整远端环�
 不从 8-episode `step_002000` 续训。若静态和远端门禁通过，则从官方标准
 Qwen3-VL-4B 初始化，在完整 522-episode v2 immutable 数据上仅使用两张 H20 启动全新 B2
 run：global batch 64、S1、每 500 effective optimizer step 保存、总长 2,000 step。
+双卡使用 ZeRO-3 且不 offload optimizer；两张 96 GiB H20 有足够显存，避免 CPU offload
+把首个 optimizer step 拖到 6 分钟以上。
 
 这个训练把单一变量收敛到“正确数据覆盖 + 修正的 B2 监督”。prefix、CRL 和 on-policy
 correction 均保持关闭，避免把已被证据否决或尚未批准启用的变量混入归因。
