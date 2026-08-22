@@ -330,6 +330,48 @@ def test_zero_length_original_prefix_is_not_mislabeled_as_k_one() -> None:
     assert result["prefix_overrun_rate"].item() == 0.0
 
 
+def test_boundary_heads_stay_in_graph_on_a_transitionless_rank() -> None:
+    heads = WaypointV2AuxiliaryHeads(
+        WaypointV2AuxiliaryConfig(
+            cross_attention_dim=8,
+            action_hidden_size=8,
+            hidden_size=16,
+            crl_dim=8,
+            enable_boundary_progress=True,
+        )
+    )
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 2),
+        _example(WaypointRoute.PICK, 2),
+    ]
+    for example in examples:
+        example["boundary_class"] = "INTERIOR"
+        example["boundary_transition"] = None
+        example["boundary_signed_time_s"] = None
+        example["transition_id"] = None
+        example["transition_window"] = False
+        example["time_to_boundary_valid"] = False
+
+    pooled = torch.randn(2, 8, requires_grad=True)
+    losses = heads.losses(
+        pooled,
+        examples,
+        predicted_decision_probabilities=torch.full((2, 2), 0.5),
+        predicted_route_probabilities=torch.full((2, 4), 0.25),
+    )
+    (losses["boundary_loss"] + losses["progress_loss"]).backward()
+    for module in (
+        heads.boundary_head,
+        heads.boundary_rank_head,
+        heads.progress_head,
+        heads.time_to_boundary_head,
+    ):
+        assert all(
+            parameter.grad is not None and torch.isfinite(parameter.grad).all()
+            for parameter in module.parameters()
+        )
+
+
 def test_b1_freezes_all_auxiliary_parameters() -> None:
     policy = _policy(repeats=1, auxiliary=False)
     policy.enable_v2_finetuning()

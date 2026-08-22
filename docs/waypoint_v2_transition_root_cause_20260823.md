@@ -114,9 +114,17 @@ route 生成和执行接线本身具备切换能力；当前 v2 checkpoint 的�
 4. phase interior 仍使用原有硬 route CE；B1 未启用 boundary/progress 时保持原行为；
 5. original `K*=0` row 不参与 `K=1..20` prefix ranking，但 terminal-hold FM 监督仍保留；
 6. runtime、request schema、route 解析、planner 和执行器均不改动。
+7. 当某个 ZeRO-3 rank 没有 transition/time target 时，rank/time auxiliary head 仍以精确
+   零损失留在 autograd graph，避免不同 rank 的 trainable parameter participation 不一致。
+
+双卡 full-data 首轮进一步给出了该分布式缺陷的精确复现：step 3 的首个 batch pair 中，
+rank 0 的 sampler batch 16 有 5 个 transition row，rank 1 的 batch 17 为 0 个；前两步
+两边均有 transition。训练因此恰在 step 2 后进入持续 NCCL/NVLink collective，SM 100%
+但不再产生 event。修正后的回归专门覆盖 transitionless rank 的所有 boundary 参数均获得
+有限显式梯度（允许数值为零）。
 
 新增回归覆盖 hard-token masking、连续 old/new 目标、B1 rollback 和零长度 prefix。针对
-data/model/runtime/planner 的本地相关测试为 63 passed；完整远端环境仍需在提交后复核。
+data/model/runtime/planner 的本地相关测试为 64 passed；完整远端环境仍需在提交后复核。
 
 ## 4. 训练决策
 

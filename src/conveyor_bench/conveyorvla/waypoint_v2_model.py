@@ -281,7 +281,9 @@ class WaypointV2AuxiliaryHeads(nn.Module):
                     rank_targets.float(),
                 )
             else:
-                rank_loss = zero
+                # ZeRO-3 ranks can receive different transition coverage. Keep
+                # the rank head in every autograd graph with an exact zero loss.
+                rank_loss = boundary_rank.sum() * 0.0
             pairwise_loss, pairwise_accuracy = _boundary_pairwise_loss(
                 boundary_rank, examples, pooled
             )
@@ -317,7 +319,9 @@ class WaypointV2AuxiliaryHeads(nn.Module):
                 )
                 time_mae = (selected_time - time_targets).abs().mean()
             else:
-                time_loss = zero
+                # Preserve identical trainable-module participation when this
+                # rank has no valid time-to-boundary target.
+                time_loss = predicted_time.sum() * 0.0
                 time_mae = zero.detach()
             progress_targets = torch.tensor(
                 [float(example["phase_progress"]) for example in examples],
@@ -1604,7 +1608,7 @@ def _boundary_pairwise_loss(
             losses.append(F.relu(reference.new_tensor(0.05) - difference))
             correct.append((difference > 0.0).to(reference.dtype))
     if not losses:
-        zero = reference.sum() * 0.0
+        zero = scores.sum() * 0.0
         return zero, zero.detach()
     return torch.stack(losses).mean(), torch.stack(correct).mean()
 
