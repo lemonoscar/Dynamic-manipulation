@@ -136,3 +136,35 @@ batch 64；两张 96 GiB H20 有足够显存，也减少 micro-batch 间重复�
 
 这个训练把单一变量收敛到“正确数据覆盖 + 修正的 B2 监督”。prefix、CRL 和 on-policy
 correction 均保持关闭，避免把已被证据否决或尚未批准启用的变量混入归因。
+
+## 5. 正式双卡长训健康启动
+
+最终 run 身份为：
+
+```text
+conveyorvla-waypoint-v2-b2-soft-transition-full522-s1-2gpu-nooffload-
+gbs64-7ec8424-s2000-20260823T011748CST
+```
+
+| 项目 | 冻结值 |
+|---|---|
+| source | `7ec8424cc7d1e0e23b767eb1350986359d09c536`，clean |
+| dataset manifest | `5361ed00f808d56537503cb2bfde25ee0ba8cbf9e7e85d7c6e1c35924c3ba56d` |
+| policy config | `waypoint_v2_b2_s1.json@c43ecde7384372f382312d589ddcc2e3fad7c37fdb26c6677dffb75b377ff290` |
+| world / batch | 2 GPUs；micro 8/GPU × accumulation 4 = global 64 |
+| data coverage | 108,603 train rows；`training_subset=false` |
+| initialization | 官方 `Qwen3-VL-4B-Instruct`，不 resume overfit checkpoint |
+| components | terminal-hold + corrected B2 + S1；prefix/CRL/correction off |
+| length / save | 2,000 effective optimizer step；每 500 step 保存 |
+
+机器审计覆盖连续 step 4–23，结果 `ok=true`、problems 为空：
+
+- 20/20 均为有效 optimizer step，run state 在 step 23 时仍为 `running`；
+- step time min/median/max 为 `17.676/18.282/18.835 s`；
+- throughput min/median/max 为 `3.398/3.501/3.621 samples/s`；
+- peak reserved memory 为 `79,720 MiB`，占单卡容量 `81.45%`；
+- total/Qwen/NAV/ARM/boundary/progress loss、五组 LR 和所有模块 gradient 均有限；
+- 没有 OOM、NaN/Inf、traceback、NCCL error 或持续吞吐坍塌。
+
+达到健康门槛后没有停止训练。该启动只证明训练过程和身份健康，不外推最终 checkpoint 的
+开环、planner 或闭环能力；step 500 以后仍必须按正式门禁评测。

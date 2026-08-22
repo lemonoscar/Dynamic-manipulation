@@ -19,9 +19,10 @@ local fatal stall 后的 seed 139 闭环仍连续 157 次输出 `NAV_TO_SOURCE`�
 原硬标签行为。原始 `K*=0` row 也不再被伪标为可表示的 `K=1` prefix。
 
 证据支持的最小候选为 terminal-hold + B2 boundary/progress + S1；prefix、CRL 与
-on-policy correction 均保持关闭。通过完整环境测试后，应从官方 Qwen 初始化，在完整 v2
-数据上仅双卡、global batch 64 启动全新 2,000-step run，每 500 step 保存；不得从上述
-overfit checkpoint 续训。
+on-policy correction 均保持关闭。正式 run 已从官方 Qwen 初始化，在完整 108,603 train
+rows 上仅双卡启动：source `7ec8424cc7d1`、global batch 64、总长 2,000 step、每 500
+step 保存。连续 step 4–23 的机器健康审计通过，median step time `18.282 s`、throughput
+`3.501 samples/s`、peak reserved memory `79,720 MiB`；达到门槛后训练保持运行。
 
 ## 1. 冻结 Waypoint v1 总结
 
