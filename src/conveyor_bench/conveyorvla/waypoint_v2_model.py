@@ -390,21 +390,41 @@ class WaypointV2AuxiliaryHeads(nn.Module):
                 ),
                 fm_action_features=fm_action_features.index_select(0, index_tensor),
             )
-            targets = torch.tensor(
-                [int(examples[index]["prefix_target_k"]) for index in active],
-                device=pooled.device,
-            )
-            transition = torch.tensor(
-                [bool(examples[index]["transition_window"]) for index in active],
-                device=pooled.device,
-            )
-            distribution = _prefix_target_distribution(targets, transition, pooled.dtype)
-            result["prefix_loss"] = -(
-                distribution * F.log_softmax(scores.float(), dim=-1)
-            ).sum(dim=-1).mean()
-            prediction = scores.argmax(dim=-1) + 1
-            result["prefix_mae_k"] = (prediction - targets).abs().float().mean()
-            result["prefix_overrun_rate"] = (prediction > targets).float().mean()
+            eligible = [
+                position
+                for position, index in enumerate(active)
+                if _has_representable_prefix_target(examples[index])
+            ]
+            if not eligible:
+                # Keep every prefix parameter in the graph for sharded batches,
+                # but do not invent K=1 supervision for a true zero-length prefix.
+                result["prefix_loss"] = scores.sum() * 0.0
+            else:
+                eligible_tensor = torch.tensor(eligible, device=pooled.device)
+                scores = scores.index_select(0, eligible_tensor)
+                targets = torch.tensor(
+                    [
+                        int(examples[active[position]]["prefix_target_k"])
+                        for position in eligible
+                    ],
+                    device=pooled.device,
+                )
+                transition = torch.tensor(
+                    [
+                        bool(examples[active[position]]["transition_window"])
+                        for position in eligible
+                    ],
+                    device=pooled.device,
+                )
+                distribution = _prefix_target_distribution(
+                    targets, transition, pooled.dtype
+                )
+                result["prefix_loss"] = -(
+                    distribution * F.log_softmax(scores.float(), dim=-1)
+                ).sum(dim=-1).mean()
+                prediction = scores.argmax(dim=-1) + 1
+                result["prefix_mae_k"] = (prediction - targets).abs().float().mean()
+                result["prefix_overrun_rate"] = (prediction > targets).float().mean()
         if self.config.enable_crl:
             action_summary = (actions * valid[:, :, None]).sum(dim=1) / valid.sum(
                 dim=1, keepdim=True
@@ -614,8 +634,14 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
                 solutions=[str(example["solution"]) for example in examples],
             )
         )
+        labels = inputs["labels"]
+        qwen_inputs = dict(inputs)
+        if self.auxiliary_heads.config.enable_boundary_progress:
+            qwen_inputs["labels"] = self._mask_hard_transition_tokens(
+                examples, labels
+            )
         outputs = self.qwen(
-            **inputs,
+            **qwen_inputs,
             output_attentions=False,
             output_hidden_states=True,
             use_cache=False,
@@ -624,7 +650,7 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         if outputs.loss is None or outputs.hidden_states is None:
             raise RuntimeError("Qwen did not return waypoint-v2 CE and hidden states")
         route_loss, decision_loss, active_route_loss = self._route_token_loss(
-            examples, inputs["labels"], outputs.logits
+            examples, labels, outputs.logits
         )
         layers = self._last_action_layers(outputs.hidden_states)
         attention_mask = inputs.get("attention_mask")
@@ -698,6 +724,124 @@ class ConveyorVLAWaypointV2Policy(ConveyorVLAWaypointPolicy):
         for index, value in enumerate(arm_draws):
             result[f"manipulation_draw_{index}_loss"] = value
         return result
+
+    def _mask_hard_transition_tokens(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        """Leave transition route decisions to the continuous v2 objective."""
+
+        masked = labels.clone()
+        token_ids = self.router.token_ids
+        signed_targets = _jittered_boundary_signed_times(examples)
+        for row_index, (example, signed) in enumerate(
+            zip(examples, signed_targets, strict=True)
+        ):
+            transition = _boundary_transition(example)
+            if transition is None or signed is None:
+                continue
+            old_route, new_route = transition.split("->", maxsplit=1)
+            route = WaypointRoute(str(example["route"]))
+            if route.value not in {old_route, new_route}:
+                raise ValueError("waypoint-v2 transition row route is not an endpoint")
+            if new_route == WaypointRoute.DONE.value:
+                decision_target = (
+                    token_ids.pred_done
+                    if route is WaypointRoute.DONE
+                    else token_ids.pred_action
+                )
+                masked[row_index, _label_position(labels[row_index], decision_target)] = -100
+                continue
+            route_index = _ACTIVE_ROUTES.index(route)
+            route_target = token_ids.route_ids[route_index]
+            masked[row_index, _label_position(labels[row_index], route_target)] = -100
+        return masked
+
+    def _route_token_loss(
+        self,
+        examples: Sequence[Mapping[str, Any]],
+        labels: torch.Tensor,
+        logits: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Use continuous old/new targets inside v2 transition windows."""
+
+        if not self.auxiliary_heads.config.enable_boundary_progress:
+            return super()._route_token_loss(examples, labels, logits)
+
+        token_ids = self.router.token_ids
+        decision_candidates = torch.tensor(
+            [token_ids.pred_action, token_ids.pred_done], device=logits.device
+        )
+        route_candidates = torch.tensor(token_ids.route_ids, device=logits.device)
+        signed_targets = _jittered_boundary_signed_times(examples)
+        decision_losses = []
+        active_route_losses = []
+        for row_index, (example, signed) in enumerate(
+            zip(examples, signed_targets, strict=True)
+        ):
+            route = WaypointRoute(str(example["route"]))
+            transition = _boundary_transition(example) if signed is not None else None
+            old_route, new_route = (
+                transition.split("->", maxsplit=1)
+                if transition is not None
+                else (None, None)
+            )
+            new_probability = (
+                torch.sigmoid(logits.new_tensor(float(signed) / 0.2).float())
+                if signed is not None
+                else None
+            )
+
+            decision_target = (
+                token_ids.pred_done
+                if route is WaypointRoute.DONE
+                else token_ids.pred_action
+            )
+            decision_position = _label_position(labels[row_index], decision_target)
+            decision_log_probs = F.log_softmax(
+                logits[row_index, decision_position - 1]
+                .index_select(0, decision_candidates)
+                .float(),
+                dim=-1,
+            )
+            if new_route == WaypointRoute.DONE.value:
+                decision_distribution = torch.stack(
+                    (1.0 - new_probability, new_probability)
+                )
+                decision_losses.append(-(decision_distribution * decision_log_probs).sum())
+            else:
+                decision_losses.append(
+                    -decision_log_probs[1 if route is WaypointRoute.DONE else 0]
+                )
+
+            if route is WaypointRoute.DONE:
+                continue
+            route_index = _ACTIVE_ROUTES.index(route)
+            route_position = _label_position(
+                labels[row_index], token_ids.route_ids[route_index]
+            )
+            route_log_probs = F.log_softmax(
+                logits[row_index, route_position - 1]
+                .index_select(0, route_candidates)
+                .float(),
+                dim=-1,
+            )
+            if transition is not None and new_route != WaypointRoute.DONE.value:
+                route_distribution = torch.zeros_like(route_log_probs)
+                route_distribution[_ROUTE_INDEX[str(old_route)]] = 1.0 - new_probability
+                route_distribution[_ROUTE_INDEX[str(new_route)]] = new_probability
+                active_route_losses.append(-(route_distribution * route_log_probs).sum())
+            else:
+                active_route_losses.append(-route_log_probs[route_index])
+
+        decision_loss = torch.stack(decision_losses).mean()
+        active_route_loss = (
+            torch.stack(active_route_losses).mean()
+            if active_route_losses
+            else logits.sum() * 0.0
+        )
+        return decision_loss + active_route_loss, decision_loss, active_route_loss
 
     def _domain_loss_v2(
         self,
@@ -1373,6 +1517,13 @@ def _prefix_target_distribution(
     uncertain = transition[:, None] & ((candidates - target).abs() <= 1)
     utility = torch.where(uncertain, torch.ones_like(utility), utility)
     return torch.softmax(utility.float() / 0.2, dim=-1).to(dtype)
+
+
+def _has_representable_prefix_target(example: Mapping[str, Any]) -> bool:
+    """K candidates are 1..20, so an immutable original K*=0 is unsupervisable."""
+
+    original = example.get("original_valid_prefix_k")
+    return original is None or int(original) > 0
 
 
 def _jittered_boundary_signed_times(

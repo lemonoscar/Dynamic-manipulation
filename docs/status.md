@@ -1,10 +1,29 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-21 11:58 CST。现行 runtime/eval 基线为
-`feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`；当前 durable
-checkpoint 为 `step_002000@a8d57a22c515`。
+最后复核：2026-08-23 CST。冻结的 Waypoint v1 runtime/eval 基线为
+`feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
+checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
+[阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)。
 
-## 1. 总结
+## 0. Waypoint v2 最新状态
+
+v2 `step_002000@02ee859` 已确认为 8-episode、1,877-row overfit checkpoint，而非完整
+522-episode 长训；step 2000 等价约 68.19 个 sampling epoch。严格开环综合门禁失败，
+prefix 在闭环中 140/157 次预测 `K=1`，CRL action-shuffle drop 仅 `0.00679`。删除废弃
+local fatal stall 后的 seed 139 闭环仍连续 157 次输出 `NAV_TO_SOURCE`，PICK 概率最高
+`0.201772`，证明 stall 不是不能切换的根因。
+
+实现审计发现 B2 transition 软标签只存在于有效权重约 0.1 的辅助 crossover，主 answer CE
+与 route CE 仍对同一 route token 做两份硬监督。当前修正把 transition route/decision token
+从硬 answer CE 中屏蔽，并由独立 route loss 使用连续 old→new 目标；interior 与 B1 保持
+原硬标签行为。原始 `K*=0` row 也不再被伪标为可表示的 `K=1` prefix。
+
+证据支持的最小候选为 terminal-hold + B2 boundary/progress + S1；prefix、CRL 与
+on-policy correction 均保持关闭。通过完整环境测试后，应从官方 Qwen 初始化，在完整 v2
+数据上仅双卡、global batch 64 启动全新 2,000-step run，每 500 step 保存；不得从上述
+overfit checkpoint 续训。
+
+## 1. 冻结 Waypoint v1 总结
 
 Waypoint Policy v1 的无 state 数据、两次完整 Qwen、双 Layerwise FM head、checkpoint、
 inference export、PCT/DWA、真实 cuRobo/IK 和模型自主 Isaac rollout 均已有可执行实现与

@@ -25,6 +25,7 @@ from conveyor_bench.conveyorvla.waypoint_v2_model import (
     WaypointV2AuxiliaryHeads,
     WaypointV2LossConfig,
     _boundary_transition,
+    _has_representable_prefix_target,
     _jittered_boundary_signed_times,
     _prefix_target_distribution,
     _soft_boundary_targets,
@@ -155,6 +156,7 @@ def _example(route: WaypointRoute, index: int) -> dict:
         ),
         "phase_progress": index / 4.0,
         "prefix_target_k": 4 + index if active else 0,
+        "original_valid_prefix_k": 4 + index if active else 0,
         "transition_id": f"episode:{transition_name}" if transition else None,
         "transition_window": transition,
         "time_to_boundary_s": float(index + 1),
@@ -250,6 +252,82 @@ def test_boundary_soft_labels_use_stable_small_jitter_without_hard_flip() -> Non
     assert targets[0, 0] > targets[0, 2]
     assert targets[1, 2] > targets[1, 0]
     torch.testing.assert_close(targets[2], torch.tensor((0.0, 1.0, 0.0)))
+
+
+def test_transition_tokens_are_removed_from_hard_qwen_ce() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    examples = [
+        _example(WaypointRoute.NAV_TO_SOURCE, 0),
+        _example(WaypointRoute.PICK, 1),
+        _example(WaypointRoute.NAV_TO_TARGET, 2),
+        _example(WaypointRoute.PLACE, 3),
+        _example(WaypointRoute.DONE, 4),
+    ]
+    labels = policy.qwen.build_waypoint_inputs(examples)["labels"]
+    masked = policy._mask_hard_transition_tokens(examples, labels)
+    token_ids = policy.router.token_ids
+
+    for row, route in ((0, WaypointRoute.NAV_TO_SOURCE), (1, WaypointRoute.PICK)):
+        route_index = tuple(LOCAL_CRL_GOALS).index(route)
+        position = (labels[row] == token_ids.route_ids[route_index]).nonzero().item()
+        assert masked[row, position].item() == -100
+        assert masked[row, 1].item() == token_ids.pred_action
+    torch.testing.assert_close(masked[2], labels[2])
+    for row in (3, 4):
+        assert masked[row, 1].item() == -100
+    place_index = tuple(LOCAL_CRL_GOALS).index(WaypointRoute.PLACE)
+    assert masked[3, 2].item() == token_ids.route_ids[place_index]
+
+
+def test_transition_route_loss_uses_continuous_old_new_targets() -> None:
+    policy = _policy(repeats=1, auxiliary=True)
+    example = _example(WaypointRoute.NAV_TO_SOURCE, 0)
+    labels = policy.qwen.build_waypoint_inputs([example])["labels"]
+    logits = torch.zeros((1, 6, 64), requires_grad=True)
+    route_position = 2
+    old_index = tuple(LOCAL_CRL_GOALS).index(WaypointRoute.NAV_TO_SOURCE)
+    new_index = tuple(LOCAL_CRL_GOALS).index(WaypointRoute.PICK)
+    route_ids = torch.tensor(policy.router.token_ids.route_ids)
+    logits.data[0, route_position - 1, route_ids[old_index]] = 2.0
+    _, _, active_route_loss = policy._route_token_loss([example], labels, logits)
+
+    signed = _jittered_boundary_signed_times([example])[0]
+    new_probability = torch.sigmoid(torch.tensor(float(signed) / 0.2))
+    candidate_logits = logits[0, route_position - 1].index_select(0, route_ids)
+    log_probs = F.log_softmax(candidate_logits, dim=-1)
+    expected = -(
+        (1.0 - new_probability) * log_probs[old_index]
+        + new_probability * log_probs[new_index]
+    )
+    torch.testing.assert_close(active_route_loss, expected)
+    assert 0.0 < new_probability.item() < 1.0
+
+
+def test_zero_length_original_prefix_is_not_mislabeled_as_k_one() -> None:
+    example = _example(WaypointRoute.NAV_TO_SOURCE, 0)
+    example["original_valid_prefix_k"] = 0
+    example["prefix_target_k"] = 1
+    assert not _has_representable_prefix_target(example)
+
+    heads = WaypointV2AuxiliaryHeads(
+        WaypointV2AuxiliaryConfig(
+            cross_attention_dim=8,
+            action_hidden_size=8,
+            hidden_size=16,
+            crl_dim=8,
+            enable_prefix=True,
+        )
+    )
+    result = heads.losses(
+        torch.randn(1, 8),
+        [example],
+        predicted_route_probabilities=torch.full((1, 4), 0.25),
+        predicted_actions=torch.zeros(1, ACTION_HORIZON, 7),
+        fm_action_features=torch.zeros(1, ACTION_HORIZON, 8),
+    )
+    assert result["prefix_loss"].item() == 0.0
+    assert result["prefix_mae_k"].item() == 0.0
+    assert result["prefix_overrun_rate"].item() == 0.0
 
 
 def test_b1_freezes_all_auxiliary_parameters() -> None:
