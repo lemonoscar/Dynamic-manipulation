@@ -88,6 +88,10 @@ class ArmPlan:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
+class ArmPlanUnavailableError(RuntimeError):
+    """The validated target has no cuRobo/IK solution for this observation."""
+
+
 class CuRoboIKPlanner(Protocol):
     def plan(
         self,
@@ -190,7 +194,6 @@ class NavigationExecutionConfig:
 class ManipulationExecutionConfig:
     target_safety: ArmTargetSafety = ArmTargetSafety()
     enforce_target_step_limits: bool = True
-    select_first_plannable_model_target: bool = False
     chunk_timeout_s: float = 12.0
     max_target_position_error_m: float = 0.02
     max_target_orientation_error_rad: float = 0.10
@@ -198,10 +201,8 @@ class ManipulationExecutionConfig:
     joint_position_limits: tuple[tuple[float, float], ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.enforce_target_step_limits, bool) or not isinstance(
-            self.select_first_plannable_model_target, bool
-        ):
-            raise ValueError("manipulation diagnostic controls must be booleans")
+        if not isinstance(self.enforce_target_step_limits, bool):
+            raise ValueError("manipulation diagnostic control must be boolean")
         if any(
             not math.isfinite(value) or value <= 0.0
             for value in (
@@ -691,11 +692,7 @@ class CuRoboIKRecedingHorizonExecutor:
             return _stop("response_is_not_manipulation", failed=True)
         gate_trace = {
             "target_step_limits_enforced": self.config.enforce_target_step_limits,
-            "target_selection_policy": (
-                "first_plannable_model_target"
-                if self.config.select_first_plannable_model_target
-                else "first_model_target"
-            ),
+            "target_selection_policy": "chronological_target0",
             "configured_max_translation_step_m": (
                 self.config.target_safety.max_translation_step_m
             ),
@@ -714,64 +711,95 @@ class CuRoboIKRecedingHorizonExecutor:
                     max_translation_step_m=math.inf,
                     max_axis_rotation_step_rad=math.inf,
                 )
+            target0_mask = (bool(mask[0]),) + (False,) * (ACTION_HORIZON - 1)
             accepted = validate_arm_targets(
                 targets,
-                mask,
+                target0_mask,
                 current_tcp_base,
                 safety=target_safety,
             )
+            target = accepted[0]
             joints = _finite_vector(current_joints, None, "current_joints")
-            planned_at = time.perf_counter()
-            for target_index, candidate in enumerate(accepted):
-                attempt_started = time.perf_counter()
-                try:
-                    candidate_plan = self.planner.plan(
-                        joints, candidate[:6], scene_collision
-                    )
-                    _validate_arm_plan(candidate_plan, joints, self.config)
-                except Exception as candidate_error:
-                    planner_attempts.append(
-                        {
-                            "target_index": target_index,
-                            "success": False,
-                            "elapsed_ms": (
-                                time.perf_counter() - attempt_started
-                            )
-                            * 1000.0,
-                            "error": (
-                                f"{type(candidate_error).__name__}:"
-                                f"{candidate_error}"
-                            ),
-                        }
-                    )
-                    if not self.config.select_first_plannable_model_target:
-                        raise
-                    continue
-                planner_attempts.append(
-                    {
-                        "target_index": target_index,
-                        "success": True,
-                        "elapsed_ms": (time.perf_counter() - attempt_started)
-                        * 1000.0,
-                    }
-                )
-                target = candidate
-                plan = candidate_plan
-                selected_target_index = target_index
-                break
-            else:
-                raise RuntimeError("no model ARM target produced a valid cuRobo plan")
-            planning_elapsed_ms = (time.perf_counter() - planned_at) * 1000.0
-            self.controller.reset(plan, target[6])
         except Exception as error:
             return _stop(
-                f"arm_plan_failed:{type(error).__name__}:{error}",
+                f"arm_target_rejected:{type(error).__name__}:{error}",
                 failed=True,
                 trace={
                     **gate_trace,
                     "planner_attempts": planner_attempts,
                 },
             )
+        planned_at = time.perf_counter()
+        attempt_started = time.perf_counter()
+        try:
+            plan = self.planner.plan(joints, target[:6], scene_collision)
+        except ArmPlanUnavailableError as error:
+            planner_attempts.append(
+                {
+                    "target_index": 0,
+                    "success": False,
+                    "elapsed_ms": (time.perf_counter() - attempt_started) * 1000.0,
+                    "error": f"{type(error).__name__}:{error}",
+                }
+            )
+            return _stop(
+                f"arm_plan_unavailable:{type(error).__name__}:{error}",
+                failed=False,
+                requery=True,
+                trace={
+                    **gate_trace,
+                    "selected_target_index": 0,
+                    "planner_attempts": planner_attempts,
+                },
+            )
+        except Exception as error:
+            planner_attempts.append(
+                {
+                    "target_index": 0,
+                    "success": False,
+                    "elapsed_ms": (time.perf_counter() - attempt_started) * 1000.0,
+                    "error": f"{type(error).__name__}:{error}",
+                }
+            )
+            return _stop(
+                f"arm_plan_rejected:{type(error).__name__}:{error}",
+                failed=True,
+                trace={
+                    **gate_trace,
+                    "selected_target_index": 0,
+                    "planner_attempts": planner_attempts,
+                },
+            )
+        try:
+            _validate_arm_plan(plan, joints, self.config)
+            self.controller.reset(plan, target[6])
+        except Exception as error:
+            planner_attempts.append(
+                {
+                    "target_index": 0,
+                    "success": False,
+                    "elapsed_ms": (time.perf_counter() - attempt_started) * 1000.0,
+                    "error": f"{type(error).__name__}:{error}",
+                }
+            )
+            return _stop(
+                f"arm_plan_rejected:{type(error).__name__}:{error}",
+                failed=True,
+                trace={
+                    **gate_trace,
+                    "selected_target_index": 0,
+                    "planner_attempts": planner_attempts,
+                },
+            )
+        planner_attempts.append(
+            {
+                "target_index": 0,
+                "success": True,
+                "elapsed_ms": (time.perf_counter() - attempt_started) * 1000.0,
+            }
+        )
+        planning_elapsed_ms = (time.perf_counter() - planned_at) * 1000.0
+        selected_target_index = 0
         self._active = {
             "request_id": response.request_id,
             "sequence_id": response.sequence_id,
@@ -802,7 +830,7 @@ class CuRoboIKRecedingHorizonExecutor:
             return _stop("no_active_manipulation_chunk", failed=True)
         now = time.monotonic() if now_s is None else _finite_scalar(now_s, "now_s")
         if now - self._active["started_s"] > self.config.chunk_timeout_s:
-            return self._finish("manipulation_chunk_timeout", failed=True)
+            return self._finish("manipulation_chunk_timeout", failed=False)
         try:
             commanded_at = time.perf_counter()
             target, done = self.controller.command(measured_joints)
@@ -1044,6 +1072,7 @@ def _stop(
 
 __all__ = [
     "ArmPlan",
+    "ArmPlanUnavailableError",
     "ArmTrajectoryController",
     "CuRoboIKPlanner",
     "CuRoboIKRecedingHorizonExecutor",

@@ -9,7 +9,11 @@ import time
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Callable, Mapping, Sequence
 
-from conveyor_bench.conveyorvla.waypoint_execution import ArmPlan, PCTPlan
+from conveyor_bench.conveyorvla.waypoint_execution import (
+    ArmPlan,
+    ArmPlanUnavailableError,
+    PCTPlan,
+)
 
 
 APPROVED_ARM_VLA_COMMIT = "388b6818f4c605a707d13c519fbb58b1d07acd92"
@@ -250,7 +254,9 @@ class WaypointCuRoboPlannerAdapter:
         if response.get("arm_vla_reference_commit") != self.reference_commit:
             raise RuntimeError("cuRobo service reference commit is incompatible")
         if response.get("ok") is not True:
-            raise RuntimeError(f"cuRobo direct-pose planning failed: {response.get('error')}")
+            raise ArmPlanUnavailableError(
+                f"cuRobo direct-pose planning failed: {response.get('error')}"
+            )
         if not self.safety_gate(request, response):
             raise RuntimeError(f"{self.deployment} cuRobo safety gate rejected the plan")
         raw_path = response.get("joint_path")

@@ -8,10 +8,21 @@ from conveyor_bench.conveyorvla.waypoint import WaypointRoute
 
 
 MODEL_CONTRACT_ID_V2 = "qwen3vl-layerwise-dual-fm-waypoint-v2"
+# Frozen legacy identity.  Its ARM gripper channel came from measured finger
+# opening and must remain loadable for historical checkpoint evaluation only.
 DATASET_SCHEMA_VERSION_V2 = "conveyorvla-waypoint-dense-transition-v2"
+DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER = (
+    "conveyorvla-waypoint-dense-transition-v2-command-gripper-v1"
+)
+DATASET_SCHEMA_VERSIONS_V2 = frozenset(
+    {DATASET_SCHEMA_VERSION_V2, DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER}
+)
 RUNTIME_PROTOCOL_VERSION_V2 = "conveyorvla-waypoint-runtime/v2"
 POLICY_CONFIG_SCHEMA_VERSION_V2 = "conveyorvla-waypoint-policy-config-v2"
 DATASET_TRANSFORM_VERSION_V2 = "conveyorvla-waypoint-v1-to-v2-terminal-hold-v1"
+DATASET_TRANSFORM_VERSION_V2_COMMAND_GRIPPER = (
+    "conveyorvla-waypoint-v1-to-v2-terminal-hold-command-gripper-v2"
+)
 
 EXPECTED_NEXT_ROUTE: Mapping[WaypointRoute, WaypointRoute] = {
     WaypointRoute.NAV_TO_SOURCE: WaypointRoute.PICK,
@@ -38,7 +49,10 @@ LOCAL_CRL_GOALS: Mapping[WaypointRoute, str] = {
 __all__ = [
     "BOUNDARY_EVENTS",
     "DATASET_SCHEMA_VERSION_V2",
+    "DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER",
+    "DATASET_SCHEMA_VERSIONS_V2",
     "DATASET_TRANSFORM_VERSION_V2",
+    "DATASET_TRANSFORM_VERSION_V2_COMMAND_GRIPPER",
     "EXPECTED_NEXT_ROUTE",
     "LOCAL_CRL_GOALS",
     "MODEL_CONTRACT_ID_V2",

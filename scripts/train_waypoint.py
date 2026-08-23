@@ -48,7 +48,7 @@ from conveyor_bench.conveyorvla.waypoint_model import (  # noqa: E402
     lambda_self_schedule,
 )
 from conveyor_bench.conveyorvla.waypoint_v2 import (  # noqa: E402
-    DATASET_SCHEMA_VERSION_V2,
+    DATASET_SCHEMA_VERSIONS_V2,
     MODEL_CONTRACT_ID_V2,
     POLICY_CONFIG_SCHEMA_VERSION_V2,
 )
@@ -1473,13 +1473,12 @@ def _load_config(path: Path) -> dict[str, Any]:
             "conveyorvla-waypoint-policy-config-v1",
             MODEL_CONTRACT_ID,
             DATASET_SCHEMA_VERSION,
-        ),
-        (
-            POLICY_CONFIG_SCHEMA_VERSION_V2,
-            MODEL_CONTRACT_ID_V2,
-            DATASET_SCHEMA_VERSION_V2,
-        ),
+        )
     }
+    valid.update(
+        (POLICY_CONFIG_SCHEMA_VERSION_V2, MODEL_CONTRACT_ID_V2, schema)
+        for schema in DATASET_SCHEMA_VERSIONS_V2
+    )
     if identity not in valid:
         raise M0MobileError("waypoint policy/config/dataset identity is incompatible")
     return value
@@ -1492,7 +1491,10 @@ def _is_v2_config(config: Mapping[str, Any]) -> bool:
 def _validate_v2_dataset_config(
     config: Mapping[str, Any], manifest: Mapping[str, Any]
 ) -> None:
-    if manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+    if (
+        manifest.get("schema_version") not in DATASET_SCHEMA_VERSIONS_V2
+        or manifest.get("schema_version") != config.get("dataset_schema_version")
+    ):
         raise M0MobileError("waypoint-v2 trainer received a non-v2 dataset")
     auxiliary = config.get("auxiliary")
     if not isinstance(auxiliary, Mapping):

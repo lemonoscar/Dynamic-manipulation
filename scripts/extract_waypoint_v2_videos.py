@@ -23,7 +23,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from conveyor_bench.conveyorvla.waypoint import WaypointRoute  # noqa: E402
 from conveyor_bench.conveyorvla.waypoint_v2 import (  # noqa: E402
     BOUNDARY_EVENTS,
-    DATASET_SCHEMA_VERSION_V2,
+    DATASET_SCHEMA_VERSIONS_V2,
 )
 
 
@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+    if manifest.get("schema_version") not in DATASET_SCHEMA_VERSIONS_V2:
         parser.error("dataset is not immutable Waypoint-v2")
     records = {
         split: _read_jsonl(
@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         payload = {
             "schema_version": "conveyorvla-waypoint-v2-phase-video-manifest-v1",
-            "dataset_schema_version": DATASET_SCHEMA_VERSION_V2,
+            "dataset_schema_version": manifest["schema_version"],
             "dataset_manifest_sha256": _sha256(manifest_path),
             "fps": 5,
             "frame_layout": "head_current_left_wrist_current_right",

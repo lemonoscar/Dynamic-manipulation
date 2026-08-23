@@ -138,6 +138,19 @@ def test_v2_b2_b3_b4_configs_add_exactly_one_rollbackable_mechanism(
         _validate_args(_args(tmp_path), config)
 
 
+def test_v2_command_gripper_config_changes_only_dataset_identity(tmp_path: Path):
+    legacy = _load_config(Path("configs/waypoint_v2_b2_s1.json"))
+    command = _load_config(
+        Path("configs/waypoint_v2_b2_s1_command_gripper.json")
+    )
+    expected = copy.deepcopy(legacy)
+    expected["dataset_schema_version"] = (
+        "conveyorvla-waypoint-dense-transition-v2-command-gripper-v1"
+    )
+    assert command == expected
+    _validate_args(_args(tmp_path), command)
+
+
 def test_v2_b5_adds_only_manifest_bound_on_policy_sampling(tmp_path: Path):
     b4 = _load_config(Path("configs/waypoint_v2_b4_s1.json"))
     b5 = _load_config(Path("configs/waypoint_v2_b5_s1.json"))

@@ -80,14 +80,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--diagnostic-select-first-plannable-arm-target",
-        action="store_true",
-        help=(
-            "simulation-only diagnostic: try model ARM targets in predicted order "
-            "and execute the first target accepted by cuRobo/IK"
-        ),
-    )
-    parser.add_argument(
         "--navigation-safety-profile",
         choices=NAVIGATION_SAFETY_PROFILES,
         default=NAVIGATION_SAFETY_PROFILE_CONTRACT,
@@ -214,7 +206,6 @@ class WaypointRolloutPipeline:
         navigation_safety_profile: str,
         navigation_max_chunk_steps: int,
         diagnostic_disable_arm_target_step_limits: bool,
-        diagnostic_select_first_plannable_arm_target: bool,
         require_initial_source_visible: bool,
         initial_source_max_bearing_deg: float,
         seed_preflight_only: bool,
@@ -316,9 +307,6 @@ class WaypointRolloutPipeline:
             ManipulationExecutionConfig(
                 enforce_target_step_limits=(
                     not diagnostic_disable_arm_target_step_limits
-                ),
-                select_first_plannable_model_target=(
-                    diagnostic_select_first_plannable_arm_target
                 ),
             ),
         )
@@ -491,11 +479,7 @@ class WaypointRolloutPipeline:
                 "arm_target_step_limits_enforced": (
                     self.manipulation.config.enforce_target_step_limits
                 ),
-                "arm_target_selection_policy": (
-                    "first_plannable_model_target"
-                    if self.manipulation.config.select_first_plannable_model_target
-                    else "first_model_target"
-                ),
+                "arm_target_selection_policy": "chronological_target0",
                 "initial_source_visibility": self._initial_source_visibility,
             }
             summary_path.write_text(
@@ -1312,9 +1296,6 @@ def main(argv: list[str] | None = None) -> int:
             navigation_max_chunk_steps=max_chunk_execution_steps,
             diagnostic_disable_arm_target_step_limits=(
                 args.diagnostic_disable_arm_target_step_limits
-            ),
-            diagnostic_select_first_plannable_arm_target=(
-                args.diagnostic_select_first_plannable_arm_target
             ),
             require_initial_source_visible=args.require_initial_source_visible,
             initial_source_max_bearing_deg=args.initial_source_max_bearing_deg,

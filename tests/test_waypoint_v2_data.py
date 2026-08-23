@@ -7,7 +7,9 @@ import pytest
 
 from conveyor_bench.conveyorvla.waypoint import ACTION_HORIZON, WaypointRoute
 from conveyor_bench.conveyorvla.waypoint_data import FORBIDDEN_MODEL_KEYS
-from conveyor_bench.conveyorvla.waypoint_v2 import DATASET_SCHEMA_VERSION_V2
+from conveyor_bench.conveyorvla.waypoint_v2 import (
+    DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER,
+)
 from conveyor_bench.conveyorvla.waypoint_v2_data import (
     MODEL_BATCH_KEYS_V2,
     NORMALIZATION_SCHEMA_VERSION_V2,
@@ -48,6 +50,9 @@ def _record(route: WaypointRoute, position: int, prefix_k: int) -> dict:
         "nav_waypoints_body": None if is_done or width != 3 else action,
         "arm_targets_base": None if is_done or width != 7 else action,
         "action_valid_mask": [not is_done and index < prefix_k for index in range(ACTION_HORIZON)],
+        "label_provenance": {
+            "target_source_rows": [position + index + 1 for index in range(ACTION_HORIZON)]
+        },
         "roundtrip_error": {
             "navigation_max_m_or_rad": 0.0,
             "arm_max_m_or_rad": 0.0,
@@ -56,11 +61,15 @@ def _record(route: WaypointRoute, position: int, prefix_k: int) -> dict:
 
 
 def _raw_samples(count: int) -> dict[int, dict]:
+    explicit_commands = {0: "close", 3: "open", 5: "close", 9: "open"}
     return {
         index: {
             "base_pose": [0.0, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0],
             "tcp_pose": [0.3 + index * 0.01, 0.0, 0.5, 1.0, 0.0, 0.0, 0.0],
-            "gripper_position": 0.02,
+            "gripper_position": 0.03,
+            "subtask_signals": {
+                "gripper_command": explicit_commands.get(index, "hold")
+            },
         }
         for index in range(count)
     }
@@ -115,14 +124,19 @@ def test_terminal_hold_preserves_original_k_and_uses_nearest_boundary() -> None:
 
     two_pick = upgraded[3]
     assert two_pick["original_valid_prefix_k"] == 2
-    assert two_pick["padded_action"][:2] == source[3]["arm_targets_base"][:2]
+    assert [row[6] for row in two_pick["padded_action"][:2]] == [1.0, 0.0]
+    assert all(
+        two_pick["padded_action"][index][:6]
+        == source[3]["arm_targets_base"][index][:6]
+        for index in range(2)
+    )
     assert two_pick["padded_action"][2:] == [two_pick["padded_action"][1]] * 18
     assert two_pick["terminal_hold_mask"] == [False, False] + [True] * 18
 
     zero_pick = upgraded[5]
     assert zero_pick["original_valid_prefix_k"] == 0
     assert zero_pick["terminal_hold_target"] == pytest.approx(
-        [0.35, 0.0, 0.2, 0.0, 0.0, 0.0, 0.5]
+        [0.35, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0]
     )
     assert all(row == zero_pick["terminal_hold_target"] for row in zero_pick["padded_action"])
 
@@ -132,6 +146,23 @@ def test_terminal_hold_preserves_original_k_and_uses_nearest_boundary() -> None:
     assert done["suffix_reason"] == "done-no-action"
     assert done["padded_action"] is None
     assert not any(done["action_valid_mask"])
+
+
+def test_command_gripper_label_uses_expert_command_not_measured_opening() -> None:
+    source = [_record(WaypointRoute.PICK, 0, 1)]
+    raw = _raw_samples(2)
+    raw[0]["subtask_signals"]["gripper_command"] = "open"
+    raw[1]["subtask_signals"]["gripper_command"] = "close"
+    assert raw[1]["gripper_position"] / 0.04 > 0.5
+
+    upgraded = upgrade_waypoint_records(source, raw)[0]
+
+    assert upgraded["schema_version"] == DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER
+    assert upgraded["arm_targets_base"][0][6] == 0.0
+    assert upgraded["label_provenance"]["gripper_action_source"] == (
+        "future_expert_gripper_command"
+    )
+    assert upgraded["label_provenance"]["measured_joint_opening_used_as_target"] is False
 
 
 def test_source_and_episode_tails_are_never_terminal_hold() -> None:
@@ -178,7 +209,7 @@ def test_v2_loader_exposes_supervision_without_robot_state(tmp_path: Path) -> No
         (root / f"{split}.jsonl").write_text("", encoding="utf-8")
     normalization = {
         "schema_version": NORMALIZATION_SCHEMA_VERSION_V2,
-        "dataset_schema_version": DATASET_SCHEMA_VERSION_V2,
+        "dataset_schema_version": DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER,
         "navigation": {
             "q01": [[-1.0] * 3 for _ in range(ACTION_HORIZON)],
             "q99": [[1.0] * 3 for _ in range(ACTION_HORIZON)],
@@ -191,7 +222,7 @@ def test_v2_loader_exposes_supervision_without_robot_state(tmp_path: Path) -> No
     normalization_path = root / "normalization.json"
     normalization_path.write_text(json.dumps(normalization) + "\n", encoding="utf-8")
     manifest = {
-        "schema_version": DATASET_SCHEMA_VERSION_V2,
+        "schema_version": DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER,
         "records": {
             split: {
                 "relative_path": f"{split}.jsonl",

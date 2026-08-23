@@ -12,6 +12,7 @@ from conveyor_bench.conveyorvla.waypoint import (
 )
 from conveyor_bench.conveyorvla.waypoint_execution import (
     ArmPlan,
+    ArmPlanUnavailableError,
     CuRoboIKRecedingHorizonExecutor,
     ManipulationExecutionConfig,
     NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
@@ -606,7 +607,7 @@ class _ArmPlanner:
     def plan(self, joints, target, scene):
         self.calls.append((joints, target, scene))
         if self.fail:
-            raise RuntimeError("unreachable")
+            raise ArmPlanUnavailableError("unreachable")
         return ArmPlan(
             joint_path=((0.0, 0.0), (0.1, -0.1)),
             planner="curobo",
@@ -689,56 +690,86 @@ def test_arm_diagnostic_can_bypass_only_target_step_limits():
     assert "outside the workspace" in (rejected_workspace.reason or "")
 
 
-def test_arm_diagnostic_selects_first_curobo_plannable_model_target():
-    class SecondTargetPlanner(_ArmPlanner):
-        def plan(self, joints, target, scene):
-            if target[0] > 0.50:
-                self.calls.append((joints, target, scene))
-                raise RuntimeError("first target is not plannable")
-            return super().plan(joints, target, scene)
-
+def test_arm_executes_only_target_zero_and_ignores_unexecuted_suffix_limits():
     rows = [
-        (0.60, 0.0, 0.05, 1.3, 1.0, 3.1, 1.0),
-        (0.40, 0.0, 0.23, 0.0, 0.1, -0.3, 0.8),
-        *[(0.41, 0.0, 0.24, 0.0, 0.1, -0.3, 0.8)] * 18,
+        (0.31, 0.0, 0.20, 0.0, 0.0, 0.0, 1.0),
+        (0.90, 0.0, 0.05, 1.3, 1.0, 3.1, 0.0),
+        *[(0.10, 0.0, 0.24, 0.0, 0.1, -0.3, 0.8)] * 18,
     ]
-    planner = SecondTargetPlanner()
-    executor = CuRoboIKRecedingHorizonExecutor(
-        planner,
-        _ArmController(),
-        ManipulationExecutionConfig(
-            enforce_target_step_limits=False,
-            select_first_plannable_model_target=True,
-        ),
-    )
+    planner = _ArmPlanner()
+    executor = CuRoboIKRecedingHorizonExecutor(planner, _ArmController())
     planned = executor.begin(
         _response(WaypointRoute.PICK, rows),
-        (0.38, 0.0, 0.18, 0.0, 0.08, 0.0),
+        (0.30, 0.0, 0.20, 0.0, 0.0, 0.0),
         (0.0, 0.0),
         object(),
         now_s=0.0,
     )
     assert not planned.failed
     assert planned.base_velocity == (0.0, 0.0, 0.0)
-    assert planned.trace["selected_target_index"] == 1
-    assert planned.trace["target_selection_policy"] == "first_plannable_model_target"
-    assert [attempt["success"] for attempt in planned.trace["planner_attempts"]] == [
-        False,
-        True,
-    ]
-    assert [call[1] for call in planner.calls] == [rows[0][:6], rows[1][:6]]
+    assert planned.trace["selected_target_index"] == 0
+    assert planned.trace["target_selection_policy"] == "chronological_target0"
+    assert [attempt["success"] for attempt in planned.trace["planner_attempts"]] == [True]
+    assert [call[1] for call in planner.calls] == [rows[0][:6]]
 
 
-def test_arm_unreachable_is_zero_action_fail_closed():
+def test_arm_unreachable_is_zero_action_and_requeries():
     rows = [(0.31, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0)] * ACTION_HORIZON
     executor = CuRoboIKRecedingHorizonExecutor(_ArmPlanner(fail=True), _ArmController())
-    failed = executor.begin(
+    unavailable = executor.begin(
         _response(WaypointRoute.PLACE, rows),
         (0.30, 0.0, 0.2, 0.0, 0.0, 0.0),
         (0.0, 0.0),
         object(),
         now_s=0.0,
     )
+    assert not unavailable.failed
+    assert unavailable.requires_requery
+    assert unavailable.base_velocity == (0.0, 0.0, 0.0)
+    assert unavailable.arm_joint_target is None
+    assert "arm_plan_unavailable" in (unavailable.reason or "")
+
+
+def test_arm_planner_infrastructure_error_remains_fail_closed():
+    class BrokenPlanner(_ArmPlanner):
+        def plan(self, joints, target, scene):
+            self.calls.append((joints, target, scene))
+            raise RuntimeError("incompatible cuRobo response")
+
+    rows = [(0.31, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0)] * ACTION_HORIZON
+    failed = CuRoboIKRecedingHorizonExecutor(
+        BrokenPlanner(), _ArmController()
+    ).begin(
+        _response(WaypointRoute.PICK, rows),
+        (0.30, 0.0, 0.2, 0.0, 0.0, 0.0),
+        (0.0, 0.0),
+        object(),
+        now_s=0.0,
+    )
     assert failed.failed
-    assert failed.base_velocity == (0.0, 0.0, 0.0)
-    assert failed.arm_joint_target is None
+    assert not failed.requires_requery
+    assert "arm_plan_rejected" in (failed.reason or "")
+
+
+def test_arm_chunk_timeout_stops_and_requeries_without_failing_episode():
+    rows = [(0.31, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0)] * ACTION_HORIZON
+    executor = CuRoboIKRecedingHorizonExecutor(
+        _ArmPlanner(),
+        _ArmController(),
+        ManipulationExecutionConfig(chunk_timeout_s=0.5),
+    )
+    planned = executor.begin(
+        _response(WaypointRoute.PICK, rows),
+        (0.30, 0.0, 0.2, 0.0, 0.0, 0.0),
+        (0.0, 0.0),
+        object(),
+        now_s=0.0,
+    )
+    assert not planned.failed
+
+    timeout = executor.step((0.0, 0.0), now_s=0.6)
+    assert not timeout.failed
+    assert timeout.requires_requery
+    assert timeout.base_velocity == (0.0, 0.0, 0.0)
+    assert timeout.arm_joint_target is None
+    assert timeout.reason == "manipulation_chunk_timeout"

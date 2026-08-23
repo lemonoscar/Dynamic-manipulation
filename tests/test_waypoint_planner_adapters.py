@@ -9,7 +9,7 @@ from scripts.serve_waypoint_curobo import (
     build_parser as build_curobo_parser,
 )
 
-from conveyor_bench.conveyorvla.waypoint_execution import ArmPlan
+from conveyor_bench.conveyorvla.waypoint_execution import ArmPlan, ArmPlanUnavailableError
 from conveyor_bench.conveyorvla.waypoint_planner_adapters import (
     APPROVED_ARM_VLA_COMMIT,
     CUROBO_REQUEST_SCHEMA,
@@ -221,6 +221,24 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
     )
     with pytest.raises(RuntimeError, match="real cuRobo safety gate rejected"):
         rejecting.plan(
+            (0.0, 0.0),
+            (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
+            _planner_scene(),
+        )
+
+    unavailable = WaypointCuRoboPlannerAdapter(
+        lambda _request: {
+            "schema_version": CUROBO_RESPONSE_SCHEMA,
+            "arm_vla_reference_commit": APPROVED_ARM_VLA_COMMIT,
+            "ok": False,
+            "error": "no collision-free direct-pose plan",
+        },
+        deployment="simulation",
+        safety_gate=lambda _request, _response: True,
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    with pytest.raises(ArmPlanUnavailableError, match="no collision-free"):
+        unavailable.plan(
             (0.0, 0.0),
             (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
             _planner_scene(),

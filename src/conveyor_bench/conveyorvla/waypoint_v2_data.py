@@ -50,7 +50,10 @@ from conveyor_bench.conveyorvla.waypoint_data import (
 from conveyor_bench.conveyorvla.waypoint_v2 import (
     BOUNDARY_EVENTS,
     DATASET_SCHEMA_VERSION_V2,
+    DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER,
+    DATASET_SCHEMA_VERSIONS_V2,
     DATASET_TRANSFORM_VERSION_V2,
+    DATASET_TRANSFORM_VERSION_V2_COMMAND_GRIPPER,
     EXPECTED_NEXT_ROUTE,
     LOCAL_CRL_GOALS,
 )
@@ -100,7 +103,7 @@ class WaypointV2Normalizer(WaypointNormalizer):
     def __init__(self, payload: Mapping[str, Any]) -> None:
         if payload.get("schema_version") != NORMALIZATION_SCHEMA_VERSION_V2:
             raise M0MobileError("waypoint-v2 normalization schema is incompatible")
-        if payload.get("dataset_schema_version") != DATASET_SCHEMA_VERSION_V2:
+        if payload.get("dataset_schema_version") not in DATASET_SCHEMA_VERSIONS_V2:
             raise M0MobileError("waypoint-v2 normalization dataset identity is incompatible")
         compatible = dict(payload)
         compatible["schema_version"] = NORMALIZATION_SCHEMA_VERSION
@@ -152,6 +155,7 @@ def upgrade_waypoint_records(
     ):
         raise M0MobileError("waypoint-v2 episode timestamps must strictly increase")
     routes = [WaypointRoute(str(record["route"])) for record in records]
+    commanded_gripper = _commanded_gripper_by_source_row(raw_samples)
     segments, segment_by_position = _segments(routes, timestamps, records)
     events = _expected_events(routes, timestamps, records)
     episode_end = timestamps[-1]
@@ -159,7 +163,7 @@ def upgrade_waypoint_records(
     for position, source in enumerate(records):
         route = routes[position]
         record = dict(source)
-        record["schema_version"] = DATASET_SCHEMA_VERSION_V2
+        record["schema_version"] = DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER
         segment = segments[segment_by_position[position]]
         next_event = next((event for event in events if event["position"] > position), None)
         previous_event = next(
@@ -198,10 +202,16 @@ def upgrade_waypoint_records(
                 "on_policy_correction": False,
             }
         )
+        _rewrite_manipulation_gripper_labels(
+            record,
+            route,
+            commanded_gripper,
+        )
         _upgrade_action_suffix(
             record,
             route,
             raw_samples,
+            commanded_gripper,
             episode_end=episode_end,
             next_event=next_event,
         )
@@ -290,7 +300,9 @@ def materialize_waypoint_v2_dataset(
         streams = {}
         normalization = _build_normalization(train_nav, train_arm)
         normalization["schema_version"] = NORMALIZATION_SCHEMA_VERSION_V2
-        normalization["dataset_schema_version"] = DATASET_SCHEMA_VERSION_V2
+        normalization["dataset_schema_version"] = (
+            DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER
+        )
         compatible = _v1_compatible_normalization(normalization)
         split_clip_rates = _dataset_clip_rates(staging, compatible)
         normalization["clip_rate_definition"] = "maximum_one_sided_saturation_fraction"
@@ -319,12 +331,19 @@ def materialize_waypoint_v2_dataset(
             for split in ("train", "val", "test")
         }
         manifest = {
-            "schema_version": DATASET_SCHEMA_VERSION_V2,
+            "schema_version": DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER,
             "transform": {
-                "identity": DATASET_TRANSFORM_VERSION_V2,
+                "identity": DATASET_TRANSFORM_VERSION_V2_COMMAND_GRIPPER,
                 "source_schema_version": "conveyorvla-waypoint-dense-transition-v1",
                 "terminal_hold_boundary_only": True,
                 "non_boundary_action_mask_unchanged": True,
+                "manipulation_gripper": {
+                    "semantics": "absolute_0_close_1_open",
+                    "source": "future_expert_gripper_command",
+                    "hold_semantics": "carry_forward_last_explicit_open_close",
+                    "initialization": "first_source_measured_open_fraction_threshold_0.5",
+                    "measured_joint_opening_used_as_target": False,
+                },
             },
             "source_format": "pct_full_physics_raw",
             "source_collections": sorted(
@@ -371,6 +390,7 @@ def materialize_waypoint_v2_dataset(
                     "stride_s": MANIPULATION_STRIDE_S,
                     "frame": LABEL_FRAME_ID,
                     "pose": "absolute_tcp_target",
+                    "gripper": "absolute_expert_command_0_close_1_open",
                 },
                 "terminal_hold": {
                     "boundary_only": True,
@@ -450,11 +470,31 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
     dataset_root = Path(root).expanduser().resolve()
     manifest = _read_json(dataset_root / "manifest.json")
     problems: list[str] = []
-    if manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+    dataset_schema = str(manifest.get("schema_version", ""))
+    if dataset_schema not in DATASET_SCHEMA_VERSIONS_V2:
         problems.append("dataset schema_version is not waypoint-v2")
     transform = manifest.get("transform")
-    if not isinstance(transform, Mapping) or transform.get("identity") != DATASET_TRANSFORM_VERSION_V2:
+    expected_transform = (
+        DATASET_TRANSFORM_VERSION_V2_COMMAND_GRIPPER
+        if dataset_schema == DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER
+        else DATASET_TRANSFORM_VERSION_V2
+    )
+    if not isinstance(transform, Mapping) or transform.get("identity") != expected_transform:
         problems.append("dataset transform identity is not waypoint-v2")
+    if dataset_schema == DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER:
+        gripper_transform = (
+            transform.get("manipulation_gripper")
+            if isinstance(transform, Mapping)
+            else None
+        )
+        if not isinstance(gripper_transform, Mapping) or gripper_transform != {
+            "semantics": "absolute_0_close_1_open",
+            "source": "future_expert_gripper_command",
+            "hold_semantics": "carry_forward_last_explicit_open_close",
+            "initialization": "first_source_measured_open_fraction_threshold_0.5",
+            "measured_joint_opening_used_as_target": False,
+        }:
+            problems.append("command-gripper transform contract is missing or changed")
     transition_contract = manifest.get("transition_contract")
     if not isinstance(transition_contract, Mapping) or transition_contract.get(
         "prefix_candidates"
@@ -481,6 +521,43 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
         if episode_report.get("split") != _episode_split(episode_id):
             problems.append(f"manifest episode split is wrong: {episode_id}")
         report_by_episode[episode_id] = episode_report
+    command_gripper_sources: dict[str, dict[int, float]] = {}
+    if dataset_schema == DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER:
+        expected_pattern = (
+            ("exec_pick", "open"),
+            ("exec_pick", "close"),
+            ("exec_place", "open"),
+        )
+        for episode_id, episode_report in report_by_episode.items():
+            samples_path = Path(str(episode_report.get("source_episode_root", ""))) / (
+                "samples.jsonl"
+            )
+            if (
+                not samples_path.is_file()
+                or _sha256(samples_path) != episode_report.get("samples_sha256")
+            ):
+                problems.append(
+                    f"command-gripper source samples are missing or corrupt: {episode_id}"
+                )
+                continue
+            raw_samples = {
+                int(row.get("frame_index", index)): row
+                for index, row in enumerate(_read_jsonl(samples_path))
+            }
+            try:
+                commanded = _commanded_gripper_by_source_row(raw_samples)
+                pattern = _gripper_command_transition_pattern(raw_samples)
+            except (M0MobileError, TypeError, ValueError) as error:
+                problems.append(
+                    f"cannot audit command-gripper source {episode_id}: {error}"
+                )
+                continue
+            if pattern != expected_pattern:
+                problems.append(
+                    f"command-gripper source transition pattern is wrong: {episode_id}: "
+                    f"{pattern}"
+                )
+            command_gripper_sources[episode_id] = commanded
     episode_splits: dict[str, set[str]] = defaultdict(set)
     episode_row_counts: Counter[str] = Counter()
     episode_route_counts: dict[str, Counter[str]] = defaultdict(Counter)
@@ -509,7 +586,7 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
             episode_row_counts[episode_id] += 1
             if episode_id not in report_by_episode:
                 problems.append(f"{prefix} references an undeclared source episode")
-            if record.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+            if record.get("schema_version") != dataset_schema:
                 problems.append(f"{prefix} has a non-v2 row schema")
             if record.get("split") != split:
                 problems.append(f"{prefix} row split does not match its file")
@@ -590,6 +667,54 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
             ):
                 problems.append(f"{prefix} has invalid or inconsistent padded action")
                 continue
+            if (
+                dataset_schema == DATASET_SCHEMA_VERSION_V2_COMMAND_GRIPPER
+                and domain is WaypointActionDomain.MANIPULATION
+            ):
+                provenance = record.get("label_provenance")
+                source_commands = command_gripper_sources.get(episode_id)
+                if (
+                    any(float(row[6]) not in {0.0, 1.0} for row in action)
+                    or not isinstance(provenance, Mapping)
+                    or provenance.get("gripper_action_source")
+                    != "future_expert_gripper_command"
+                    or provenance.get("gripper_hold_semantics")
+                    != "carry_forward_last_explicit_open_close"
+                    or provenance.get("measured_joint_opening_used_as_target") is not False
+                ):
+                    problems.append(f"{prefix} violates command-gripper label semantics")
+                elif source_commands is None:
+                    problems.append(f"{prefix} has no auditable command-gripper source")
+                else:
+                    target_rows = provenance.get("target_source_rows")
+                    source_labels = []
+                    if isinstance(target_rows, Sequence) and not isinstance(
+                        target_rows, (str, bytes)
+                    ) and len(target_rows) >= int(original_k):
+                        for index in range(int(original_k)):
+                            source_row = target_rows[index]
+                            if isinstance(source_row, int) and not isinstance(
+                                source_row, bool
+                            ) and source_row in source_commands:
+                                source_labels.append(source_commands[source_row])
+                    if len(source_labels) != int(original_k) or any(
+                        action[index][6] != expected
+                        for index, expected in enumerate(source_labels)
+                    ):
+                        problems.append(
+                            f"{prefix} command-gripper labels differ from source commands"
+                        )
+                    elif int(original_k) == 0 and reason == "boundary":
+                        query_row = record.get("source_row_id")
+                        if (
+                            not isinstance(query_row, int)
+                            or isinstance(query_row, bool)
+                            or query_row not in source_commands
+                            or action[0][6] != source_commands[query_row]
+                        ):
+                            problems.append(
+                                f"{prefix} zero-prefix gripper hold differs from source command"
+                            )
             if reason == "boundary":
                 if (
                     int(original_k) >= ACTION_HORIZON
@@ -712,6 +837,10 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
         normalization = _read_json(normalization_path)
         try:
             WaypointV2Normalizer(normalization)
+            if normalization.get("dataset_schema_version") != dataset_schema:
+                raise M0MobileError(
+                    "waypoint-v2 normalization does not match the dataset schema"
+                )
             clip_rates = _dataset_clip_rates(
                 dataset_root, _v1_compatible_normalization(normalization)
             )
@@ -744,6 +873,7 @@ def audit_waypoint_v2_dataset(root: str | Path) -> dict[str, Any]:
         "suffix_reason_split_counts": dict(sorted(suffixes.items())),
         "state_field_count": 0,
         "state_tensor_count": 0,
+        "command_gripper_source_episode_count": len(command_gripper_sources),
         "navigation_roundtrip_max_m_or_rad": max_nav_roundtrip,
         "arm_roundtrip_max_m_or_rad": max_arm_roundtrip,
         "split_continuous_clip_rates": clip_rates,
@@ -759,7 +889,7 @@ class ConveyorVLAWaypointV2Dataset:
             raise M0MobileError("waypoint-v2 split must be train, val, or test")
         self.root = Path(root).expanduser().resolve()
         self.manifest = _read_json(self.root / "manifest.json")
-        if self.manifest.get("schema_version") != DATASET_SCHEMA_VERSION_V2:
+        if self.manifest.get("schema_version") not in DATASET_SCHEMA_VERSIONS_V2:
             raise M0MobileError("waypoint-v2 dataset schema is incompatible")
         info = _mapping(_mapping(self.manifest.get("records"), "records").get(split), f"records.{split}")
         self.path = self.root / str(info["relative_path"])
@@ -768,6 +898,12 @@ class ConveyorVLAWaypointV2Dataset:
         self.normalizer = WaypointV2Normalizer.from_path(
             self.root / str(self.manifest["normalization_relative_path"])
         )
+        if self.normalizer.payload.get("dataset_schema_version") != self.manifest.get(
+            "schema_version"
+        ):
+            raise M0MobileError(
+                "waypoint-v2 normalization does not match the dataset schema"
+            )
         self.split = split
         self.offsets: list[int] = []
         self.routes: list[str] = []
@@ -883,10 +1019,88 @@ class ConveyorVLAWaypointV2Dataset:
         return _mapping(json.loads(self._stream.readline()), "waypoint-v2 record")
 
 
+def _commanded_gripper_by_source_row(
+    raw_samples: Mapping[int, Mapping[str, Any]],
+) -> dict[int, float]:
+    if not raw_samples:
+        raise M0MobileError("waypoint-v2 command-gripper source is empty")
+    ordered = sorted(raw_samples.items())
+    held = 1.0 if _gripper_fraction(ordered[0][1]) >= 0.5 else 0.0
+    result = {}
+    for source_row, sample in ordered:
+        command = _explicit_gripper_command(sample)
+        if command == "open":
+            held = 1.0
+        elif command == "close":
+            held = 0.0
+        elif command not in {"", "hold"}:
+            raise M0MobileError(
+                f"waypoint-v2 source has unsupported gripper command: {command!r}"
+            )
+        result[int(source_row)] = held
+    return result
+
+
+def _explicit_gripper_command(sample: Mapping[str, Any]) -> str:
+    signals = sample.get("subtask_signals")
+    command = str(sample.get("gripper_command", "")).strip().lower()
+    if isinstance(signals, Mapping):
+        command = str(signals.get("gripper_command", command)).strip().lower()
+    return command
+
+
+def _gripper_command_transition_pattern(
+    raw_samples: Mapping[int, Mapping[str, Any]],
+) -> tuple[tuple[str, str], ...]:
+    ordered = sorted(raw_samples.items())
+    held = "open" if _gripper_fraction(ordered[0][1]) >= 0.5 else "close"
+    transitions = []
+    for _source_row, sample in ordered:
+        command = _explicit_gripper_command(sample)
+        if command in {"open", "close"} and command != held:
+            transitions.append((str(sample.get("pipeline_state", "")), command))
+            held = command
+    return tuple(transitions)
+
+
+def _rewrite_manipulation_gripper_labels(
+    record: dict[str, Any],
+    route: WaypointRoute,
+    commanded_gripper: Mapping[int, float],
+) -> None:
+    if action_domain(route) is not WaypointActionDomain.MANIPULATION:
+        return
+    original = tuple(bool(value) for value in record["action_valid_mask"])
+    provenance = _mapping(record.get("label_provenance"), "label_provenance")
+    target_rows = provenance.get("target_source_rows")
+    if (
+        not isinstance(target_rows, Sequence)
+        or isinstance(target_rows, (str, bytes))
+        or len(target_rows) < sum(original)
+    ):
+        raise M0MobileError("waypoint-v2 ARM provenance has no target source rows")
+    action = [list(row) for row in record["arm_targets_base"]]
+    for index in range(sum(original)):
+        source_row = target_rows[index]
+        if isinstance(source_row, bool) or not isinstance(source_row, int):
+            raise M0MobileError("waypoint-v2 ARM target source row is invalid")
+        if source_row not in commanded_gripper:
+            raise M0MobileError("waypoint-v2 cannot resolve an ARM gripper command")
+        action[index][6] = commanded_gripper[source_row]
+    record["arm_targets_base"] = action
+    record["label_provenance"] = {
+        **provenance,
+        "gripper_action_source": "future_expert_gripper_command",
+        "gripper_hold_semantics": "carry_forward_last_explicit_open_close",
+        "measured_joint_opening_used_as_target": False,
+    }
+
+
 def _upgrade_action_suffix(
     record: dict[str, Any],
     route: WaypointRoute,
     raw_samples: Mapping[int, Mapping[str, Any]],
+    commanded_gripper: Mapping[int, float],
     *,
     episode_end: float,
     next_event: Mapping[str, Any] | None,
@@ -945,11 +1159,13 @@ def _upgrade_action_suffix(
             sample = raw_samples.get(source_row)
             if sample is None:
                 raise M0MobileError("waypoint-v2 cannot resolve a zero-prefix ARM query row")
+            if source_row not in commanded_gripper:
+                raise M0MobileError("waypoint-v2 cannot resolve a zero-prefix gripper command")
             hold = list(
                 arm_target_base(
                     _finite_vector(sample.get("base_pose"), 7, "base_pose"),
                     _finite_vector(sample.get("tcp_pose"), 7, "tcp_pose"),
-                    _gripper_fraction(sample),
+                    commanded_gripper[source_row],
                 )
             )
         for index in range(original_k, ACTION_HORIZON):
