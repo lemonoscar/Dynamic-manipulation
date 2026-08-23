@@ -3,7 +3,8 @@
 最后复核：2026-08-23 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
-[阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)。
+[阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
+[操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
 
 ## 0. Waypoint v2 最新状态
 
@@ -19,10 +20,16 @@ local fatal stall 后的 seed 139 闭环仍连续 157 次输出 `NAV_TO_SOURCE`�
 原硬标签行为。原始 `K*=0` row 也不再被伪标为可表示的 `K=1` prefix。
 
 证据支持的最小候选为 terminal-hold + B2 boundary/progress + S1；prefix、CRL 与
-on-policy correction 均保持关闭。正式 run 已从官方 Qwen 初始化，在完整 108,603 train
-rows 上仅双卡启动：source `7ec8424cc7d1`、global batch 64、总长 2,000 step、每 500
-step 保存。连续 step 4–23 的机器健康审计通过，median step time `18.282 s`、throughput
-`3.501 samples/s`、peak reserved memory `79,720 MiB`；达到门槛后训练保持运行。
+on-policy correction 均保持关闭。正式 full-data run 曾从官方 Qwen 初始化，仅双卡、
+global batch 64 启动；连续 step 4–23 的健康审计通过。用户随后在有效 step 568 后停止，
+最后 durable checkpoint 为 step 500；2026-08-23 最新实时核验没有本任务进程或 tmux。
+
+step 500 的 seed 147 诊断后来暴露出两个新根因：旧 runtime 会从不可规划 target0 跳到
+target1，且旧 v2 ARM 第 7 维是测得手指开度而不是专家夹爪命令。`8970dea` 已改为每次
+MANI query 只按时间顺序执行 target0、无规划/timeout 安全重询，并从 raw 显式
+`gripper_command` 构建全新 immutable schema。新数据 522 episode、119,700 row 的完整
+audit 和逐行差分均通过，state field/tensor 为 0。旧 step 500 与新 schema/manifest 不兼容，
+不得 strict resume；下一步是 corrected-data overfit 门禁后 fresh 双卡全量训练。
 
 ## 1. 冻结 Waypoint v1 总结
 

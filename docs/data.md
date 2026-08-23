@@ -24,6 +24,27 @@ raw，也不复用旧 dense-transition sidecar、state28 normalizer 或 checkpoi
 这些哈希标识 2026-08-20 正式长训使用的数据快照。可变别名或目录名不能替代 manifest
 hash。
 
+### 1.1 Waypoint v2 command-gripper 修正版
+
+冻结的旧 v2 数据继续只用于历史 checkpoint 对照。2026-08-23 审计确认其 ARM 第 7 维
+沿用了测得手指开度，而 runtime 需要的是专家夹爪命令。修正版使用全新 identity，不覆盖
+旧 v1/v2 数据：
+
+| 项目 | 冻结值 |
+|---|---|
+| dataset ID | `conveyorvla-waypoint-v2-command-gripper-full-8970dea-20260823T144103Z` |
+| schema | `conveyorvla-waypoint-dense-transition-v2-command-gripper-v1` |
+| transform | `conveyorvla-waypoint-v1-to-v2-terminal-hold-command-gripper-v2` |
+| episode / row | 522 / 119,700 |
+| train / val / test | 108,603 / 5,771 / 5,326 |
+| manifest SHA-256 | `6f534e1b7ed456ab6595985d7148eea5e9ff214d4e6a308c5e34baa93fa2506f` |
+| normalizer SHA-256 | `e781bfed2661befa77dc13cdc3d4a7b88a77ee2678562fc952089f6cc307dc4a` |
+
+新数据只改 ARM gripper target 及其 schema/provenance。119,700 行逐行差分确认 NAV、TCP
+pose、route、boundary、terminal-hold、`K*`、split 和所有非夹爪字段完全不变；完整 audit
+为 `ok=true`、`problems=[]`，模型 state field/tensor 仍为 0。详细证据见
+[操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
+
 ## 2. 派生目录
 
 ```text
@@ -102,10 +123,17 @@ Navigation 标签为 `[20,3]`：
 
 Manipulation 标签为 `[20,7]`：
 
-- `[x,y,z,roll,pitch,yaw,gripper_open_fraction]`；
+- 冻结 v1/legacy v2 为
+  `[x,y,z,roll,pitch,yaw,measured_gripper_open_fraction]`，只用于历史基线；
+- command-gripper v2 为
+  `[x,y,z,roll,pitch,yaw,expert_gripper_command]`，raw 中 `0=close, 1=open`；
 - stride 为 0.20 s，总覆盖 4.0 s；
 - 是 query base 下 absolute TCP target，不是 TCP delta；
 - pose round-trip 后与 source TCP pose 对齐。
+
+command-gripper v2 的 normalizer 把夹爪命令映射到 `[-1,+1]`，推理反归一化后仍是
+`0=close, 1=open`。显式 `open/close` 更新 held command，`hold` 沿用最近一次命令；测得
+手指开度不再作为 action target。
 
 跨 route、缺失未来 source row 和 episode 尾部只把剩余
 `action_valid_mask=false`，不删除当前视觉/route row。mask 必须是真前缀。DONE 只有

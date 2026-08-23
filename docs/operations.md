@@ -6,6 +6,10 @@
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
 
+当前 Waypoint v2 的用户约束是：所有后续 GPU 训练、export、开环和闭环工作最多且只使用
+两张 GPU。本文第 3–8 节中的四卡命令是冻结 Waypoint v1 的历史复现说明，不能用于当前
+v2。current v2 命令见第 11 节。
+
 ## 1. 环境与代码预检
 
 ```bash
@@ -387,3 +391,63 @@ check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生
 - 不删除 source raw、已发布 episode 或远端 evidence；
 - 不用 `git reset`、`git clean`、stash 或 force-push 处理远端差异；
 - 只停止可精确识别为本任务启动的进程/tmux，其他进程不得控制。
+
+## 11. Waypoint v2 command-gripper 与双卡训练
+
+从相同只读 source 构建新数据，目标目录必须不存在：
+
+```bash
+WAYPOINT_SOURCE_N200=/path/to/liangzhu_0815_n200
+WAYPOINT_SOURCE_N400=/path/to/liangzhu_0815_n400
+WAYPOINT_V2_DATASET=/new/path/conveyorvla-waypoint-v2-command-gripper
+
+python scripts/build_waypoint_v2_dataset.py \
+  --source-root "$WAYPOINT_SOURCE_N200" \
+  --source-root "$WAYPOINT_SOURCE_N400" \
+  --output-root "$WAYPOINT_V2_DATASET" \
+  --audit-only
+
+python scripts/build_waypoint_v2_dataset.py \
+  --source-root "$WAYPOINT_SOURCE_N200" \
+  --source-root "$WAYPOINT_SOURCE_N400" \
+  --output-root "$WAYPOINT_V2_DATASET"
+
+python scripts/audit_waypoint_v2_dataset.py \
+  --dataset-root "$WAYPOINT_V2_DATASET" \
+  --output /new/private/run/waypoint_v2_dataset_audit.json
+```
+
+正式 config 为 `configs/waypoint_v2_b2_s1_command_gripper.json`。它绑定
+`conveyorvla-waypoint-dense-transition-v2-command-gripper-v1`，启用 terminal-hold 和
+corrected B2 boundary/progress，保持 S1；learned prefix、CRL 和 on-policy correction
+关闭。
+
+旧 `step_000500@7ec8424` 绑定 legacy v2 measured-opening schema，不能对新数据使用
+`--resume-from`。不得编辑 checkpoint manifest 或绕过训练入口的 dataset/config binding。
+corrected-data overfit 门禁通过后，使用全新 run：
+
+```bash
+CUDA_VISIBLE_DEVICES=<gpu_a>,<gpu_b> accelerate launch \
+  --config_file configs/accelerate_zero3_2gpu_no_offload.yaml \
+  --gradient_accumulation_steps 4 \
+  scripts/train_waypoint.py \
+  --dataset-root "$WAYPOINT_V2_DATASET" \
+  --output-dir /new/private/run/output \
+  --model-root /path/to/official-model-root \
+  --config configs/waypoint_v2_b2_s1_command_gripper.json \
+  --max-steps 2000 \
+  --batch-size 8 \
+  --gradient-accumulation-steps 4 \
+  --warmup-steps 200 \
+  --save-first-checkpoint-step 20 \
+  --save-interval-steps 500 \
+  --log-interval-steps 1 \
+  --num-workers 0 \
+  --attention-implementation sdpa \
+  --seed 20260823
+```
+
+global batch 为 `8 × 2 × 4 = 64`。启动前必须重新确认两张 GPU 的实时 UUID 和归属，写入
+run identity；不得假设上次空闲卡仍然空闲。训练从官方 Qwen 初始化，不恢复旧 optimizer。
+至少连续检查 20 个有效 optimizer step，并把两 rank、loss、gradient、LR、吞吐、显存、
+输出目录和 checkpoint identity 一并纳入健康门禁。

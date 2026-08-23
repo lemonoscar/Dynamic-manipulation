@@ -1,5 +1,10 @@
 # Step-500 K10 Seed-147 Arm Stage Evaluation (2026-08-23)
 
+> 后续根因复核说明：本文记录的是当时的诊断证据，不再代表当前 production 执行语义。
+> 该 run 跳过不可规划的 target0，执行了 target1；旧数据的 gripper channel 又是测得开度，
+> 而不是专家命令。两者已由 `8970dea` 修正。参见
+> [操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
+
 ## Scope and outcome
 
 This evaluation asks whether the step-500 Waypoint v2 checkpoint can complete the
