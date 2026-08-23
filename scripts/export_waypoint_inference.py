@@ -199,11 +199,13 @@ def _convert_pytorch_shards_to_safetensors(source: Path, destination: Path) -> N
         for name, tensor in state.items():
             if not isinstance(tensor, torch.Tensor):
                 raise M0MobileError(f"ZeRO weight is not a tensor: {name}")
-            if tensor.is_floating_point() and tensor.dtype != torch.float32:
-                raise M0MobileError(f"ZeRO consolidated weight is not fp32: {name}")
             # Qwen ties embed_tokens and lm_head. Clone every tensor so the
             # safetensors writer receives independent, contiguous storage.
-            safe_state[name] = tensor.detach().contiguous().clone()
+            safe_state[name] = (
+                tensor.detach().to(dtype=torch.float32).contiguous().clone()
+                if tensor.is_floating_point()
+                else tensor.detach().contiguous().clone()
+            )
         safe_name = shard_name.replace("pytorch_model", "model", 1).replace(
             ".bin", ".safetensors"
         )

@@ -66,7 +66,7 @@ def test_inference_export_is_outside_git_and_requires_sharded_safe_weights(tmp_p
     }
 
 
-def test_inference_export_clones_tied_weights_before_safetensors(tmp_path):
+def test_inference_export_clones_tied_weights_and_casts_floats_to_fp32(tmp_path):
     from safetensors.torch import load_file
 
     source = tmp_path / "pytorch"
@@ -74,7 +74,11 @@ def test_inference_export_clones_tied_weights_before_safetensors(tmp_path):
     source.mkdir()
     tied = torch.arange(8, dtype=torch.float32).reshape(4, 2)
     torch.save(
-        {"embed_tokens.weight": tied, "lm_head.weight": tied},
+        {
+            "embed_tokens.weight": tied,
+            "lm_head.weight": tied,
+            "frozen.weight": tied.to(torch.bfloat16),
+        },
         source / "pytorch_model-00001-of-00001.bin",
     )
     (source / "pytorch_model.bin.index.json").write_text(
@@ -84,6 +88,7 @@ def test_inference_export_clones_tied_weights_before_safetensors(tmp_path):
                 "weight_map": {
                     "embed_tokens.weight": "pytorch_model-00001-of-00001.bin",
                     "lm_head.weight": "pytorch_model-00001-of-00001.bin",
+                    "frozen.weight": "pytorch_model-00001-of-00001.bin",
                 },
             }
         ),
@@ -94,4 +99,6 @@ def test_inference_export_clones_tied_weights_before_safetensors(tmp_path):
     loaded = load_file(destination / "model-00001-of-00001.safetensors")
     torch.testing.assert_close(loaded["embed_tokens.weight"], tied)
     torch.testing.assert_close(loaded["lm_head.weight"], tied)
+    torch.testing.assert_close(loaded["frozen.weight"], tied)
+    assert loaded["frozen.weight"].dtype == torch.float32
     assert loaded["embed_tokens.weight"].data_ptr() != loaded["lm_head.weight"].data_ptr()
