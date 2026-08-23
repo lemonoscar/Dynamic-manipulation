@@ -689,6 +689,46 @@ def test_arm_diagnostic_can_bypass_only_target_step_limits():
     assert "outside the workspace" in (rejected_workspace.reason or "")
 
 
+def test_arm_diagnostic_selects_first_curobo_plannable_model_target():
+    class SecondTargetPlanner(_ArmPlanner):
+        def plan(self, joints, target, scene):
+            if target[0] > 0.50:
+                self.calls.append((joints, target, scene))
+                raise RuntimeError("first target is not plannable")
+            return super().plan(joints, target, scene)
+
+    rows = [
+        (0.60, 0.0, 0.05, 1.3, 1.0, 3.1, 1.0),
+        (0.40, 0.0, 0.23, 0.0, 0.1, -0.3, 0.8),
+        *[(0.41, 0.0, 0.24, 0.0, 0.1, -0.3, 0.8)] * 18,
+    ]
+    planner = SecondTargetPlanner()
+    executor = CuRoboIKRecedingHorizonExecutor(
+        planner,
+        _ArmController(),
+        ManipulationExecutionConfig(
+            enforce_target_step_limits=False,
+            select_first_plannable_model_target=True,
+        ),
+    )
+    planned = executor.begin(
+        _response(WaypointRoute.PICK, rows),
+        (0.38, 0.0, 0.18, 0.0, 0.08, 0.0),
+        (0.0, 0.0),
+        object(),
+        now_s=0.0,
+    )
+    assert not planned.failed
+    assert planned.base_velocity == (0.0, 0.0, 0.0)
+    assert planned.trace["selected_target_index"] == 1
+    assert planned.trace["target_selection_policy"] == "first_plannable_model_target"
+    assert [attempt["success"] for attempt in planned.trace["planner_attempts"]] == [
+        False,
+        True,
+    ]
+    assert [call[1] for call in planner.calls] == [rows[0][:6], rows[1][:6]]
+
+
 def test_arm_unreachable_is_zero_action_fail_closed():
     rows = [(0.31, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0)] * ACTION_HORIZON
     executor = CuRoboIKRecedingHorizonExecutor(_ArmPlanner(fail=True), _ArmController())

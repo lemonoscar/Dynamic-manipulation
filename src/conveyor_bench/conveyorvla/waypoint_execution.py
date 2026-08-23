@@ -190,6 +190,7 @@ class NavigationExecutionConfig:
 class ManipulationExecutionConfig:
     target_safety: ArmTargetSafety = ArmTargetSafety()
     enforce_target_step_limits: bool = True
+    select_first_plannable_model_target: bool = False
     chunk_timeout_s: float = 12.0
     max_target_position_error_m: float = 0.02
     max_target_orientation_error_rad: float = 0.10
@@ -197,8 +198,10 @@ class ManipulationExecutionConfig:
     joint_position_limits: tuple[tuple[float, float], ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.enforce_target_step_limits, bool):
-            raise ValueError("enforce_target_step_limits must be a boolean")
+        if not isinstance(self.enforce_target_step_limits, bool) or not isinstance(
+            self.select_first_plannable_model_target, bool
+        ):
+            raise ValueError("manipulation diagnostic controls must be booleans")
         if any(
             not math.isfinite(value) or value <= 0.0
             for value in (
@@ -688,6 +691,11 @@ class CuRoboIKRecedingHorizonExecutor:
             return _stop("response_is_not_manipulation", failed=True)
         gate_trace = {
             "target_step_limits_enforced": self.config.enforce_target_step_limits,
+            "target_selection_policy": (
+                "first_plannable_model_target"
+                if self.config.select_first_plannable_model_target
+                else "first_model_target"
+            ),
             "configured_max_translation_step_m": (
                 self.config.target_safety.max_translation_step_m
             ),
@@ -695,6 +703,7 @@ class CuRoboIKRecedingHorizonExecutor:
                 self.config.target_safety.max_axis_rotation_step_rad
             ),
         }
+        planner_attempts: list[dict[str, Any]] = []
         try:
             targets, mask = _fixed_arm_chunk(response)
             target_safety = self.config.target_safety
@@ -711,29 +720,69 @@ class CuRoboIKRecedingHorizonExecutor:
                 current_tcp_base,
                 safety=target_safety,
             )
-            target = accepted[0]
             joints = _finite_vector(current_joints, None, "current_joints")
             planned_at = time.perf_counter()
-            plan = self.planner.plan(joints, target[:6], scene_collision)
+            for target_index, candidate in enumerate(accepted):
+                attempt_started = time.perf_counter()
+                try:
+                    candidate_plan = self.planner.plan(
+                        joints, candidate[:6], scene_collision
+                    )
+                    _validate_arm_plan(candidate_plan, joints, self.config)
+                except Exception as candidate_error:
+                    planner_attempts.append(
+                        {
+                            "target_index": target_index,
+                            "success": False,
+                            "elapsed_ms": (
+                                time.perf_counter() - attempt_started
+                            )
+                            * 1000.0,
+                            "error": (
+                                f"{type(candidate_error).__name__}:"
+                                f"{candidate_error}"
+                            ),
+                        }
+                    )
+                    if not self.config.select_first_plannable_model_target:
+                        raise
+                    continue
+                planner_attempts.append(
+                    {
+                        "target_index": target_index,
+                        "success": True,
+                        "elapsed_ms": (time.perf_counter() - attempt_started)
+                        * 1000.0,
+                    }
+                )
+                target = candidate
+                plan = candidate_plan
+                selected_target_index = target_index
+                break
+            else:
+                raise RuntimeError("no model ARM target produced a valid cuRobo plan")
             planning_elapsed_ms = (time.perf_counter() - planned_at) * 1000.0
-            _validate_arm_plan(plan, joints, self.config)
             self.controller.reset(plan, target[6])
         except Exception as error:
             return _stop(
                 f"arm_plan_failed:{type(error).__name__}:{error}",
                 failed=True,
-                trace=gate_trace,
+                trace={
+                    **gate_trace,
+                    "planner_attempts": planner_attempts,
+                },
             )
         self._active = {
             "request_id": response.request_id,
             "sequence_id": response.sequence_id,
             "route": response.route,
             "model_trusted_prefix_k": response.trusted_prefix_k,
-            "selected_target_index": 0,
+            "selected_target_index": selected_target_index,
             "target_tcp_base": target,
             "plan": plan,
             "planning_elapsed_ms": planning_elapsed_ms,
             "started_s": now,
+            "planner_attempts": planner_attempts,
             **gate_trace,
         }
         return ExecutionCommand(
@@ -807,6 +856,8 @@ class CuRoboIKRecedingHorizonExecutor:
             "target_step_limits_enforced": active[
                 "target_step_limits_enforced"
             ],
+            "target_selection_policy": active["target_selection_policy"],
+            "planner_attempts": list(active["planner_attempts"]),
             "configured_max_translation_step_m": active[
                 "configured_max_translation_step_m"
             ],
