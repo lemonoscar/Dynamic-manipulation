@@ -325,7 +325,7 @@ class JointPathControllerConfig:
 
 
 class JointPathController:
-    """Track a pre-validated cuRobo path without changing its target semantics."""
+    """Play a pre-validated cuRobo path, then verify the measured final pose."""
 
     def __init__(self, config: JointPathControllerConfig = JointPathControllerConfig()) -> None:
         self.config = config
@@ -349,13 +349,14 @@ class JointPathController:
         measured = _finite_vector(
             measured_joints, len(self._path[0]), "measured arm joints"
         )
-        while self._index < len(self._path) and _max_error(
-            measured, self._path[self._index]
-        ) <= self.config.reached_tolerance_rad:
+        if self._index < len(self._path) - 1:
             self._index += 1
-        if self._index >= len(self._path):
-            return self._path[-1], True
-        return self._path[self._index], False
+            return self._path[self._index], False
+        done = (
+            _max_error(measured, self._path[-1])
+            <= self.config.reached_tolerance_rad
+        )
+        return self._path[-1], done
 
     def status(self) -> dict[str, Any]:
         return {

@@ -246,6 +246,24 @@ def test_joint_path_controller_stops_after_first_tcp_plan_finishes():
     assert target == (0.05, -0.05) and done
 
 
+def test_joint_path_controller_does_not_deadlock_on_intermediate_tracking_error():
+    controller = JointPathController()
+    controller.reset(
+        ArmPlan(
+            joint_path=((0.0,), (0.04,), (0.08,)),
+            planner="curobo",
+            reachable=True,
+            collision_free=True,
+            target_position_error_m=0.0,
+            target_orientation_error_rad=0.0,
+        ),
+        0.25,
+    )
+    assert controller.command((0.0,)) == ((0.04,), False)
+    assert controller.command((0.0,)) == ((0.08,), False)
+    assert controller.command((0.051,)) == ((0.08,), True)
+
+
 class _Profiler:
     def summary(self):
         return {"plan_pose": 0.01}
