@@ -5,6 +5,8 @@
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
 [操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
+当前正式训练参数由 [Waypoint Policy v2 合同](conveyorvla_waypoint_policy_contract_v2.md)
+冻结。
 
 ## 0. Waypoint v2 最新状态
 
@@ -29,7 +31,10 @@ target1，且旧 v2 ARM 第 7 维是测得手指开度而不是专家夹爪命�
 MANI query 只按时间顺序执行 target0、无规划/timeout 安全重询，并从 raw 显式
 `gripper_command` 构建全新 immutable schema。新数据 522 episode、119,700 row 的完整
 audit 和逐行差分均通过，state field/tensor 为 0。旧 step 500 与新 schema/manifest 不兼容，
-不得 strict resume；下一步是 corrected-data overfit 门禁后 fresh 双卡全量训练。
+不得 strict resume。最新用户指令改为 fresh 四卡全量训练：S4、global batch 128、3,000
+effective optimizer step、每 250 step 保存；prefix/CRL/on-policy correction 仍关闭。
+2026-08-23 23:39 CST 实时预检时 GPU 0/1 仍被无关 StarVLA 任务占用、GPU 2/3 空闲；按
+用户指令没有共享、终止或启动训练，当前只完成代码、配置和文档对齐。
 
 ## 1. 冻结 Waypoint v1 总结
 

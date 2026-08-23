@@ -151,6 +151,20 @@ def test_v2_command_gripper_config_changes_only_dataset_identity(tmp_path: Path)
     _validate_args(_args(tmp_path), command)
 
 
+def test_v2_command_gripper_s4_changes_only_fm_draw_count(tmp_path: Path):
+    s1 = _load_config(
+        Path("configs/waypoint_v2_b2_s1_command_gripper.json")
+    )
+    s4 = _load_config(
+        Path("configs/waypoint_v2_b2_s4_command_gripper.json")
+    )
+    expected = copy.deepcopy(s1)
+    expected["loss"]["repeated_diffusion_steps"] = 4
+    assert s4 == expected
+    assert s4["action_model"]["num_inference_timesteps"] == 4
+    _validate_args(_args(tmp_path), s4)
+
+
 def test_v2_b5_adds_only_manifest_bound_on_policy_sampling(tmp_path: Path):
     b4 = _load_config(Path("configs/waypoint_v2_b4_s1.json"))
     b5 = _load_config(Path("configs/waypoint_v2_b5_s1.json"))

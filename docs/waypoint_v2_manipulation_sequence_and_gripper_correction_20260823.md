@@ -3,7 +3,8 @@
 - 复核日期：2026-08-23 CST
 - 实现提交：`8970dea82ca163c73e21ea272722993b04499898`
 - 状态：代码已推送；新 immutable 数据已构建并通过全量审计；训练尚未启动
-- 适用限制：后续所有 GPU 训练和评测只允许使用两张 GPU
+- 后续更新：用户已授权新的正式训练使用四张 GPU、S4、3,000 step 和 250-step checkpoint；
+  训练合同见 [Waypoint Policy v2](conveyorvla_waypoint_policy_contract_v2.md)
 
 ## 1. 结论
 
@@ -24,7 +25,7 @@ chunk 超时就安全停车并重新观察；数据则从 raw 中显式的专家
 新数据的结构、来源、split、NAV、TCP pose、boundary、terminal-hold、`K*` 和 normalizer
 连续量均已审计通过。由于夹爪监督语义和数据身份发生变化，旧 `step_000500` 不能使用
 `--resume-from` 恢复 optimizer；正确下一步是 corrected-data overfit 门禁后启动一个全新
-双卡全量训练。
+全新全量训练。
 
 ## 2. 失败证据与运行时修正
 
@@ -138,7 +139,7 @@ checkpoint 是 `step_000500@7ec8424`。该 checkpoint 绑定：
 选择性 reinit 和 optimizer reset 三个变量，削弱本轮对夹爪标签修正的归因。若以后确有节省
 算力需要，应把 weight-only warm-start 作为独立配对 pilot，而不是称作 resume。
 
-## 7. 冻结的双卡训练计划
+## 7. 被后续指令替代的双卡训练计划
 
 训练前先在覆盖全部 route 和四种 boundary 的 8–16 个 episode 上完成 corrected-data
 overfit 与严格开环，重点检查：
@@ -149,7 +150,7 @@ overfit 与严格开环，重点检查：
 4. MANI 每次只执行 target0，无 suffix 跳选；
 5. route/action、terminal-hold、ARM 连续性和 cuRobo 可执行性通过。
 
-门禁通过后启动全量新 run：
+本节记录 2026-08-23 较早版本的计划，已被四卡 S4 合同替代，不再作为启动命令。原计划为：
 
 | 项目 | 计划值 |
 |---|---|
