@@ -2,7 +2,7 @@
 
 - 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4`
 - 分支：`waypoint-v2`
-- 状态：正式训练候选；run identity 在启动后追加冻结
+- 状态：正式双卡训练候选；run identity 在启动后追加冻结
 - 基线：Waypoint v1 和 legacy v2 数据/checkpoint 均保持只读
 
 ## 1. 模型输入与 route 所有权
@@ -82,30 +82,30 @@ L_FM^(4) = (L_FM^1 + L_FM^2 + L_FM^3 + L_FM^4) / 4
 
 | 项目 | 冻结值 |
 |---|---|
-| GPU | 4 × H20，启动前逐卡确认无外部进程 |
+| GPU | 物理 GPU 2/3，共 2 × H20；启动前逐卡确认无外部进程 |
 | precision / sharding | bf16 / ZeRO-3，无 offload |
 | micro batch | 2 / GPU |
-| accumulation | 16 |
-| global batch | `2 × 4 × 16 = 128` |
+| accumulation | 32 |
+| global batch | `2 × 2 × 32 = 128` |
 | max steps | 3,000 effective optimizer step |
 | equivalent sampling epochs | `3000 × 128 / 108603 ≈ 3.5358` |
 | warmup | 200 step |
 | checkpoint | 每 250 effective optimizer step |
 | config | `configs/waypoint_v2_b2_s4_command_gripper.json` |
 | config SHA-256 | `a173ef0ec0ddb5e605f313f6759bf61ce0b26e2b214cdb105e5303e3771c043e` |
-| distributed config | `configs/accelerate_zero3_4gpu_waypoint_gbs128_s4.yaml` |
-| distributed config SHA-256 | `e9810ae2cb1ef23ac5ae11e2b2e983a93d6d013b523734a87e7c429a8ce2f025` |
+| distributed config | `configs/accelerate_zero3_2gpu_waypoint_gbs128_s4.yaml` |
+| distributed config SHA-256 | `075ea150b7272cd94b44a4a0468047dbfc0bdac6b71b651f46e0383939d55f57` |
 
 选择 micro 2 是为了给 S4 的四倍 action-head activation 留出显存；更大的 global batch 通过
-accumulation 获得，不用冒险提高单卡峰值。若任一卡存在不相关进程，不得共享或终止对方，
-正式四卡启动必须等待四卡全部可用。
+accumulation 获得，不用冒险提高单卡峰值。GPU 0/1 的无关 StarVLA 保持不动，训练只暴露
+物理 GPU 2/3。
 
 ## 6. 健康启动与后续门禁
 
-正式 full-data run 前仍须用覆盖全部 route 和四种 boundary 的 8–16 episode corrected-data
-overfit 检查夹爪 open→approach→close→lift 时序；不得用长训代替该门禁。
+最新用户指令要求直接启动 full-data run，因此 corrected-data 8–16 episode overfit 仍列为
+未完成的科学门禁，不能因长训已启动而标记为通过。
 
-启动后至少连续观察 10 个有效 optimizer step，要求：四 rank/四 GPU 参与；step 连续；
+启动后至少连续观察 10 个有效 optimizer step，要求：两 rank/GPU 2/3 参与；step 连续；
 total、answer、route、NAV/ARM 四个 draw、boundary/progress loss、gradient、LR、吞吐和显存
 均有限；无 OOM、NaN/Inf、NCCL error、traceback 或输出路径错误。达到门槛后停止监视，
 训练进程保持运行。

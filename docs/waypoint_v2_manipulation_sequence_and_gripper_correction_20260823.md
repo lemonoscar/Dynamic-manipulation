@@ -3,7 +3,7 @@
 - 复核日期：2026-08-23 CST
 - 实现提交：`8970dea82ca163c73e21ea272722993b04499898`
 - 状态：代码已推送；新 immutable 数据已构建并通过全量审计；训练尚未启动
-- 后续更新：用户已授权新的正式训练使用四张 GPU、S4、3,000 step 和 250-step checkpoint；
+- 后续更新：用户最终指定正式训练使用物理 GPU 2/3、S4、3,000 step 和 250-step checkpoint；
   训练合同见 [Waypoint Policy v2](conveyorvla_waypoint_policy_contract_v2.md)
 
 ## 1. 结论

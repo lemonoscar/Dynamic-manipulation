@@ -31,10 +31,9 @@ target1，且旧 v2 ARM 第 7 维是测得手指开度而不是专家夹爪命�
 MANI query 只按时间顺序执行 target0、无规划/timeout 安全重询，并从 raw 显式
 `gripper_command` 构建全新 immutable schema。新数据 522 episode、119,700 row 的完整
 audit 和逐行差分均通过，state field/tensor 为 0。旧 step 500 与新 schema/manifest 不兼容，
-不得 strict resume。最新用户指令改为 fresh 四卡全量训练：S4、global batch 128、3,000
-effective optimizer step、每 250 step 保存；prefix/CRL/on-policy correction 仍关闭。
-2026-08-23 23:39 CST 实时预检时 GPU 0/1 仍被无关 StarVLA 任务占用、GPU 2/3 空闲；按
-用户指令没有共享、终止或启动训练，当前只完成代码、配置和文档对齐。
+不得 strict resume。2026-08-24 最新用户指令改为在物理 GPU 2/3 fresh 启动全量训练：
+S4、global batch 128、3,000 effective optimizer step、每 250 step 保存；
+prefix/CRL/on-policy correction 仍关闭。GPU 0/1 的无关 StarVLA 不得触碰。
 
 ## 1. 冻结 Waypoint v1 总结
 

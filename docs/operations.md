@@ -6,8 +6,8 @@
 使用全新目录。数据、checkpoint、日志、视频、cache 和 `handoff_private/` 均不得进入
 Git。
 
-2026-08-23 最新指令允许当前 Waypoint v2 正式训练使用全部四张 H20，覆盖此前双卡限制。
-本文第 3–8 节仍是冻结 Waypoint v1 的历史复现说明；current v2 命令见第 11 节和
+2026-08-24 最新指令指定当前 Waypoint v2 正式训练只使用物理 GPU 2/3。本文第 3–8 节
+仍是冻结 Waypoint v1 的历史复现说明；current v2 命令见第 11 节和
 [Waypoint Policy v2 合同](conveyorvla_waypoint_policy_contract_v2.md)。
 
 ## 1. 环境与代码预检
@@ -392,7 +392,7 @@ check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生
 - 不用 `git reset`、`git clean`、stash 或 force-push 处理远端差异；
 - 只停止可精确识别为本任务启动的进程/tmux，其他进程不得控制。
 
-## 11. Waypoint v2 command-gripper S4 四卡训练
+## 11. Waypoint v2 command-gripper S4 双卡训练
 
 从相同只读 source 构建新数据，目标目录必须不存在：
 
@@ -424,12 +424,12 @@ corrected B2 boundary/progress，并把训练 FM Monte Carlo draw 从 S1 提升�
 
 旧 `step_000500@7ec8424` 绑定 legacy v2 measured-opening schema，不能对新数据使用
 `--resume-from`。不得编辑 checkpoint manifest 或绕过训练入口的 dataset/config binding。
-corrected-data overfit 门禁通过后，使用全新 full-data run：
+按最新指令直接使用全新 full-data run；未完成的 corrected-data overfit 不能因此记为通过：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
-  --config_file configs/accelerate_zero3_4gpu_waypoint_gbs128_s4.yaml \
-  --gradient_accumulation_steps 16 \
+CUDA_VISIBLE_DEVICES=2,3 accelerate launch \
+  --config_file configs/accelerate_zero3_2gpu_waypoint_gbs128_s4.yaml \
+  --gradient_accumulation_steps 32 \
   scripts/train_waypoint.py \
   --dataset-root "$WAYPOINT_V2_DATASET" \
   --output-dir /new/private/run/output \
@@ -437,7 +437,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   --config configs/waypoint_v2_b2_s4_command_gripper.json \
   --max-steps 3000 \
   --batch-size 2 \
-  --gradient-accumulation-steps 16 \
+  --gradient-accumulation-steps 32 \
   --warmup-steps 200 \
   --save-first-checkpoint-step 0 \
   --save-interval-steps 250 \
@@ -447,8 +447,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   --seed 20260823
 ```
 
-global batch 为 `2 × 4 × 16 = 128`。启动前必须重新确认四张 GPU 均无外部 compute
-process，并把实时 UUID 写入 private run identity；不得终止或共享无关任务。训练从官方
-Qwen 初始化，不恢复旧 optimizer。至少连续检查 10 个有效 optimizer step，并把四 rank、
+global batch 为 `2 × 2 × 32 = 128`。启动前必须重新确认 GPU 2/3 无外部 compute process，
+并把实时 UUID 写入 private run identity；GPU 0/1 的无关任务不得终止或共享。训练从官方
+Qwen 初始化，不恢复旧 optimizer。至少连续检查 10 个有效 optimizer step，并把两 rank、
 四组 FM draw loss、gradient、LR、吞吐、显存、输出目录和 checkpoint identity 一并纳入
 健康门禁。
