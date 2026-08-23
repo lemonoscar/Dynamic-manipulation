@@ -2,7 +2,7 @@
 
 - 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4`
 - 分支：`waypoint-v2`
-- 状态：正式双卡训练候选；run identity 在启动后追加冻结
+- 状态：正式双卡训练运行中；source commit 与 run identity 已冻结
 - 基线：Waypoint v1 和 legacy v2 数据/checkpoint 均保持只读
 
 ## 1. 模型输入与 route 所有权
@@ -95,6 +95,8 @@ L_FM^(4) = (L_FM^1 + L_FM^2 + L_FM^3 + L_FM^4) / 4
 | config SHA-256 | `a173ef0ec0ddb5e605f313f6759bf61ce0b26e2b214cdb105e5303e3771c043e` |
 | distributed config | `configs/accelerate_zero3_2gpu_waypoint_gbs128_s4.yaml` |
 | distributed config SHA-256 | `075ea150b7272cd94b44a4a0468047dbfc0bdac6b71b651f46e0383939d55f57` |
+| training source | `waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637` |
+| run ID | `conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST` |
 
 选择 micro 2 是为了给 S4 的四倍 action-head activation 留出显存；更大的 global batch 通过
 accumulation 获得，不用冒险提高单卡峰值。GPU 0/1 的无关 StarVLA 保持不动，训练只暴露
@@ -109,6 +111,11 @@ accumulation 获得，不用冒险提高单卡峰值。GPU 0/1 的无关 StarVLA
 total、answer、route、NAV/ARM 四个 draw、boundary/progress loss、gradient、LR、吞吐和显存
 均有限；无 OOM、NaN/Inf、NCCL error、traceback 或输出路径错误。达到门槛后停止监视，
 训练进程保持运行。
+
+2026-08-24 启动后，steps 1–10 连续健康审计通过，额外观察的 step 11 也正常。双 rank 分别
+绑定物理 GPU 2/3；10 步 loss、梯度、LR、吞吐、显存和所有四组 FM draw 均为有限值，未见
+failed event、OOM、NaN/Inf、NCCL error 或 traceback。详细证据见
+[Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
 
 健康启动只证明训练系统正常。step 250 起仍需依次执行 checkpoint load、严格开环、完整
 transition lag/crossover/flicker、NAV/ARM 20-step 图片、planner 和真实三视角闭环门禁。

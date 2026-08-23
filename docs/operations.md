@@ -444,7 +444,7 @@ CUDA_VISIBLE_DEVICES=2,3 accelerate launch \
   --log-interval-steps 1 \
   --num-workers 0 \
   --attention-implementation sdpa \
-  --seed 20260823
+  --seed 20260824
 ```
 
 global batch 为 `2 × 2 × 32 = 128`。启动前必须重新确认 GPU 2/3 无外部 compute process，
@@ -452,3 +452,10 @@ global batch 为 `2 × 2 × 32 = 128`。启动前必须重新确认 GPU 2/3 无�
 Qwen 初始化，不恢复旧 optimizer。至少连续检查 10 个有效 optimizer step，并把两 rank、
 四组 FM draw loss、gradient、LR、吞吐、显存、输出目录和 checkpoint identity 一并纳入
 健康门禁。
+
+2026-08-24 的实际正式 run 使用 clean
+`waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637`，run ID 为
+`conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST`。
+steps 1–10 的连续审计通过，额外 step 11 正常，训练保持运行。公开证据与尚未通过的模型
+质量门禁见
+[Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。

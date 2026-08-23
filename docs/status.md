@@ -1,6 +1,6 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-23 CST。冻结的 Waypoint v1 runtime/eval 基线为
+最后复核：2026-08-24 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
@@ -35,6 +35,14 @@ audit 和逐行差分均通过，state field/tensor 为 0。旧 step 500 与新 
 S4、global batch 128、3,000 effective optimizer step、每 250 step 保存；
 prefix/CRL/on-policy correction 仍关闭。GPU 0/1 的无关 StarVLA 不得触碰。
 
+该正式 run 已从 clean `waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637`
+启动，run ID 为
+`conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST`。
+steps 1–10 连续健康审计通过，step 11 继续正常，训练保持运行；双 rank 只占用物理 GPU 2/3，
+GPU 0/1 的既有任务未被触碰。当前尚未到 step 250，因此还没有可用于模型质量判断的首个
+durable checkpoint。完整修正与启动证据见
+[Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
+
 ## 1. 冻结 Waypoint v1 总结
 
 Waypoint Policy v1 的无 state 数据、两次完整 Qwen、双 Layerwise FM head、checkpoint、
@@ -68,6 +76,7 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | seed 正面可见 preflight | 通过 | seed 139 settle 后 bearing `-0.609°`；首帧目检可乐居中可见 |
 | lookahead 完整自主 Isaac | **未通过** | 18×NAV 后自主 PICK；ARM target 2 旋转 step 超过 35° |
 | 完整 pick-place | **未通过** | 没有成功抓取、搬运和放置 |
+| Waypoint v2 S4 双卡正式训练 | **健康运行中** | steps 1–10 严格健康审计通过；step 11 正常；首个 checkpoint 预计 step 250 |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 
