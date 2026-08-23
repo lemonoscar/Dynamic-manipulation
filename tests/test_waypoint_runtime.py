@@ -206,19 +206,25 @@ def test_v2_inference_exposes_only_model_trusted_prefix_to_execution():
     assert set(policy.examples[0]) == {"video", "lang"}
 
 
-def test_navigation_uses_dynamic_v2_prefix_instead_of_v1_fixed_ten():
+@pytest.mark.parametrize(
+    ("model_prefix_k", "effective_prefix_k"),
+    ((4, 4), (ACTION_HORIZON, 10)),
+)
+def test_navigation_caps_dynamic_v2_prefix_at_ten(
+    model_prefix_k, effective_prefix_k
+):
     pct, dwa = _PCT(), _DWA()
     executor = PCTDWARecedingHorizonExecutor(pct, dwa)
     response = _response(
         WaypointRoute.NAV_TO_SOURCE,
         [(0.05 * (index + 1), 0.0, 0.0) for index in range(ACTION_HORIZON)],
-        trusted_prefix_k=4,
+        trusted_prefix_k=model_prefix_k,
     )
     planned = executor.begin(response, (0.0, 0.0, 0.0), now_s=0.0)
     assert not planned.failed
-    assert planned.trace["trusted_horizon_points"] == 4
-    assert planned.trace["model_trusted_prefix_k"] == 4
-    assert planned.trace["selected_waypoint_index"] < 4
+    assert planned.trace["trusted_horizon_points"] == effective_prefix_k
+    assert planned.trace["model_trusted_prefix_k"] == model_prefix_k
+    assert planned.trace["selected_waypoint_index"] < effective_prefix_k
 
 
 class _PCT:

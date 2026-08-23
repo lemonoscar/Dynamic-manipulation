@@ -258,6 +258,7 @@ class PCTDWARecedingHorizonExecutor:
             return _stop("response_is_not_navigation", failed=True)
         full_horizon_violation: str | None = None
         minimum_lookahead_m: float | None = None
+        trusted_horizon_points: int | None = None
         selection_policy = "first-nondegenerate-v1"
         candidate_rejections: list[dict[str, Any]] = []
         try:
@@ -265,7 +266,10 @@ class PCTDWARecedingHorizonExecutor:
             waypoints, mask = _fixed_navigation_chunk(response)
             if self.config.safety_profile in _RANKED_LOOKAHEAD_PROFILES:
                 trusted_horizon_points = (
-                    response.trusted_prefix_k
+                    min(
+                        response.trusted_prefix_k,
+                        self.config.trusted_horizon_points,
+                    )
                     if response.trusted_prefix_k is not None
                     else self.config.trusted_horizon_points
                 )
@@ -441,15 +445,7 @@ class PCTDWARecedingHorizonExecutor:
             ),
             "full_horizon_violation": full_horizon_violation,
             "selection_policy": selection_policy,
-            "trusted_horizon_points": (
-                (
-                    response.trusted_prefix_k
-                    if response.trusted_prefix_k is not None
-                    else self.config.trusted_horizon_points
-                )
-                if self.config.safety_profile in _RANKED_LOOKAHEAD_PROFILES
-                else None
-            ),
+            "trusted_horizon_points": trusted_horizon_points,
             "model_trusted_prefix_k": response.trusted_prefix_k,
             "minimum_lookahead_m": minimum_lookahead_m,
             "target_lookahead_m": (
