@@ -189,6 +189,7 @@ class NavigationExecutionConfig:
 @dataclass(frozen=True)
 class ManipulationExecutionConfig:
     target_safety: ArmTargetSafety = ArmTargetSafety()
+    enforce_target_step_limits: bool = True
     chunk_timeout_s: float = 12.0
     max_target_position_error_m: float = 0.02
     max_target_orientation_error_rad: float = 0.10
@@ -196,6 +197,8 @@ class ManipulationExecutionConfig:
     joint_position_limits: tuple[tuple[float, float], ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.enforce_target_step_limits, bool):
+            raise ValueError("enforce_target_step_limits must be a boolean")
         if any(
             not math.isfinite(value) or value <= 0.0
             for value in (
@@ -683,13 +686,30 @@ class CuRoboIKRecedingHorizonExecutor:
             )
         if response.action_domain != WaypointActionDomain.MANIPULATION.value:
             return _stop("response_is_not_manipulation", failed=True)
+        gate_trace = {
+            "target_step_limits_enforced": self.config.enforce_target_step_limits,
+            "configured_max_translation_step_m": (
+                self.config.target_safety.max_translation_step_m
+            ),
+            "configured_max_axis_rotation_step_rad": (
+                self.config.target_safety.max_axis_rotation_step_rad
+            ),
+        }
         try:
             targets, mask = _fixed_arm_chunk(response)
+            target_safety = self.config.target_safety
+            if not self.config.enforce_target_step_limits:
+                target_safety = ArmTargetSafety(
+                    workspace_min_xyz=target_safety.workspace_min_xyz,
+                    workspace_max_xyz=target_safety.workspace_max_xyz,
+                    max_translation_step_m=math.inf,
+                    max_axis_rotation_step_rad=math.inf,
+                )
             accepted = validate_arm_targets(
                 targets,
                 mask,
                 current_tcp_base,
-                safety=self.config.target_safety,
+                safety=target_safety,
             )
             target = accepted[0]
             joints = _finite_vector(current_joints, None, "current_joints")
@@ -699,7 +719,11 @@ class CuRoboIKRecedingHorizonExecutor:
             _validate_arm_plan(plan, joints, self.config)
             self.controller.reset(plan, target[6])
         except Exception as error:
-            return _stop(f"arm_plan_failed:{type(error).__name__}:{error}", failed=True)
+            return _stop(
+                f"arm_plan_failed:{type(error).__name__}:{error}",
+                failed=True,
+                trace=gate_trace,
+            )
         self._active = {
             "request_id": response.request_id,
             "sequence_id": response.sequence_id,
@@ -710,6 +734,7 @@ class CuRoboIKRecedingHorizonExecutor:
             "plan": plan,
             "planning_elapsed_ms": planning_elapsed_ms,
             "started_s": now,
+            **gate_trace,
         }
         return ExecutionCommand(
             base_velocity=(0.0, 0.0, 0.0),
@@ -779,6 +804,15 @@ class CuRoboIKRecedingHorizonExecutor:
             "target_orientation_error_rad": plan.target_orientation_error_rad,
             "collision_free": plan.collision_free,
             "planning_elapsed_ms": active["planning_elapsed_ms"],
+            "target_step_limits_enforced": active[
+                "target_step_limits_enforced"
+            ],
+            "configured_max_translation_step_m": active[
+                "configured_max_translation_step_m"
+            ],
+            "configured_max_axis_rotation_step_rad": active[
+                "configured_max_axis_rotation_step_rad"
+            ],
             "planner_metadata": dict(plan.metadata),
         }
 

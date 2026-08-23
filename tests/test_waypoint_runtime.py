@@ -13,6 +13,7 @@ from conveyor_bench.conveyorvla.waypoint import (
 from conveyor_bench.conveyorvla.waypoint_execution import (
     ArmPlan,
     CuRoboIKRecedingHorizonExecutor,
+    ManipulationExecutionConfig,
     NAVIGATION_SAFETY_PROFILE_ARM_VLA_REFERENCE,
     NAVIGATION_SAFETY_PROFILE_EXECUTABLE_PREFIX,
     NAVIGATION_SAFETY_PROFILE_LOOKAHEAD_ARM_VLA,
@@ -650,6 +651,42 @@ def test_arm_plans_first_absolute_tcp_target_holds_base_and_requeries():
     controller.done = True
     reached = executor.step((0.1, -0.1), now_s=0.2)
     assert reached.requires_requery and not reached.failed
+
+
+def test_arm_diagnostic_can_bypass_only_target_step_limits():
+    rows = [(0.60, 0.0, 0.05, 1.3, 1.0, 3.1, 1.0)] * ACTION_HORIZON
+    response = _response(WaypointRoute.PICK, rows)
+    current = (0.38, 0.0, 0.18, 0.0, 0.08, 0.0)
+
+    guarded = CuRoboIKRecedingHorizonExecutor(_ArmPlanner(), _ArmController())
+    rejected = guarded.begin(response, current, (0.0, 0.0), object(), now_s=0.0)
+    assert rejected.failed
+    assert rejected.trace["target_step_limits_enforced"] is True
+
+    planner = _ArmPlanner()
+    diagnostic = CuRoboIKRecedingHorizonExecutor(
+        planner,
+        _ArmController(),
+        ManipulationExecutionConfig(enforce_target_step_limits=False),
+    )
+    accepted = diagnostic.begin(
+        response, current, (0.0, 0.0), object(), now_s=0.0
+    )
+    assert not accepted.failed
+    assert accepted.base_velocity == (0.0, 0.0, 0.0)
+    assert accepted.trace["target_step_limits_enforced"] is False
+    assert planner.calls[0][1] == rows[0][:6]
+
+    outside_workspace = [(0.90, *row[1:]) for row in rows]
+    rejected_workspace = diagnostic.begin(
+        _response(WaypointRoute.PICK, outside_workspace, sequence=2),
+        current,
+        (0.0, 0.0),
+        object(),
+        now_s=1.0,
+    )
+    assert rejected_workspace.failed
+    assert "outside the workspace" in (rejected_workspace.reason or "")
 
 
 def test_arm_unreachable_is_zero_action_fail_closed():

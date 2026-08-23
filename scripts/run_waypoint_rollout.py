@@ -71,6 +71,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-queries", type=int, default=400)
     parser.add_argument("--max-control-steps", type=int, default=24_000)
     parser.add_argument(
+        "--diagnostic-disable-arm-target-step-limits",
+        action="store_true",
+        help=(
+            "simulation-only diagnostic: retain workspace, collision, IK, joint, "
+            "and plan checks but bypass translation/rotation continuity limits "
+            "on model absolute TCP targets"
+        ),
+    )
+    parser.add_argument(
         "--navigation-safety-profile",
         choices=NAVIGATION_SAFETY_PROFILES,
         default=NAVIGATION_SAFETY_PROFILE_CONTRACT,
@@ -196,6 +205,7 @@ class WaypointRolloutPipeline:
         required_first_route: str | None,
         navigation_safety_profile: str,
         navigation_max_chunk_steps: int,
+        diagnostic_disable_arm_target_step_limits: bool,
         require_initial_source_visible: bool,
         initial_source_max_bearing_deg: float,
         seed_preflight_only: bool,
@@ -294,7 +304,11 @@ class WaypointRolloutPipeline:
         self.manipulation = CuRoboIKRecedingHorizonExecutor(
             self.curobo,
             JointPathController(),
-            ManipulationExecutionConfig(),
+            ManipulationExecutionConfig(
+                enforce_target_step_limits=(
+                    not diagnostic_disable_arm_target_step_limits
+                )
+            ),
         )
         separation_steps = int(round(0.20 / float(config.navigation.control_dt)))
         self.frames = TemporalJPEGBuffer(
@@ -462,6 +476,9 @@ class WaypointRolloutPipeline:
                 "route_owner": "Qwen Pass 1",
                 "external_fsm_used": False,
                 "navigation_safety_profile": self.navigation.config.safety_profile,
+                "arm_target_step_limits_enforced": (
+                    self.manipulation.config.enforce_target_step_limits
+                ),
                 "initial_source_visibility": self._initial_source_visibility,
             }
             summary_path.write_text(
@@ -1276,6 +1293,9 @@ def main(argv: list[str] | None = None) -> int:
             required_first_route=args.required_first_route,
             navigation_safety_profile=args.navigation_safety_profile,
             navigation_max_chunk_steps=max_chunk_execution_steps,
+            diagnostic_disable_arm_target_step_limits=(
+                args.diagnostic_disable_arm_target_step_limits
+            ),
             require_initial_source_visible=args.require_initial_source_visible,
             initial_source_max_bearing_deg=args.initial_source_max_bearing_deg,
             seed_preflight_only=args.seed_preflight_only,
