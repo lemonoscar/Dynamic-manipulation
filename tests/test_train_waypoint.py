@@ -20,6 +20,7 @@ from scripts.train_waypoint import (
     _optimizer,
     _resume_binding,
     _resume_data_position,
+    _self_conditioned_weight,
     _validate_accumulation_config,
     _validate_accumulation_runtime,
     _validate_args,
@@ -163,6 +164,44 @@ def test_v2_command_gripper_s4_changes_only_fm_draw_count(tmp_path: Path):
     assert s4 == expected
     assert s4["action_model"]["num_inference_timesteps"] == 4
     _validate_args(_args(tmp_path), s4)
+
+
+def test_v2_command_gripper_s4_delays_self_conditioning_to_step_1500(
+    tmp_path: Path,
+):
+    base = _load_config(
+        Path("configs/waypoint_v2_b2_s4_command_gripper.json")
+    )
+    delayed = _load_config(
+        Path("configs/waypoint_v2_b2_s4_command_gripper_self1500.json")
+    )
+    expected = copy.deepcopy(base)
+    expected["loss"]["lambda_self_schedule"] = {
+        "zero_until_step": 1500,
+        "linear_to_step": 2550,
+        "maximum": 0.5,
+    }
+    assert delayed == expected
+    args = _args(tmp_path)
+    args.max_steps = 3000
+    _validate_args(args, delayed)
+    schedule = delayed["loss"]["lambda_self_schedule"]
+    assert _self_conditioned_weight(0, 3000, schedule) == 0.0
+    assert _self_conditioned_weight(1499, 3000, schedule) == 0.0
+    assert _self_conditioned_weight(1500, 3000, schedule) == pytest.approx(
+        0.5 / 1050
+    )
+    assert _self_conditioned_weight(2024, 3000, schedule) == pytest.approx(0.25)
+    assert _self_conditioned_weight(2549, 3000, schedule) == pytest.approx(0.5)
+    legacy_schedule = base["loss"]["lambda_self_schedule"]
+    assert _self_conditioned_weight(150, 3000, legacy_schedule) == 0.0
+    assert _self_conditioned_weight(151, 3000, legacy_schedule) == pytest.approx(
+        0.5 / 1050
+    )
+
+    args.max_steps = 2000
+    with pytest.raises(Exception, match="step schedule is invalid"):
+        _validate_args(args, delayed)
 
 
 def test_v2_b5_adds_only_manifest_bound_on_policy_sampling(tmp_path: Path):

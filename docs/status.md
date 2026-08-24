@@ -31,17 +31,22 @@ target1，且旧 v2 ARM 第 7 维是测得手指开度而不是专家夹爪命�
 MANI query 只按时间顺序执行 target0、无规划/timeout 安全重询，并从 raw 显式
 `gripper_command` 构建全新 immutable schema。新数据 522 episode、119,700 row 的完整
 audit 和逐行差分均通过，state field/tensor 为 0。旧 step 500 与新 schema/manifest 不兼容，
-不得 strict resume。2026-08-24 最新用户指令改为在物理 GPU 2/3 fresh 启动全量训练：
-S4、global batch 128、3,000 effective optimizer step、每 250 step 保存；
-prefix/CRL/on-policy correction 仍关闭。GPU 0/1 的无关 StarVLA 不得触碰。
+不得 strict resume。2026-08-24 首轮 command-gripper S4 full-data run 使用物理 GPU 2/3、
+global batch 128、3,000 effective optimizer step 和每 250 step 保存；prefix/CRL/B5
+on-policy correction 均关闭，GPU 0/1 的无关 StarVLA 未被触碰。
 
 该正式 run 已从 clean `waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637`
 启动，run ID 为
 `conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST`。
-steps 1–10 连续健康审计通过，step 11 继续正常，训练保持运行；双 rank 只占用物理 GPU 2/3，
-GPU 0/1 的既有任务未被触碰。当前尚未到 step 250，因此还没有可用于模型质量判断的首个
-durable checkpoint。完整修正与启动证据见
+steps 1–10 连续健康审计通过，但继承自 v1 的 self-conditioned 调度在 step 152 激活，令
+单步从约 60 s 增至约 305 s；step 152–160 没有有效自产 route match。用户已在有效 step
+238 明确终止该 run；没有 checkpoint，不能 resume。完整证据见
 [Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
+
+替代 run 使用全新不可变
+`configs/waypoint_v2_b2_s4_command_gripper_self1500.json`：steps 1–1500 严格关闭
+self-conditioned，step 1501–2550 线性升到 0.5；其余数据、S4、global batch、GPU 和
+checkpoint 合同保持不变，并从官方 Qwen fresh 初始化。
 
 ## 1. 冻结 Waypoint v1 总结
 
@@ -76,7 +81,8 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | seed 正面可见 preflight | 通过 | seed 139 settle 后 bearing `-0.609°`；首帧目检可乐居中可见 |
 | lookahead 完整自主 Isaac | **未通过** | 18×NAV 后自主 PICK；ARM target 2 旋转 step 超过 35° |
 | 完整 pick-place | **未通过** | 没有成功抓取、搬运和放置 |
-| Waypoint v2 S4 双卡正式训练 | **健康运行中** | steps 1–10 严格健康审计通过；step 11 正常；首个 checkpoint 预计 step 250 |
+| Waypoint v2 S4 early-self 双卡训练 | **用户终止** | step 238；无 checkpoint；self-conditioned 过早激活 |
+| Waypoint v2 S4 self1500 替代训练 | **待启动** | steps 1–1500 `lambda_self=0`；全新 run identity |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 

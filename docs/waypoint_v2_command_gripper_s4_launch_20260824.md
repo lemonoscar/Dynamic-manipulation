@@ -2,13 +2,15 @@
 
 日期：2026-08-24 CST
 训练源码：`waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637`
+状态：用户在有效 step 238 终止；无 checkpoint；已由 self1500 合同取代
 
 ## 1. 结论
 
 Waypoint v2 已完成本轮训练前的代码、数据和合同对齐，并从官方标准
 `Qwen3-VL-4B-Instruct` fresh 初始化正式 full-data run。训练只使用物理 GPU 2/3，配置为
 S4、global batch 128、3,000 effective optimizer step、每 250 step 保存。steps 1–10 的
-连续健康审计通过；额外观察的 step 11 也正常，训练进程保持运行。
+连续健康审计通过；额外观察的 step 11 也正常。后来确认 v1 self-conditioned 调度在 step
+152 过早激活，用户于有效 step 238 终止该 run，未生成 checkpoint。
 
 本次启动证明训练系统和损失接线健康，不等于动作质量、阶段切换或完整抓取已经通过。
 第一个模型质量门禁仍是 step 250 的 checkpoint load、严格开环和真实闭环。
@@ -101,3 +103,14 @@ H20 容量的 65.7%。
 
 corrected-data 8–16 episode overfit 仍是未补做的科学门禁；用户本次明确要求直接启动
 full-data run，因此本文不会把它伪记为已通过。
+
+## 7. 终止与替代决议
+
+首轮 run 的 steps 1–151 使用 oracle-prefix 主训练；step 152 起原 v1 的
+self-conditioned 分支开始执行。step 152–160 没有自产 route match，但 optimizer step time
+由约 60 s 增至约 305 s。到 step 238 时 `lambda_self=0.04143`，仍未到首个 step 250
+checkpoint。用户授权立即终止，两个 rank 正常退出，GPU 2/3 归零，旧 artifacts 保留。
+
+替代 run 不 resume 旧权重或 optimizer，并使用全新 config identity：steps 1–1500
+`lambda_self=0`，step 1501–2550 线性升到 0.5。该分支与 learned prefix head、B5
+on-policy correction 数据混采严格区分。

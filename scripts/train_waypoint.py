@@ -310,13 +310,18 @@ def main(argv: list[str] | None = None) -> int:
         active_loader = first_loader
         while global_step < args.max_steps:
             for examples in active_loader:
-                progress = max(
-                    global_step / args.max_steps,
-                    0.0
-                    if resume is None
-                    else float(resume.get("self_schedule_progress_floor", 0.0)),
+                self_weight = _self_conditioned_weight(
+                    global_step,
+                    args.max_steps,
+                    config["loss"]["lambda_self_schedule"],
+                    progress_floor=(
+                        0.0
+                        if resume is None
+                        else float(
+                            resume.get("self_schedule_progress_floor", 0.0)
+                        )
+                    ),
                 )
-                self_weight = lambda_self_schedule(progress)
                 with accelerator.accumulate(model):
                     oracle = model(examples, objective="oracle")
                     _finite_losses(
@@ -1639,13 +1644,59 @@ def _validate_args(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
             raise M0MobileError("waypoint-v2 auxiliary config is missing")
         if config.get("sampling") is not None:
             _validated_sampling_fractions(config["sampling"])
-    schedule = config["loss"]["lambda_self_schedule"]
-    if schedule != {
+    _validate_self_conditioned_schedule(
+        config["loss"]["lambda_self_schedule"], args.max_steps
+    )
+
+
+def _self_conditioned_weight(
+    global_step: int,
+    max_steps: int,
+    schedule: Mapping[str, Any],
+    *,
+    progress_floor: float = 0.0,
+) -> float:
+    if "zero_until_step" not in schedule:
+        return lambda_self_schedule(
+            max(global_step / max_steps, progress_floor)
+        )
+    optimizer_step = global_step + 1
+    zero_until = int(schedule["zero_until_step"])
+    linear_to = int(schedule["linear_to_step"])
+    maximum = float(schedule["maximum"])
+    if optimizer_step <= zero_until:
+        return 0.0
+    if optimizer_step < linear_to:
+        return maximum * (optimizer_step - zero_until) / (linear_to - zero_until)
+    return maximum
+
+
+def _validate_self_conditioned_schedule(
+    schedule: Mapping[str, Any], max_steps: int
+) -> None:
+    if schedule == {
         "zero_until_progress": 0.05,
         "linear_to_progress": 0.4,
         "maximum": 0.5,
     }:
-        raise M0MobileError("waypoint self-conditioned schedule was modified")
+        return
+    if set(schedule) != {"zero_until_step", "linear_to_step", "maximum"}:
+        raise M0MobileError("waypoint self-conditioned schedule is invalid")
+    zero_until = schedule["zero_until_step"]
+    linear_to = schedule["linear_to_step"]
+    maximum = schedule["maximum"]
+    if (
+        isinstance(zero_until, bool)
+        or not isinstance(zero_until, int)
+        or isinstance(linear_to, bool)
+        or not isinstance(linear_to, int)
+        or not isinstance(maximum, (int, float))
+        or isinstance(maximum, bool)
+        or not math.isfinite(float(maximum))
+        or not 0 <= zero_until < linear_to <= max_steps
+        or not 0.0 < float(maximum) <= 1.0
+    ):
+        raise M0MobileError("waypoint self-conditioned step schedule is invalid")
 
 
 def _resume_binding(

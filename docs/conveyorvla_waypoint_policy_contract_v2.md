@@ -1,8 +1,8 @@
 # ConveyorVLA Waypoint Policy v2 合同
 
-- 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4`
+- 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4-self1500`
 - 分支：`waypoint-v2`
-- 状态：正式双卡训练运行中；source commit 与 run identity 已冻结
+- 状态：替代训练合同已冻结；source commit 与 run identity 在启动时绑定
 - 基线：Waypoint v1 和 legacy v2 数据/checkpoint 均保持只读
 
 ## 1. 模型输入与 route 所有权
@@ -63,6 +63,11 @@ gripper channel 外无差异。旧 v2 仍可审计，但不得和本合同 check
 learned prefix、local CRL 和 on-policy correction 关闭。NAV runtime 的 trusted-prefix 10
 是固定执行上限，不是启用 learned prefix head。
 
+模型自产 assistant prefix 的 `self-conditioned` 辅助动作损失不是 learned prefix head，也
+不是 B5 on-policy correction 数据混采。替代 run 的 steps 1–1500 严格使用
+`lambda_self=0`；step 1501 起线性增加，step 2550 达到 0.5。权重为 0 时不得执行昂贵的
+自产 prefix decode、第二次 Qwen 和辅助 S4 FM forward。
+
 S4 定义为一次 Qwen forward 后，对每个真实 action chunk 采四组相互独立的
 `(noise_m, flow_time_m)`：
 
@@ -91,12 +96,12 @@ L_FM^(4) = (L_FM^1 + L_FM^2 + L_FM^3 + L_FM^4) / 4
 | equivalent sampling epochs | `3000 × 128 / 108603 ≈ 3.5358` |
 | warmup | 200 step |
 | checkpoint | 每 250 effective optimizer step |
-| config | `configs/waypoint_v2_b2_s4_command_gripper.json` |
-| config SHA-256 | `a173ef0ec0ddb5e605f313f6759bf61ce0b26e2b214cdb105e5303e3771c043e` |
+| config | `configs/waypoint_v2_b2_s4_command_gripper_self1500.json` |
+| config SHA-256 | `f914462a34b210bc969386669594c3f23d07313c1cc31f8477f938b17bbf1401` |
 | distributed config | `configs/accelerate_zero3_2gpu_waypoint_gbs128_s4.yaml` |
 | distributed config SHA-256 | `075ea150b7272cd94b44a4a0468047dbfc0bdac6b71b651f46e0383939d55f57` |
-| training source | `waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637` |
-| run ID | `conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST` |
+| superseded run | early-self run 用户终止于 step 238；无 checkpoint，不得 resume |
+| replacement source / run | 启动时写入独立 launch identity |
 
 选择 micro 2 是为了给 S4 的四倍 action-head activation 留出显存；更大的 global batch 通过
 accumulation 获得，不用冒险提高单卡峰值。GPU 0/1 的无关 StarVLA 保持不动，训练只暴露
@@ -112,9 +117,10 @@ total、answer、route、NAV/ARM 四个 draw、boundary/progress loss、gradient
 均有限；无 OOM、NaN/Inf、NCCL error、traceback 或输出路径错误。达到门槛后停止监视，
 训练进程保持运行。
 
-2026-08-24 启动后，steps 1–10 连续健康审计通过，额外观察的 step 11 也正常。双 rank 分别
-绑定物理 GPU 2/3；10 步 loss、梯度、LR、吞吐、显存和所有四组 FM draw 均为有限值，未见
-failed event、OOM、NaN/Inf、NCCL error 或 traceback。详细证据见
+2026-08-24 首轮 early-self run 的 steps 1–10 健康，但 self-conditioned 在 step 152 激活后
+使单步由约 60 s 增至约 305 s；step 152–160 又没有有效自产 route match。用户因此在有效
+step 238 明确终止，未生成 checkpoint。该 run 只作反例证据，替代 run 必须 fresh 初始化，
+不得继承其权重或 optimizer。详细证据见
 [Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
 
 健康启动只证明训练系统正常。step 250 起仍需依次执行 checkpoint load、严格开环、完整

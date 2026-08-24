@@ -417,10 +417,11 @@ python scripts/audit_waypoint_v2_dataset.py \
   --output /new/private/run/waypoint_v2_dataset_audit.json
 ```
 
-正式 config 为 `configs/waypoint_v2_b2_s4_command_gripper.json`。它绑定
+正式替代 config 为 `configs/waypoint_v2_b2_s4_command_gripper_self1500.json`。它绑定
 `conveyorvla-waypoint-dense-transition-v2-command-gripper-v1`，启用 terminal-hold 和
 corrected B2 boundary/progress，并把训练 FM Monte Carlo draw 从 S1 提升为 S4；推理步数
-仍为 4。learned prefix、CRL 和 on-policy correction 关闭。
+仍为 4。learned prefix、CRL 和 B5 on-policy correction 关闭。self-conditioned 使用绝对
+optimizer-step 调度：steps 1–1500 权重严格为 0，step 1501–2550 线性升到 0.5。
 
 旧 `step_000500@7ec8424` 绑定 legacy v2 measured-opening schema，不能对新数据使用
 `--resume-from`。不得编辑 checkpoint manifest 或绕过训练入口的 dataset/config binding。
@@ -434,7 +435,7 @@ CUDA_VISIBLE_DEVICES=2,3 accelerate launch \
   --dataset-root "$WAYPOINT_V2_DATASET" \
   --output-dir /new/private/run/output \
   --model-root /path/to/official-model-root \
-  --config configs/waypoint_v2_b2_s4_command_gripper.json \
+  --config configs/waypoint_v2_b2_s4_command_gripper_self1500.json \
   --max-steps 3000 \
   --batch-size 2 \
   --gradient-accumulation-steps 32 \
@@ -456,6 +457,7 @@ Qwen 初始化，不恢复旧 optimizer。至少连续检查 10 个有效 optimi
 2026-08-24 的实际正式 run 使用 clean
 `waypoint-v2@571f306154aa30d0544bb14cd2754b0c6e6e6637`，run ID 为
 `conveyorvla-waypoint-v2-b2-s4-command-gripper-full522-2gpu23-zero3-gbs128-571f306-s3000-20260824T002235CST`。
-steps 1–10 的连续审计通过，额外 step 11 正常，训练保持运行。公开证据与尚未通过的模型
-质量门禁见
+steps 1–10 的连续审计通过，但 self-conditioned 在 step 152 激活后使单步由约 60 s 增至
+约 305 s；用户在有效 step 238 终止，且没有 checkpoint。它不得作为替代 run 的 resume
+parent。公开证据与尚未通过的模型质量门禁见
 [Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
