@@ -114,3 +114,6 @@ checkpoint。用户授权立即终止，两个 rank 正常退出，GPU 2/3 归�
 替代 run 不 resume 旧权重或 optimizer，并使用全新 config identity：steps 1–1500
 `lambda_self=0`，step 1501–2550 线性升到 0.5。该分支与 learned prefix head、B5
 on-policy correction 数据混采严格区分。
+
+替代 run 已通过 steps 1–10 健康启动并保持运行；后续状态、身份和审计数值见
+[Waypoint v2 self1500 修正与替代训练健康启动](waypoint_v2_self1500_retraining_launch_20260824.md)。

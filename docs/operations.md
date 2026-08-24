@@ -461,3 +461,12 @@ steps 1–10 的连续审计通过，但 self-conditioned 在 step 152 激活后
 约 305 s；用户在有效 step 238 终止，且没有 checkpoint。它不得作为替代 run 的 resume
 parent。公开证据与尚未通过的模型质量门禁见
 [Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
+
+替代 run 使用 clean `waypoint-v2@4fb50ffa8f0a05eeda5d9dcc34a898658ba8d9f3`，run ID 为
+`conveyorvla-waypoint-v2-b2-s4-command-gripper-self1500-full522-2gpu23-zero3-gbs128-4fb50ff-s3000-20260824T113345CST`。
+它从官方 Qwen fresh 初始化，仅使用物理 GPU 2/3；resolved identity 已绑定 source、Conda、
+两张卡 UUID、数据和 config 哈希。steps 1–10 健康门禁通过且训练保持运行；这十步必须同时
+满足 `lambda_self=0`、`self_conditioned_loss=0` 和全部 self-conditioned 计数为 0。不得因
+learned prefix head 仍关闭而误判该调度：step 1501 启用的是模型自产 assistant-prefix 的
+辅助动作分支。完整审计见
+[Waypoint v2 self1500 修正与替代训练健康启动](waypoint_v2_self1500_retraining_launch_20260824.md)。

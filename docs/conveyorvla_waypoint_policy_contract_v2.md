@@ -2,7 +2,7 @@
 
 - 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4-self1500`
 - 分支：`waypoint-v2`
-- 状态：替代训练合同已冻结；source commit 与 run identity 在启动时绑定
+- 状态：替代训练合同已冻结；self1500 替代 run 已通过健康启动并保持运行
 - 基线：Waypoint v1 和 legacy v2 数据/checkpoint 均保持只读
 
 ## 1. 模型输入与 route 所有权
@@ -101,7 +101,8 @@ L_FM^(4) = (L_FM^1 + L_FM^2 + L_FM^3 + L_FM^4) / 4
 | distributed config | `configs/accelerate_zero3_2gpu_waypoint_gbs128_s4.yaml` |
 | distributed config SHA-256 | `075ea150b7272cd94b44a4a0468047dbfc0bdac6b71b651f46e0383939d55f57` |
 | superseded run | early-self run 用户终止于 step 238；无 checkpoint，不得 resume |
-| replacement source / run | 启动时写入独立 launch identity |
+| replacement source | `4fb50ffa8f0a05eeda5d9dcc34a898658ba8d9f3` |
+| replacement run | `conveyorvla-waypoint-v2-b2-s4-command-gripper-self1500-full522-2gpu23-zero3-gbs128-4fb50ff-s3000-20260824T113345CST` |
 
 选择 micro 2 是为了给 S4 的四倍 action-head activation 留出显存；更大的 global batch 通过
 accumulation 获得，不用冒险提高单卡峰值。GPU 0/1 的无关 StarVLA 保持不动，训练只暴露
@@ -122,6 +123,12 @@ total、answer、route、NAV/ARM 四个 draw、boundary/progress loss、gradient
 step 238 明确终止，未生成 checkpoint。该 run 只作反例证据，替代 run 必须 fresh 初始化，
 不得继承其权重或 optimizer。详细证据见
 [Waypoint v2 command-gripper S4 修正与正式训练启动](waypoint_v2_command_gripper_s4_launch_20260824.md)。
+
+self1500 替代 run 已在物理 GPU 2/3 fresh 启动。steps 1–10 全部为有效 optimizer step，
+`lambda_self`、`self_conditioned_loss` 和全部 self-conditioned 样本计数严格为 0；稳态中位
+step 时间为 58.17 s，中位吞吐为 2.20 samples/s，reserved 显存峰值为 64,408 MiB，训练在
+健康门槛后保持运行。身份、失败尝试与审计证据见
+[Waypoint v2 self1500 修正与替代训练健康启动](waypoint_v2_self1500_retraining_launch_20260824.md)。
 
 健康启动只证明训练系统正常。step 250 起仍需依次执行 checkpoint load、严格开环、完整
 transition lag/crossover/flicker、NAV/ARM 20-step 图片、planner 和真实三视角闭环门禁。

@@ -1,6 +1,6 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-24 CST。冻结的 Waypoint v1 runtime/eval 基线为
+最后复核：2026-08-24 11:47 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
@@ -46,7 +46,13 @@ steps 1–10 连续健康审计通过，但继承自 v1 的 self-conditioned 调
 替代 run 使用全新不可变
 `configs/waypoint_v2_b2_s4_command_gripper_self1500.json`：steps 1–1500 严格关闭
 self-conditioned，step 1501–2550 线性升到 0.5；其余数据、S4、global batch、GPU 和
-checkpoint 合同保持不变，并从官方 Qwen fresh 初始化。
+checkpoint 合同保持不变，并从官方 Qwen fresh 初始化。替代 run 已从 clean
+`waypoint-v2@4fb50ffa8f0a05eeda5d9dcc34a898658ba8d9f3` 在物理 GPU 2/3 fresh 启动，run ID
+为 `conveyorvla-waypoint-v2-b2-s4-command-gripper-self1500-full522-2gpu23-zero3-gbs128-4fb50ff-s3000-20260824T113345CST`。
+steps 1–10 全部有效，self-conditioned 权重、loss 和样本计数均严格为 0；中位 step 时间
+58.17 s、中位吞吐 2.20 samples/s，reserved 显存峰值 64,408 MiB。健康审计结束后训练保持
+运行，首个计划 checkpoint 为 step 250。完整证据见
+[Waypoint v2 self1500 修正与替代训练健康启动](waypoint_v2_self1500_retraining_launch_20260824.md)。
 
 ## 1. 冻结 Waypoint v1 总结
 
@@ -82,7 +88,7 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | lookahead 完整自主 Isaac | **未通过** | 18×NAV 后自主 PICK；ARM target 2 旋转 step 超过 35° |
 | 完整 pick-place | **未通过** | 没有成功抓取、搬运和放置 |
 | Waypoint v2 S4 early-self 双卡训练 | **用户终止** | step 238；无 checkpoint；self-conditioned 过早激活 |
-| Waypoint v2 S4 self1500 替代训练 | **待启动** | steps 1–1500 `lambda_self=0`；全新 run identity |
+| Waypoint v2 S4 self1500 替代训练 | **运行中；健康启动通过** | steps 1–10 有效；steps 1–1500 `lambda_self=0`；首存 step 250 |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 
