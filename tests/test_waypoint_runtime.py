@@ -728,6 +728,23 @@ def test_arm_unreachable_is_zero_action_and_requeries():
     assert unavailable.base_velocity == (0.0, 0.0, 0.0)
     assert unavailable.arm_joint_target is None
     assert "arm_plan_unavailable" in (unavailable.reason or "")
+    assert unavailable.trace["sequence_id"] == 1
+    assert unavailable.trace["target_tcp_base"] == rows[0]
+    assert unavailable.trace["consecutive_plan_unavailable"] == 1
+
+    shifted_rows = [(0.32, *row[1:]) for row in rows]
+    repeated = executor.begin(
+        _response(WaypointRoute.PLACE, shifted_rows, sequence=2),
+        (0.30, 0.0, 0.2, 0.0, 0.0, 0.0),
+        (0.0, 0.0),
+        object(),
+        now_s=0.1,
+    )
+    assert repeated.requires_requery and not repeated.failed
+    assert repeated.trace["consecutive_plan_unavailable"] == 2
+    assert repeated.trace[
+        "target_translation_delta_from_previous_unavailable_m"
+    ] == pytest.approx(0.01)
 
 
 def test_arm_planner_infrastructure_error_remains_fail_closed():

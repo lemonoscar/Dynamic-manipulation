@@ -79,6 +79,7 @@ class DirectPoseCuroboService:
                     "planner_target_frame": "curobo-planner-base",
                     "orientation_fallback": False,
                     "world_collision": True,
+                    "structured_plan_pose_unavailable": True,
                 },
             }
         if command != "plan_tcp_target":
@@ -134,13 +135,26 @@ class DirectPoseCuroboService:
         self.module.update_planner_world(self.planner, collision_scene)
         started = time.perf_counter()
         with contextlib.redirect_stdout(sys.stderr):
-            joint_path, plan_info = self.module.plan_pose_path(
-                planner=self.planner,
-                q_start=q_start,
-                target_position=target_position_array,
-                target_quaternion=target_quaternion_array,
-                segment_name="approach_to_grasp",
-            )
+            try:
+                joint_path, plan_info = self.module.plan_pose_path(
+                    planner=self.planner,
+                    q_start=q_start,
+                    target_position=target_position_array,
+                    target_quaternion=target_quaternion_array,
+                    segment_name="approach_to_grasp",
+                )
+            except RuntimeError as error:
+                if "cuRobo plan_pose 返回 None" not in str(error):
+                    raise
+                return {
+                    "schema_version": CUROBO_RESPONSE_SCHEMA,
+                    "arm_vla_reference_commit": self.reference_commit,
+                    "ok": False,
+                    "reachable": False,
+                    "collision_free": False,
+                    "error_kind": "plan_pose_unavailable",
+                    "error": f"{type(error).__name__}: {error}",
+                }
             final_position, final_quaternion = self.module.run_fk(
                 self.planner, np.asarray(joint_path[-1], dtype=np.float32)
             )
@@ -200,6 +214,7 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 "ok": False,
                 "reachable": False,
                 "collision_free": False,
+                "error_kind": "service_error",
                 "error": f"{type(error).__name__}: {error}",
             }
         self.wfile.write(

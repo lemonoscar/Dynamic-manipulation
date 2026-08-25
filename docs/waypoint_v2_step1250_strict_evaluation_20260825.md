@@ -118,9 +118,27 @@ target0 为：
  -0.309914, 1.454237, -0.322041, 1.0]
 ```
 
-cuRobo 对该 direct pose 返回无规划，原始 fail-closed 规则令 episode 终止。最终 TCP 到物体
+cuRobo 对该 direct pose 返回无规划，当时 episode 随后以
+`no_active_manipulation_chunk` 终止。最终 TCP 到物体
 3D 距离仍为 `0.354422 m`，其中 XY `0.229265 m`、高度差约 `0.270282 m`；视频确认机械臂
 在可乐上方/后方抬起，没有形成接触或夹取。
+
+### 3.3 16.88 s 终止的后续根因与修正
+
+后续逐层追踪证明，这不是“cuRobo 拒绝必然终止”的合同：
+
+1. target0 已通过 TCP workspace/rate 验证；冻结 reference 的 `plan_pose`
+   明确返回 `None`。
+2. MANI executor 已正确返回 `failed=false`、`requires_requery=true`、零底盘且无新
+   arm/gripper target，其语义是保持上一安全指令后重新询问。
+3. rollout 执行了该保持周期，却没有处理 begin-level `requires_requery`，又调用了
+   `_active=None` 的 `manipulation.step()`，才产生表中的终止原因。
+
+当前修正严格限定为：只有合法 TCP 的结构化
+`error_kind=plan_pose_unavailable` 会保持并完整重新推理；非法 TCP、cuRobo 服务异常和
+其他规划异常仍 fail-closed。连续无规划只记录次数、sequence ID 与 TCP 差分，不引入新的
+N 次重试/stall 终止门禁，仍由已有 episode/control-step 总 watchdog 给出最终上界。
+定向 48 项单测已通过；本节只修正历史失败归因，不宣称已获得新的真实闭环通过。
 
 ## 4. 新发现的确定根因：PICK 起始监督反向
 

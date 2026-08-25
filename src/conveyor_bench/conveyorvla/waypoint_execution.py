@@ -668,6 +668,8 @@ class CuRoboIKRecedingHorizonExecutor:
         self.config = config
         self._active: dict[str, Any] | None = None
         self._last_sequence = -1
+        self._last_unavailable_target: tuple[float, ...] | None = None
+        self._consecutive_plan_unavailable = 0
 
     def begin(
         self,
@@ -734,6 +736,9 @@ class CuRoboIKRecedingHorizonExecutor:
         try:
             plan = self.planner.plan(joints, target[:6], scene_collision)
         except ArmPlanUnavailableError as error:
+            previous_target = self._last_unavailable_target
+            self._last_unavailable_target = target
+            self._consecutive_plan_unavailable += 1
             planner_attempts.append(
                 {
                     "target_index": 0,
@@ -749,6 +754,22 @@ class CuRoboIKRecedingHorizonExecutor:
                 trace={
                     **gate_trace,
                     "selected_target_index": 0,
+                    "sequence_id": response.sequence_id,
+                    "target_tcp_base": target,
+                    "consecutive_plan_unavailable": self._consecutive_plan_unavailable,
+                    "target_translation_delta_from_previous_unavailable_m": (
+                        None
+                        if previous_target is None
+                        else math.dist(target[:3], previous_target[:3])
+                    ),
+                    "target_max_axis_rotation_delta_from_previous_unavailable_rad": (
+                        None
+                        if previous_target is None
+                        else max(
+                            abs(wrap_to_pi(target[index] - previous_target[index]))
+                            for index in range(3, 6)
+                        )
+                    ),
                     "planner_attempts": planner_attempts,
                 },
             )
@@ -798,6 +819,8 @@ class CuRoboIKRecedingHorizonExecutor:
                 "elapsed_ms": (time.perf_counter() - attempt_started) * 1000.0,
             }
         )
+        self._last_unavailable_target = None
+        self._consecutive_plan_unavailable = 0
         planning_elapsed_ms = (time.perf_counter() - planned_at) * 1000.0
         selected_target_index = 0
         self._active = {

@@ -1,5 +1,6 @@
 import base64
 import io
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -7,6 +8,7 @@ from PIL import Image
 
 from scripts.run_waypoint_rollout import (
     _ExternalWaypointCuRoboLifecycle,
+    WaypointRolloutPipeline,
     _initial_source_front_sector_report,
     _persist_initial_head_view,
     _persist_query_frames,
@@ -14,7 +16,8 @@ from scripts.run_waypoint_rollout import (
     build_parser,
 )
 
-from conveyor_bench.conveyorvla.waypoint import CAMERA_CALIBRATION_ID
+from conveyor_bench.conveyorvla.waypoint import CAMERA_CALIBRATION_ID, WaypointRoute
+from conveyor_bench.conveyorvla.waypoint_execution import ExecutionCommand
 from conveyor_bench.conveyorvla.waypoint_rollout import (
     TemporalJPEGBuffer,
     WaypointHTTPClient,
@@ -213,6 +216,7 @@ def test_reference_lifecycle_reuses_only_the_gated_waypoint_curobo_service():
                 "planner_target_frame": "curobo-planner-base",
                 "orientation_fallback": False,
                 "world_collision": True,
+                "structured_plan_pose_unavailable": True,
             },
         }
 
@@ -244,3 +248,62 @@ def test_reference_lifecycle_fails_closed_on_legacy_curobo_capabilities():
     with pytest.raises(RuntimeError, match="capability gate"):
         lifecycle.start()
     assert not lifecycle.wait_until_ready()
+
+
+def test_manipulation_begin_requery_holds_last_command_without_entering_step():
+    planned = ExecutionCommand(
+        requires_requery=True,
+        reason="arm_plan_unavailable:test",
+    )
+
+    class Manipulation:
+        def begin(self, *_args, **_kwargs):
+            return planned
+
+        def step(self, *_args, **_kwargs):
+            raise AssertionError("begin-level requery must not enter manipulation.step")
+
+    state = SimpleNamespace(
+        tcp_pose=(0.3, 0.0, 0.2, 1.0, 0.0, 0.0, 0.0),
+        timestamp=1.0,
+        metadata={"joint_names": ("j1", "j2")},
+        joint_positions=(0.1, -0.2),
+    )
+    actions = []
+    records = []
+    pipeline = SimpleNamespace(
+        simulation=SimpleNamespace(
+            read=lambda: state,
+            _config=SimpleNamespace(arm_joint_names=("j1", "j2")),
+        ),
+        manipulation=Manipulation(),
+        config=SimpleNamespace(
+            manipulation=SimpleNamespace(lock_support_joints_during_manipulation=True)
+        ),
+        RobotAction=SimpleNamespace,
+        _held_arm_target=(0.1, -0.2),
+        _held_gripper_command="open",
+        _settle_base_for_model_route=lambda _route: None,
+        _collision_scene=lambda *_args: {},
+        _record=lambda event, payload: records.append((event, payload)),
+        _physical_step=actions.append,
+    )
+    pipeline._robot_action = lambda command, route, sequence_id: (
+        WaypointRolloutPipeline._robot_action(pipeline, command, route, sequence_id)
+    )
+
+    completed, reason = WaypointRolloutPipeline._execute_manipulation(
+        pipeline,
+        SimpleNamespace(route=WaypointRoute.PLACE.value, sequence_id=8),
+        SimpleNamespace(robot_root_pose=(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0)),
+    )
+
+    assert completed and reason == "arm_plan_unavailable:test"
+    assert len(actions) == 1
+    assert actions[0].base_velocity == (0.0, 0.0, 0.0)
+    assert actions[0].arm_joint_positions == (0.1, -0.2)
+    assert actions[0].gripper_command == "open"
+    assert [event for event, _payload in records] == [
+        "manipulation_begin",
+        "manipulation_requery",
+    ]

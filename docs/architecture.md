@@ -165,7 +165,11 @@ Manipulation executor：
 2. 仅采用第一个有效 absolute TCP target；
 3. 转换到 cuRobo planner frame，以实时关节与碰撞场景规划；
 4. 要求 reachable、collision-free 且末端误差在阈值内；
-5. 底盘保持零，执行 joint path 后重新 query。
+5. 合法 TCP 若明确 `plan_pose=None`，底盘保持零，保持上一安全 arm/gripper target
+   一个控制周期后重新取图并执行完整 Qwen+FM query；
+6. 非法 TCP 或 cuRobo 服务/规划器异常继续 fail-closed；不使用连续拒绝次数改写 route
+   或触发新 stall 合同；
+7. 规划成功时底盘保持零，执行 joint path 后重新 query。
 
 PCT/DWA 适配器绑定批准的 `arm-vla-grasp-sim@388b6818f4c605a707d13c519fbb58b1d07acd92`。
 当前 cuRobo 参考 checkout 为

@@ -231,6 +231,7 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
             "schema_version": CUROBO_RESPONSE_SCHEMA,
             "arm_vla_reference_commit": APPROVED_ARM_VLA_COMMIT,
             "ok": False,
+            "error_kind": "plan_pose_unavailable",
             "error": "no collision-free direct-pose plan",
         },
         deployment="simulation",
@@ -239,6 +240,25 @@ def test_direct_tcp_curobo_adapter_uses_executor_state_only_and_fails_closed():
     )
     with pytest.raises(ArmPlanUnavailableError, match="no collision-free"):
         unavailable.plan(
+            (0.0, 0.0),
+            (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
+            _planner_scene(),
+        )
+
+    broken = WaypointCuRoboPlannerAdapter(
+        lambda _request: {
+            "schema_version": CUROBO_RESPONSE_SCHEMA,
+            "arm_vla_reference_commit": APPROVED_ARM_VLA_COMMIT,
+            "ok": False,
+            "error_kind": "service_error",
+            "error": "planner process crashed",
+        },
+        deployment="simulation",
+        safety_gate=lambda _request, _response: True,
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    with pytest.raises(RuntimeError, match="planner process crashed"):
+        broken.plan(
             (0.0, 0.0),
             (0.3, 0.0, 0.2, 0.0, 0.0, 0.0),
             _planner_scene(),
@@ -354,6 +374,32 @@ def test_direct_pose_service_plans_the_exact_rpy_target_without_fallback():
     assert module.target_quaternion.tolist() == pytest.approx([1.0, 0.0, 0.0, 0.0])
     assert response["metadata"]["orientation_fallback_used"] is False
     assert module.collision == {"world_collision": {"cuboids_base": []}}
+
+
+def test_direct_pose_service_marks_only_plan_pose_none_as_requeryable():
+    class UnavailableModule(_CuroboModule):
+        def plan_pose_path(self, **_kwargs):
+            raise RuntimeError("approach_to_grasp: cuRobo plan_pose 返回 None。")
+
+    service = DirectPoseCuroboService(
+        UnavailableModule(),
+        object(),
+        reference_commit=APPROVED_ARM_VLA_COMMIT,
+    )
+    response = service.handle(
+        {
+            "schema_version": CUROBO_REQUEST_SCHEMA,
+            "command": "plan_tcp_target",
+            "deployment": "simulation",
+            "target_frame": "query-base-B_t",
+            "target_units": ["m", "m", "m", "rad", "rad", "rad"],
+            "current_joints": [0.0, 0.0],
+            "target_tcp_base": [0.3, 0.0, 0.2, 0.0, 0.0, 0.0],
+            "scene_collision": _planner_scene(),
+        }
+    )
+    assert response["ok"] is False
+    assert response["error_kind"] == "plan_pose_unavailable"
 
 
 def test_direct_pose_service_transforms_query_base_target_into_planner_base():

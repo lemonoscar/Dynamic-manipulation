@@ -330,7 +330,10 @@ python scripts/run_waypoint_rollout.py \
 `arm-vla-reference` 结果报告成默认 `contract` 通过。
 
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
-ready 的 Waypoint 服务，并逐项校验 capability；身份或 frame 不匹配立即 fail-closed。
+ready 的 Waypoint 服务，并逐项校验 capability；身份、frame 或
+`structured_plan_pose_unavailable` 不匹配立即 fail-closed，禁止复用无法区分
+`plan_pose=None` 与服务异常的旧进程。合法 TCP 的明确无规划会保持上一安全 arm/gripper
+指令并重新询问；其他异常仍 fail-closed。
 
 step 2000 的 strict、prefix、unbounded、旧首点 `arm-vla-reference` 和最新
 `lookahead-arm-vla-reference` 闭环均已生成三路视频。最新 run 完成 18 次真实 NAV 后由

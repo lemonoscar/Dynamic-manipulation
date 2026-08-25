@@ -59,7 +59,12 @@ steps 1–10 全部有效，self-conditioned 权重、loss 和样本计数均严
 开环完成：route accuracy 93.75%、boundary AUROC 0.976834、flicker 0，但 NAV direction
 accuracy 75%，MANI inter-target step violation 75.893%。seed 139 完整自主闭环在 92 次
 NAV 后自主切到 PICK，切换后底盘全程为零，连续 7 个 MANI target0 经真实 cuRobo 成功执行；
-第 8 个 pose 无规划后 fail-closed，物体未抓起。
+第 8 个合法 pose 的 `plan_pose=None` 本应保持并重新询问，但 rollout 遗漏了
+begin-level `requires_requery` 分支，随后误进入空轨迹 `step()` 而以
+`no_active_manipulation_chunk` 终止。当前 `waypoint-v2` 已修正为：底盘归零，保持上一安全
+关节目标和夹爪状态一个控制周期后直接重新取图/完整推理；不新增重试次数或 stall
+门禁。只有结构化的 `plan_pose_unavailable` 可恢复，非法 TCP 和服务/规划器异常仍 fail-closed。
+定向 runtime/planner/rollout 48 项回归已通过；这是代码门禁，尚不等于新闭环证据。
 
 闭环触发了新的数据硬阻塞：全量 522/522 个 PICK 起始边界 row 的 target0 均为 close，
 471 个 episode 到 horizon index 5、51 个到 index 6 才首次 open。根因是 `plan_pick` 规划等待

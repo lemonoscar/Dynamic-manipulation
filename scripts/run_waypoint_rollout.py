@@ -163,6 +163,7 @@ class _ExternalWaypointCuRoboLifecycle:
             and features.get("planner_target_frame") == "curobo-planner-base"
             and features.get("orientation_fallback") is False
             and features.get("world_collision") is True
+            and features.get("structured_plan_pose_unavailable") is True
         )
         self.start_report = {
             "requested": True,
@@ -711,6 +712,9 @@ class WaypointRolloutPipeline:
         if planned.failed:
             return False, planned.reason or "manipulation_begin_failed"
         self._physical_step(self._robot_action(planned, response.route, response.sequence_id))
+        if planned.requires_requery:
+            self._record("manipulation_requery", asdict(planned))
+            return True, planned.reason or "manipulation_requery"
         while True:
             state = self.simulation.read()
             joints = measured_arm_joints(

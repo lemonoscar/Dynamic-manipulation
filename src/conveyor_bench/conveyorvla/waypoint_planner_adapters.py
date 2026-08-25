@@ -254,9 +254,10 @@ class WaypointCuRoboPlannerAdapter:
         if response.get("arm_vla_reference_commit") != self.reference_commit:
             raise RuntimeError("cuRobo service reference commit is incompatible")
         if response.get("ok") is not True:
-            raise ArmPlanUnavailableError(
-                f"cuRobo direct-pose planning failed: {response.get('error')}"
-            )
+            message = f"cuRobo direct-pose planning failed: {response.get('error')}"
+            if response.get("error_kind") == "plan_pose_unavailable":
+                raise ArmPlanUnavailableError(message)
+            raise RuntimeError(message)
         if not self.safety_gate(request, response):
             raise RuntimeError(f"{self.deployment} cuRobo safety gate rejected the plan")
         raw_path = response.get("joint_path")
