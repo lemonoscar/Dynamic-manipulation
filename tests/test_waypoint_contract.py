@@ -116,3 +116,37 @@ def test_arm_gate_validates_absolute_targets_without_state_input() -> None:
             (0.28, 0.0, 0.35, 0.0, 0.0, 0.0),
             safety=ArmTargetSafety(),
         )
+
+
+def test_arm_gate_uses_physical_rotation_near_rpy_gimbal_lock() -> None:
+    current_tcp = (
+        0.35,
+        0.0,
+        0.25,
+        0.0770608995,
+        1.4905195810,
+        -0.2368851657,
+    )
+    target = [
+        0.35,
+        0.0,
+        0.25,
+        1.4056743675,
+        1.4305741549,
+        1.2015362517,
+        1.0,
+    ]
+    accepted = validate_arm_targets(
+        [target] * ACTION_HORIZON,
+        [True] + [False] * 19,
+        current_tcp,
+    )
+    assert accepted == (tuple(target),)
+
+    target[3:6] = [math.radians(36.0), 0.0, 0.0]
+    with pytest.raises(ValueError, match="rotation step limit"):
+        validate_arm_targets(
+            [target] * ACTION_HORIZON,
+            [True] + [False] * 19,
+            (0.35, 0.0, 0.25, 0.0, 0.0, 0.0),
+        )

@@ -183,6 +183,22 @@ def rpy_to_quaternion(
     )
 
 
+def _rpy_rotation_distance(left: Sequence[float], right: Sequence[float]) -> float:
+    """Return the shortest physical rotation angle between two RPY poses."""
+
+    left_quaternion = rpy_to_quaternion(*_finite_vector(left, 3, "left_rpy"))
+    right_quaternion = rpy_to_quaternion(*_finite_vector(right, 3, "right_rpy"))
+    dot = abs(
+        sum(
+            left_value * right_value
+            for left_value, right_value in zip(
+                left_quaternion, right_quaternion, strict=True
+            )
+        )
+    )
+    return 2.0 * math.acos(min(1.0, dot))
+
+
 def yaw_from_quaternion(quaternion: Sequence[float]) -> float:
     return quaternion_to_rpy(quaternion)[2]
 
@@ -381,9 +397,7 @@ def validate_arm_targets(
         ):
             raise ValueError(f"arm target {index} is outside the workspace")
         translation = math.sqrt(sum((row[axis] - previous[axis]) ** 2 for axis in range(3)))
-        rotation = max(
-            abs(wrap_to_pi(row[axis] - previous[axis])) for axis in range(3, 6)
-        )
+        rotation = _rpy_rotation_distance(previous[3:6], row[3:6])
         if translation > safety.max_translation_step_m:
             raise ValueError(f"arm target {index} exceeds translation step limit")
         if rotation > safety.max_axis_rotation_step_rad:
