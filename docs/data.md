@@ -24,7 +24,7 @@ raw，也不复用旧 dense-transition sidecar、state28 normalizer 或 checkpoi
 这些哈希标识 2026-08-20 正式长训使用的数据快照。可变别名或目录名不能替代 manifest
 hash。
 
-### 1.1 Waypoint v2 command-gripper 修正版
+### 1.1 Waypoint v2 command-gripper v1（冻结、已阻断）
 
 冻结的旧 v2 数据继续只用于历史 checkpoint 对照。2026-08-23 审计确认其 ARM 第 7 维
 沿用了测得手指开度，而 runtime 需要的是专家夹爪命令。修正版使用全新 identity，不覆盖
@@ -44,6 +44,14 @@ hash。
 pose、route、boundary、terminal-hold、`K*`、split 和所有非夹爪字段完全不变；完整 audit
 为 `ok=true`、`problems=[]`，模型 state field/tensor 仍为 0。详细证据见
 [操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
+
+2026-08-25 的 step 1250 定向评测发现，上述 audit 只验证了字段来源和 round-trip，没有验证
+可执行时序。全量 522/522 个 PICK 起始边界 row 的 target0 都是 close：471 个 episode 到
+horizon index 5、51 个到 index 6 才首次 open。原始轨迹先进入非执行的 `plan_pick`，期间
+显式 command 为空，派生器因而沿用上一条 close；runtime 却从 NAV `stow_open` 进入 PICK。
+该 identity 必须保持只读以复现 step 1250，但**不得再用于续训或新训练**。修复必须发布全新
+schema/transform/manifest，并通过“approach target0=open、到 grasp pose 后才 close”的硬门禁。
+详见 [step 1250 严格评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
 
 ## 2. 派生目录
 

@@ -1,6 +1,6 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-24 11:47 CST。冻结的 Waypoint v1 runtime/eval 基线为
+最后复核：2026-08-25 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
@@ -54,6 +54,19 @@ steps 1–10 全部有效，self-conditioned 权重、loss 和样本计数均严
 运行，首个计划 checkpoint 为 step 250。完整证据见
 [Waypoint v2 self1500 修正与替代训练健康启动](waypoint_v2_self1500_retraining_launch_20260824.md)。
 
+用户在 2026-08-25 指令停止并评测；最后 durable checkpoint 为 `step_001250`，之后未保存的
+训练 event 不作为 checkpoint 使用。step 1250 完整 load 和 transition-centric 64-row
+开环完成：route accuracy 93.75%、boundary AUROC 0.976834、flicker 0，但 NAV direction
+accuracy 75%，MANI inter-target step violation 75.893%。seed 139 完整自主闭环在 92 次
+NAV 后自主切到 PICK，切换后底盘全程为零，连续 7 个 MANI target0 经真实 cuRobo 成功执行；
+第 8 个 pose 无规划后 fail-closed，物体未抓起。
+
+闭环触发了新的数据硬阻塞：全量 522/522 个 PICK 起始边界 row 的 target0 均为 close，
+471 个 episode 到 horizon index 5、51 个到 index 6 才首次 open。根因是 `plan_pick` 规划等待
+帧沿用了上一显式 close，却被当成可执行 PICK 动作；runtime 的 NAV `stow_open` 则以 open
+状态进入 PICK。继续在同一数据上训练只会强化该错误。完整证据和下一数据门禁见
+[step 1250 严格开环与完整自主闭环评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
+
 ## 1. 冻结 Waypoint v1 总结
 
 Waypoint Policy v1 的无 state 数据、两次完整 Qwen、双 Layerwise FM head、checkpoint、
@@ -88,7 +101,8 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | lookahead 完整自主 Isaac | **未通过** | 18×NAV 后自主 PICK；ARM target 2 旋转 step 超过 35° |
 | 完整 pick-place | **未通过** | 没有成功抓取、搬运和放置 |
 | Waypoint v2 S4 early-self 双卡训练 | **用户终止** | step 238；无 checkpoint；self-conditioned 过早激活 |
-| Waypoint v2 S4 self1500 替代训练 | **运行中；健康启动通过** | steps 1–10 有效；steps 1–1500 `lambda_self=0`；首存 step 250 |
+| Waypoint v2 S4 self1500 替代训练 | **用户停止；step 1250 已评测** | durable step 1250；静态开环结构通过，但完整闭环失败 |
+| Waypoint v2 command-gripper 时序 | **数据硬阻塞** | 522/522 个 PICK boundary target0=close；必须新 schema 修正后再训练 |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 

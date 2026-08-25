@@ -394,6 +394,11 @@ check_camera_gate.py → export.py → convert_dataset.py` 管理。它用于生
 
 ## 11. Waypoint v2 command-gripper S4 双卡训练
 
+> **已阻断（2026-08-25）：** 本节冻结命令只用于历史复现，当前不得执行。现有
+> command-gripper v1 数据有 522/522 个 PICK boundary target0=close 的确定时序错误；必须先
+> 以新 schema/manifest 修正 `plan_pick` 等待帧，并重新通过 overfit、开环和闭环门禁。证据见
+> [step 1250 严格评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
+
 从相同只读 source 构建新数据，目标目录必须不存在：
 
 ```bash

@@ -2,8 +2,14 @@
 
 - 合同版本：`conveyorvla-waypoint-policy-contract-v2-command-gripper-s4-self1500`
 - 分支：`waypoint-v2`
-- 状态：替代训练合同已冻结；self1500 替代 run 已通过健康启动并保持运行
+- 状态：该合同的 step 1250 已停止并完成评测；实现链成立，但 command-gripper v1 数据因
+  PICK 起始时序错误被阻断，不得继续训练或晋级
 - 基线：Waypoint v1 和 legacy v2 数据/checkpoint 均保持只读
+
+> 2026-08-25 后续证据：522/522 个 PICK boundary target0 均为 close，原因是
+> `plan_pick` 等待帧沿用了上一显式命令。该冻结身份继续用于复现 step 1250，不得原地修改；
+> 修复必须使用新 schema/manifest。见
+> [step 1250 严格开环与完整自主闭环评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
 
 ## 1. 模型输入与 route 所有权
 

@@ -6,6 +6,12 @@
 - 后续更新：用户最终指定正式训练使用物理 GPU 2/3、S4、3,000 step 和 250-step checkpoint；
   训练合同见 [Waypoint Policy v2](conveyorvla_waypoint_policy_contract_v2.md)
 
+> 2026-08-25 勘误：本文修正了“measured opening 被当作 command”和 suffix 跳选，但漏检了
+> `plan_pick` 等待帧的 held-close 语义。冻结新数据实际为 522/522 个 PICK boundary
+> target0=close，与 NAV `stow_open` 的 runtime precondition 冲突。该数据现只用于复现，
+> 不得继续训练；见
+> [step 1250 严格开环与完整自主闭环评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
+
 ## 1. 结论
 
 “到达第一个 ARM target 后立刻闭合”的现象不是单纯训练不足，而是两个相互独立的问题
