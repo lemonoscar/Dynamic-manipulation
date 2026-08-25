@@ -15,7 +15,7 @@ import sys
 import time
 import traceback
 import urllib.parse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -124,7 +124,122 @@ def build_parser() -> argparse.ArgumentParser:
             "querying the model or executing an action"
         ),
     )
+    parser.add_argument(
+        "--source-support-proxy-radius-m",
+        type=float,
+        default=0.0,
+        help=(
+            "initialization-only radius of an invisible static cylinder whose "
+            "top matches task.pick.support_geometry.support_surface_z; zero disables it"
+        ),
+    )
+    parser.add_argument(
+        "--source-support-proxy-height-m",
+        type=float,
+        default=0.005,
+        help="height of the optional source support cylinder",
+    )
     return parser
+
+
+def _with_source_support_proxy(
+    episode_spec: Any,
+    episode_dir: str | Path,
+    *,
+    radius_m: float,
+    height_m: float,
+) -> tuple[Any, dict[str, Any]]:
+    radius = float(radius_m)
+    height = float(height_m)
+    if radius == 0.0:
+        return episode_spec, {"enabled": False, "source": "cli_disabled"}
+    if not math.isfinite(radius) or not 0.0 < radius <= 0.05:
+        raise ValueError("source support proxy radius must be within (0, 0.05] m")
+    if not math.isfinite(height) or not 0.0 < height <= 0.02:
+        raise ValueError("source support proxy height must be within (0, 0.02] m")
+    pose = episode_spec.object_initial_pose
+    if pose is None or len(pose) < 3:
+        raise ValueError("source support proxy requires object_initial_pose")
+    raw_task = episode_spec.raw_task
+    support = (raw_task.get("pick") or {}).get("support_geometry") or {}
+    support_top_z = float(support.get("support_surface_z"))
+    if not math.isfinite(support_top_z):
+        raise ValueError("source support proxy requires finite support_surface_z")
+    footprint_radius = (
+        ((raw_task.get("randomization") or {}).get("sample") or {})
+        .get("cola", {})
+        .get("footprint_radius_m")
+    )
+    if footprint_radius is not None and radius > float(footprint_radius):
+        raise ValueError("source support proxy must fit inside the object footprint")
+
+    source_scene = Path(episode_spec.scene_usd).expanduser().resolve()
+    if not source_scene.is_file() or "@" in str(source_scene):
+        raise ValueError("source support proxy requires a safe existing scene USD")
+    runtime_dir = Path(episode_dir).expanduser().resolve() / ".runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    wrapper_path = runtime_dir / "source_support_proxy.usda"
+    if wrapper_path.exists():
+        raise RuntimeError(f"source support proxy already exists: {wrapper_path}")
+    x, y = float(pose[0]), float(pose[1])
+    center_z = support_top_z - 0.5 * height
+    wrapper = f'''#usda 1.0
+(
+    defaultPrim = "World"
+    subLayers = [
+        @{source_scene}@
+    ]
+)
+
+over "World"
+{{
+    def Cylinder "WaypointSourceSupportProxy" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {{
+        uniform token axis = "Z"
+        float3[] extent = [
+            (-{radius:.17g}, -{radius:.17g}, -{0.5 * height:.17g}),
+            ({radius:.17g}, {radius:.17g}, {0.5 * height:.17g})
+        ]
+        double height = {height:.17g}
+        bool physics:collisionEnabled = 1
+        double radius = {radius:.17g}
+        token visibility = "invisible"
+        double3 xformOp:translate = ({x:.17g}, {y:.17g}, {center_z:.17g})
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }}
+}}
+'''
+    wrapper_path.write_text(wrapper, encoding="utf-8")
+    report = {
+        "enabled": True,
+        "schema_version": "conveyorvla-source-support-proxy-v1",
+        "prim_path": "/World/WaypointSourceSupportProxy",
+        "shape": "static_cylinder",
+        "center_xyz": [x, y, center_z],
+        "radius_m": radius,
+        "height_m": height,
+        "support_top_z": support_top_z,
+        "source_scene_usd": str(source_scene),
+        "wrapper_scene_usd": str(wrapper_path),
+        "wrapper_sha256": hashlib.sha256(wrapper.encode("utf-8")).hexdigest(),
+        "initialization_only": True,
+        "model_input": False,
+    }
+    updated_raw_task = {
+        **raw_task,
+        "scene_usd": str(wrapper_path),
+        "source_support_proxy_runtime": report,
+    }
+    return (
+        replace(
+            episode_spec,
+            scene_usd=str(wrapper_path),
+            raw_task=updated_raw_task,
+        ),
+        report,
+    )
 
 
 class _ExternalWaypointCuRoboLifecycle:
@@ -210,6 +325,7 @@ class WaypointRolloutPipeline:
         require_initial_source_visible: bool,
         initial_source_max_bearing_deg: float,
         seed_preflight_only: bool,
+        source_support_proxy_report: Mapping[str, Any],
         close_simulation_on_exit: bool,
     ) -> None:
         from source.interfaces import NavGoal, RobotAction, SimulationState
@@ -229,6 +345,7 @@ class WaypointRolloutPipeline:
         self.require_initial_source_visible = bool(require_initial_source_visible)
         self.initial_source_max_bearing_deg = float(initial_source_max_bearing_deg)
         self.seed_preflight_only = bool(seed_preflight_only)
+        self.source_support_proxy_report = dict(source_support_proxy_report)
         self.close_simulation_on_exit = bool(close_simulation_on_exit)
         self.jpeg_quality = int(jpeg_quality)
         self.RobotAction = RobotAction
@@ -482,6 +599,7 @@ class WaypointRolloutPipeline:
                 ),
                 "arm_target_selection_policy": "chronological_target0",
                 "initial_source_visibility": self._initial_source_visibility,
+                "source_support_proxy": self.source_support_proxy_report,
             }
             summary_path.write_text(
                 json.dumps(_jsonable(summary), ensure_ascii=False, indent=2) + "\n",
@@ -503,6 +621,7 @@ class WaypointRolloutPipeline:
             self.simulation.build(self.episode_spec)
             report = {"stage_built": True}
         self._record("stage_prepared", report)
+        self._record("source_support_proxy", self.source_support_proxy_report)
         self.simulation.reset(self.episode_spec, seed=self.episode_seed)
         self._record("episode_reset", {"seed": self.episode_seed})
         settings = self.config.manipulation
@@ -1281,6 +1400,12 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("approved arm-vla endpoint binding was changed")
         if arm_gate is not None:
             raise RuntimeError("waypoint rollout does not permit an external route gate")
+        episode_spec, source_support_proxy_report = _with_source_support_proxy(
+            episode_spec,
+            episode_dir,
+            radius_m=args.source_support_proxy_radius_m,
+            height_m=args.source_support_proxy_height_m,
+        )
         return WaypointRolloutPipeline(
             config=config,
             episode_spec=episode_spec,
@@ -1304,6 +1429,7 @@ def main(argv: list[str] | None = None) -> int:
             require_initial_source_visible=args.require_initial_source_visible,
             initial_source_max_bearing_deg=args.initial_source_max_bearing_deg,
             seed_preflight_only=args.seed_preflight_only,
+            source_support_proxy_report=source_support_proxy_report,
             close_simulation_on_exit=close_simulation_on_exit,
         )
 

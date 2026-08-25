@@ -1,5 +1,7 @@
 import base64
 import io
+from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -13,6 +15,7 @@ from scripts.run_waypoint_rollout import (
     _persist_initial_head_view,
     _persist_query_frames,
     _simulation_curobo_safety_gate,
+    _with_source_support_proxy,
     build_parser,
 )
 
@@ -51,6 +54,54 @@ def test_rollout_defaults_to_the_full_horizon_contract_safety_profile():
     assert parser.get_default("require_initial_source_visible") is True
     assert parser.get_default("initial_source_max_bearing_deg") == 30.0
     assert parser.get_default("seed_preflight_only") is False
+    assert parser.get_default("source_support_proxy_radius_m") == 0.0
+    assert parser.get_default("source_support_proxy_height_m") == 0.005
+
+
+def test_source_support_proxy_wraps_scene_without_changing_object_pose(tmp_path):
+    source_scene = tmp_path / "scene.usda"
+    source_scene.write_text("#usda 1.0\n", encoding="utf-8")
+
+    @dataclass(frozen=True)
+    class EpisodeSpec:
+        scene_usd: str
+        object_initial_pose: tuple[float, ...]
+        raw_task: dict
+
+    original = EpisodeSpec(
+        scene_usd=str(source_scene),
+        object_initial_pose=(1.0, 2.0, 0.55, 0.0, 0.0, 0.0),
+        raw_task={
+            "pick": {"support_geometry": {"support_surface_z": 0.50}},
+            "randomization": {
+                "sample": {"cola": {"footprint_radius_m": 0.03}}
+            },
+        },
+    )
+
+    updated, report = _with_source_support_proxy(
+        original,
+        tmp_path / "episode",
+        radius_m=0.026,
+        height_m=0.005,
+    )
+
+    assert updated.object_initial_pose == original.object_initial_pose
+    assert updated.scene_usd == report["wrapper_scene_usd"]
+    assert report["center_xyz"] == pytest.approx([1.0, 2.0, 0.4975])
+    assert report["model_input"] is False
+    text = Path(updated.scene_usd).read_text(encoding="utf-8")
+    assert f"@{source_scene.resolve()}@" in text
+    assert 'def Cylinder "WaypointSourceSupportProxy"' in text
+    assert 'token visibility = "invisible"' in text
+
+    with pytest.raises(ValueError, match="fit inside"):
+        _with_source_support_proxy(
+            original,
+            tmp_path / "too-wide",
+            radius_m=0.031,
+            height_m=0.005,
+        )
 
 
 def test_initial_source_visibility_requires_front_rgb_and_frontal_bearing():
