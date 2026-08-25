@@ -72,6 +72,17 @@ cuRobo 精确重放；`plan_pose` 在 `30.690 s` 后再次返回 None，新 roll
 `manipulation_begin -> manipulation_requery`，底盘零速、保持上一关节目标/夹爪 open，
 `completed=true`。代码与精确恢复分支已有真实 planner 证据；新完整任务仍未通过。
 
+随后对同一 seed 139 做历史 query 0--99 精确物理复刻、query 100 起实时模型续走时，发现
+旧 ARM 旋转门禁按 RPY 三轴分别比较，在 pitch 接近 90° 时会把真实仅 `10.858°` 的 q102
+姿态变化误拒绝。`095a6e8` 已保持 `35°` 阈值不变，改为四元数/SO(3) 最短物理旋转角；
+workspace、`0.15 m` 平移、夹爪范围、真实超限和 planner 异常合同均未放宽。远端合同测试
+7/7 通过。修正后的闭环在 q102 不再终止，实时 q100--144 共 45 次均由 Qwen 输出 PICK，
+q100--143 有 35 次 cuRobo 成功规划和 9 次合法 pose 无解后的保持重询，MANI 期间底盘
+1,024/1,024 步严格零速。能力边界仍停在抓取时序：live target0 的最小 gripper 值为
+`0.571045`，所有执行步均为 open，物体没有被抬升；q144 最终产生真实 `42.643°` 旋转步并
+按合同 fail-closed。该 seed 当前已证明 NAV→PICK、持续视觉重询和规划恢复，但尚未证明
+close/lift 或 PICK→NAV_TO_TARGET。
+
 闭环触发了新的数据硬阻塞：全量 522/522 个 PICK 起始边界 row 的 target0 均为 close，
 471 个 episode 到 horizon index 5、51 个到 index 6 才首次 open。根因是 `plan_pick` 规划等待
 帧沿用了上一显式 close，却被当成可执行 PICK 动作；runtime 的 NAV `stow_open` 则以 open

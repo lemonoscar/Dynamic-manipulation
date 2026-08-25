@@ -329,6 +329,11 @@ python scripts/run_waypoint_rollout.py \
 限值仍保留。不得把
 `arm-vla-reference` 结果报告成默认 `contract` 通过。
 
+ARM 的 `35°` rate gate 指相邻 TCP orientation 的四元数/SO(3) 最短物理旋转角，不得按
+roll、pitch、yaw 三个 Euler 分量分别判定。后者在 pitch 接近 `±90°` 时会因万向锁把相邻
+物理姿态误判为大幅跳变。该表示修正不改变阈值：真实 SO(3) 旋转超过 `35°` 仍立即
+fail-closed。
+
 rollout 不再启动 reference pipeline 的 legacy cuRobo 服务。它只复用指定 port 上已经
 ready 的 Waypoint 服务，并逐项校验 capability；身份、frame 或
 `structured_plan_pose_unavailable` 不匹配立即 fail-closed，禁止复用无法区分
