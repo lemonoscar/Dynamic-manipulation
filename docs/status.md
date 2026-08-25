@@ -67,6 +67,14 @@ NAV 后自主切到 PICK，切换后底盘全程为零，连续 7 个 MANI targe
 状态进入 PICK。继续在同一数据上训练只会强化该错误。完整证据和下一数据门禁见
 [step 1250 严格开环与完整自主闭环评测](waypoint_v2_step1250_strict_evaluation_20260825.md)。
 
+2026-08-25 追加多种子闭环：seed 140--151 的 settle/head 预筛选只有 145、147 满足正前方
+可见门禁。两个有效新 seed 均先接近到约 `0.69 m`，随后 NAV 短重询/回退，并在 NAV/PICK
+连续概率 crossover 时被未校准的 `route_confidence_min=0.55` 转成 `RECOVER`；它们没有
+调用 ARM head。seed 145 为 175 NAV + 1 RECOVER，seed 147 为 151 NAV + 1 RECOVER。
+reset 时夹爪虽接近 closed，但所有 NAV 执行均命令 open，终止前已稳定到约 `0.040 m`，故
+夹爪初态不是直接失败原因。结合 seed 139，当前三类待修项被明确分开：NAV/route crossover
+泛化、PICK command 时序、MANI pose 可执行性。追加证据已写入同一 step 1250 评测文档。
+
 ## 1. 冻结 Waypoint v1 总结
 
 Waypoint Policy v1 的无 state 数据、两次完整 Qwen、双 Layerwise FM head、checkpoint、
@@ -103,6 +111,7 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | Waypoint v2 S4 early-self 双卡训练 | **用户终止** | step 238；无 checkpoint；self-conditioned 过早激活 |
 | Waypoint v2 S4 self1500 替代训练 | **用户停止；step 1250 已评测** | durable step 1250；静态开环结构通过，但完整闭环失败 |
 | Waypoint v2 command-gripper 时序 | **数据硬阻塞** | 522/522 个 PICK boundary target0=close；必须新 schema 修正后再训练 |
+| Waypoint v2 step 1250 多种子闭环 | **未通过** | 145/147 均在 NAV/PICK crossover 被 0.55 confidence 门禁转为 RECOVER；未进入 MANI |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 

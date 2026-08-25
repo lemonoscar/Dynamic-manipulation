@@ -179,3 +179,76 @@ step 1250 已证明：
   丢帧为 0。
 - 评测结束后只停止并释放本次模型和 cuRobo 服务；物理 GPU 2/3 回到空闲，GPU 0/1 的无关
   进程未触碰。
+
+## 7. 追加：seed 145/147 多种子闭环与硬门禁归因
+
+### 7.1 预筛选与有效运行边界
+
+2026-08-25 追加扫描 seed 140--151。所有 seed 先完成 object/base settle，只保存 head 首帧
+和 truth-free 模型输入之外的评测几何；不查询模型、不执行 settle 后动作。只有 seed 145
+（bearing `-14.7736 deg`、距离 `2.0306 m`）和 seed 147（bearing `2.3386 deg`、距离
+`1.6198 m`）通过正前方 `±30 deg` 门禁，首帧目检也都直接看到红色可乐。其余 10 个 seed
+的物体位于机身侧后方，因此没有拿来制造无意义的策略失败。
+
+两类编排失败被排除在科学结果之外：首次预筛选同时关闭 dataset/video，导致相机根本没有
+启用，三个 episode 均在 query 0 前以 `KeyError:'front'` 结束；seed 147 首次完整启动又因
+常驻服务保留 seed 145 的相同 `episode_id=1, sequence=0`，在 query 0 返回
+`stale_or_replayed_sequence`。前者通过只开启短视频渲染后重扫，后者通过重启同一冻结模型
+服务、使用全新输出 identity 后重跑；两者均未进入下表。
+
+### 7.2 三种子闭环对照
+
+seed 145/147 与 seed 139 使用相同 step 1250、模型随机 seed、`K<=10`、真实 PCT/DWA、真实
+cuRobo/IK、target0-only MANI 和原始 fail-closed 规则。没有 required-first、stop-after、
+external truth/FSM 或 ARM bypass。
+
+| 指标 | seed 139 | seed 145 | seed 147 |
+|---|---:|---:|---:|
+| 初始 base-object XY | 1.259882 m | 2.029790 m | 1.619777 m |
+| 最小 base-object XY | 0.664094 m | 0.695448 m | 0.686932 m |
+| 末 query base-object XY | 0.720015 m（PICK 切换） | 0.733920 m | 0.712646 m |
+| base XY 累计路径 | 0.973914 m | 1.561529 m | 1.373009 m |
+| route query | 92 NAV + 8 PICK | 175 NAV + 1 RECOVER | 151 NAV + 1 RECOVER |
+| 是否进入 MANI | 是，7 个 target0 成功 | 否 | 否 |
+| 直接终止事件 | 第 8 个 TCP pose 无规划 | route confidence `<0.55` | route confidence `<0.55` |
+
+seed 145 最后一帧 route 分布为 `PICK=0.531089`、`NAV=0.468685`；seed 147 为
+`PICK=NAV=0.499888`。两者都正处在模型的连续 crossover，却被部署配置中的
+`route_confidence_min=0.55` 转换成 `RECOVER`。这不是外部 GT phase/FSM 覆盖 route，但它是
+确定性的 runtime 硬阈值，直接阻止了下一次自主 PICK。该阈值在 v1 合同中只是初始提案，
+正式值原本就要求在 validation reliability calibration 后冻结；当前多种子证据否定了直接
+沿用 `0.55` 作为已校准正式值。
+
+两个新 seed 的 NAV selector 均严格未越过 index 9，非空 stall diagnostics 为 0；机器人
+没有跌倒。它们先接近到约 `0.69 m`，随后在可乐前反复短重询并回退，说明硬阈值是最后的
+直接终止原因，但不是唯一根因：NAV 末段 waypoint/route 泛化本身仍不稳定。
+
+### 7.3 夹爪初态不是直接失败门禁
+
+seed 145/147 的 query 0 两指关节都接近 `0 m`，即 reset 初态接近闭合；但全部有效 NAV
+control step 都明确命令 `open`，终止前两指均已达到约 `0.040 m`。因此当前 runtime 会在
+进入 PICK 前把 reset 的 open/close 差异标准化为 open，两个新 seed 又都没有调用 ARM head，
+夹爪初态不可能解释其失败。
+
+seed 139 同样以 NAV `stow_open` 进入 PICK。其第 8 个被拒 target 的 gripper 分量还是
+`1.0=open`，cuRobo 拒绝的是 6-DoF TCP pose 的 collision/IK/plan 可执行性，不是“夹爪闭合
+门禁”。但是 522/522 个 episode 的 PICK boundary target0=close 仍是独立、确定的数据错误：
+它会令已经打开的夹爪先关闭再重开，即使所有 TCP pose 都可规划，也会破坏接近--对准--闭合--
+抬升的因果顺序。结论不是简单取消安全门禁，而是分别修正 route threshold calibration、
+NAV 末段泛化、PICK command 时序和 MANI pose 可执行性。
+
+### 7.4 追加证据完整性
+
+- seed 145 summary / trace SHA-256：
+  `418865b0501fecee38a5dd43558a30bb51672f3a4bed83ad7ee7e72cf20d088a` /
+  `a39cbf4ab602601d05da9a6fae18b6a44d53658c3d77e9e6420ac466bf17bf24`；
+- seed 147 summary / trace SHA-256：
+  `3b01c06d445b38c388612a2a49aefbb56ec84e6e4983c37ba67ef04eb87c1e41` /
+  `1f6929f549d955b9186609bf3122b83743cc451600d896a350f14f48aa3a0e8a`；
+- 1920x720 三视角拼接视频：seed 145 为 247 frame、9.88 s、SHA-256
+  `2f7cd622fd1dce4920eb256f6cce554c9253817851e3c13cd4145aab19739671`；seed 147 为
+  325 frame、13.00 s、SHA-256
+  `02bcee598df4e1a0eb0f0a5cc78075aad774c965ac64ebf5e052b9adb141760a`；
+- 两个拼接视频和六路原始视频均完成全流解码；overview 各丢 1 帧，head/wrist 丢帧为 0；
+- 最终只停止本次自有模型/cuRobo 服务；物理 GPU 2/3 回到 6/5 MiB，GPU 0/1 的无关进程
+  与显存占用未改变。
