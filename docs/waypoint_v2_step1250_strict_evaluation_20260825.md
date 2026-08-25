@@ -138,7 +138,34 @@ cuRobo 对该 direct pose 返回无规划，当时 episode 随后以
 `error_kind=plan_pose_unavailable` 会保持并完整重新推理；非法 TCP、cuRobo 服务异常和
 其他规划异常仍 fail-closed。连续无规划只记录次数、sequence ID 与 TCP 差分，不引入新的
 N 次重试/stall 终止门禁，仍由已有 episode/control-step 总 watchdog 给出最终上界。
-定向 48 项单测已通过；本节只修正历史失败归因，不宣称已获得新的真实闭环通过。
+
+2026-08-25 在 `waypoint-v2@78b545a1c1cbc00606d50feca9e638732f23f74d` 完成两层验证：
+
+- 本地与 4xH20 的 48 项定向单测均通过。
+- 新完整 seed 139 使用物理 GPU 2/3，运行 30 query / 1666 control step；第 29 个
+  NAV 后模型在距物体 `1.012523 m` 时转 PICK，首 target 超过 `0.15 m` 平移限制，
+  在 cuRobo 前以 `arm_target_rejected` 终止。因此它验证了“非法 TCP 仍 fail-closed”，
+  但没有触发可恢复 None 分支，不得报告为任务或 None 恢复闭环通过。
+- 为精确覆盖缺失分支，用历史 sequence 99 的真实当前 TCP/关节、预测 target 和
+  两个 collision cuboid 调用实时 GPU cuRobo。planner 在 `30.690 s` 后再次返回
+  `plan_pose=None`；新上层只记录 `manipulation_begin -> manipulation_requery`，下发零底盘、
+  保持历史上一 arm target 和 gripper `open`，并返回 `completed=true`。没有
+  `no_active_manipulation_chunk`。
+
+私有证据 SHA-256：
+
+- 精确 None 恢复 probe：
+  `956e46e02d7b656fea79918c19ce61841d3547bd1e95383f9f2c0a3a27287f4a`；
+- 新 seed 139 summary / trace：
+  `97758c864e131042d023822cfe60aa5636dbdd181459284d3db7e18c1be9a144` /
+  `816001bd571c8e6358fc15f35aa833008d521b8804b422a23ecb2dd2f817ed57`；
+- overview / head / wrist 三路未截断视频：
+  `987628c4ca319675f6878a5984d1f408f9996829332f20a05dec74ee7cd4df37` /
+  `60c80859a17730d790637eed68a74098e3e7cf0e46e30a0aafbbd8e012c4a198` /
+  `d749db9a43ecac748f1a3b7f2fde45bc53bc7aa8fd523a638a2cfff1c6a167e4`。
+
+评测后只停止本次自有 model/cuRobo 服务，GPU 2/3 回到 `6/5 MiB`；GPU 0/1 的
+无关 Ray 任务未被触碰。
 
 ## 4. 新发现的确定根因：PICK 起始监督反向
 

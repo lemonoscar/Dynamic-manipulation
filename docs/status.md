@@ -64,7 +64,13 @@ begin-level `requires_requery` 分支，随后误进入空轨迹 `step()` 而以
 `no_active_manipulation_chunk` 终止。当前 `waypoint-v2` 已修正为：底盘归零，保持上一安全
 关节目标和夹爪状态一个控制周期后直接重新取图/完整推理；不新增重试次数或 stall
 门禁。只有结构化的 `plan_pose_unavailable` 可恢复，非法 TCP 和服务/规划器异常仍 fail-closed。
-定向 runtime/planner/rollout 48 项回归已通过；这是代码门禁，尚不等于新闭环证据。
+本地与 4xH20 定向 runtime/planner/rollout 48 项回归均通过。新 seed 139 闭环未复现历史
+None 分支：29 次 NAV 后在距物体 `1.012523 m` 时转 PICK，首 TCP 违反 `0.15 m`
+平移步长而正确 fail-closed；该 run 只验证了“非法 TCP 不重试”，不是 None 恢复闭环通过。
+随后使用历史 sequence 99 的真实当前 TCP/关节、目标和两个碰撞 cuboid 经实时 GPU
+cuRobo 精确重放；`plan_pose` 在 `30.690 s` 后再次返回 None，新 rollout 路径产生且仅产生
+`manipulation_begin -> manipulation_requery`，底盘零速、保持上一关节目标/夹爪 open，
+`completed=true`。代码与精确恢复分支已有真实 planner 证据；新完整任务仍未通过。
 
 闭环触发了新的数据硬阻塞：全量 522/522 个 PICK 起始边界 row 的 target0 均为 close，
 471 个 episode 到 horizon index 5、51 个到 index 6 才首次 open。根因是 `plan_pick` 规划等待
