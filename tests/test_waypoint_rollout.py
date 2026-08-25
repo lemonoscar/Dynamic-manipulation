@@ -89,6 +89,7 @@ def test_source_support_proxy_wraps_scene_without_changing_object_pose(tmp_path)
     assert updated.object_initial_pose == original.object_initial_pose
     assert updated.scene_usd == report["wrapper_scene_usd"]
     assert report["center_xyz"] == pytest.approx([1.0, 2.0, 0.4975])
+    assert report["runtime_scope"] == "episode"
     assert report["model_input"] is False
     text = Path(updated.scene_usd).read_text(encoding="utf-8")
     assert f"@{source_scene.resolve()}@" in text

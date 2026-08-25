@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help=(
-            "initialization-only radius of an invisible static cylinder whose "
+            "episode-local radius of an invisible static cylinder whose "
             "top matches task.pick.support_geometry.support_surface_z; zero disables it"
         ),
     )
@@ -224,7 +224,7 @@ over "World"
         "source_scene_usd": str(source_scene),
         "wrapper_scene_usd": str(wrapper_path),
         "wrapper_sha256": hashlib.sha256(wrapper.encode("utf-8")).hexdigest(),
-        "initialization_only": True,
+        "runtime_scope": "episode",
         "model_input": False,
     }
     updated_raw_task = {

@@ -83,6 +83,15 @@ q100--143 有 35 次 cuRobo 成功规划和 9 次合法 pose 无解后的保持�
 按合同 fail-closed。该 seed 当前已证明 NAV→PICK、持续视觉重询和规划恢复，但尚未证明
 close/lift 或 PICK→NAV_TO_TARGET。
 
+同一闭环的近景还暴露出源箱局部碰撞面比 task 语义/可见顶面低 `4.709 mm`，导致可乐虽未
+穿透物理网格却视觉下沉。`d2bff85` 已增加默认关闭、显式启用、物体 footprint 内的不可见
+局部支撑面；它不改 object pose，也不进入模型输入或 route/control 决策。无推理 preflight
+将 settled center z 从约 `0.193418 m` 修正为 `0.197893202 m`，与 task 请求误差仅
+`1.03e-7 m`。同 seed 复测仍在 q92 / 10.74 s 切 PICK，live q100--169 有 52 次 cuRobo
+成功规划和 17 次合法无规划后的保持重询；q162 首次实际 close，但未对准/抬升，q169 因真实
+`36.628° > 35°` 旋转 step 正确终止。完整根因、门禁和视频索引见
+[seed139 源箱支撑面修正与闭环复测](waypoint_v2_seed139_source_support_rerun_20260825.md)。
+
 闭环触发了新的数据硬阻塞：全量 522/522 个 PICK 起始边界 row 的 target0 均为 close，
 471 个 episode 到 horizon index 5、51 个到 index 6 才首次 open。根因是 `plan_pick` 规划等待
 帧沿用了上一显式 close，却被当成可执行 PICK 动作；runtime 的 NAV `stow_open` 则以 open
@@ -134,6 +143,7 @@ seed 139 完整自主复测产生 18 次真实导航，并由模型自主切换�
 | Waypoint v2 S4 self1500 替代训练 | **用户停止；step 1250 已评测** | durable step 1250；静态开环结构通过，但完整闭环失败 |
 | Waypoint v2 command-gripper 时序 | **数据硬阻塞** | 522/522 个 PICK boundary target0=close；必须新 schema 修正后再训练 |
 | Waypoint v2 step 1250 多种子闭环 | **未通过** | 145/147 均在 NAV/PICK crossover 被 0.55 confidence 门禁转为 RECOVER；未进入 MANI |
+| seed139 源箱语义支撑面 | **通过（显式诊断）** | 落稳误差 `1.03e-7 m`；视觉不再下沉；默认关闭且不进入模型输入 |
 
 “实现/接线/诊断通过”只覆盖表中明确层级，不向模型收敛或完整物理成功外推。
 

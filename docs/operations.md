@@ -340,6 +340,25 @@ ready 的 Waypoint 服务，并逐项校验 capability；身份、frame 或
 `plan_pose=None` 与服务异常的旧进程。合法 TCP 的明确无规划会保持上一安全 arm/gripper
 指令并重新询问；其他异常仍 fail-closed。
 
+若 USD 逐面审计证明物体落点的局部碰撞面低于 task 的
+`pick.support_geometry.support_surface_z`，可先用默认关闭的 episode-local 支撑代理做隔离
+诊断：
+
+```bash
+python scripts/run_waypoint_rollout.py \
+  --source-support-proxy-radius-m 0.026 \
+  --source-support-proxy-height-m 0.005 \
+  --seed-preflight-only \
+  <其余相同 seed 与 scene/task 参数>
+```
+
+必须先让无推理 preflight 证明 settled 罐底与语义支撑面一致，再移除
+`--seed-preflight-only` 运行闭环。半径必须位于物体 footprint 内；代理不得写入模型 request，
+不得改变 object initial pose、route owner 或控制链。该参数默认 `0`（关闭），只能修复已证实
+的局部 collision/visible-support 不一致，不能用于抬高物体、绕过抓取碰撞或声称完整任务
+通过。seed139 的审计与闭环结果见
+[源箱支撑面复测](waypoint_v2_seed139_source_support_rerun_20260825.md)。
+
 step 2000 的 strict、prefix、unbounded、旧首点 `arm-vla-reference` 和最新
 `lookahead-arm-vla-reference` 闭环均已生成三路视频。最新 run 完成 18 次真实 NAV 后由
 模型自主切到 PICK；物距最低 `0.3804 m`，PICK 时 `0.4931 m`，随后 ARM target 2 违反
