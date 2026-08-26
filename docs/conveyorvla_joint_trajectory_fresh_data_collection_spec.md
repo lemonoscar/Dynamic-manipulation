@@ -1,6 +1,6 @@
 # ConveyorVLA 全新 Joint-Trajectory 数据采集规范
 
-> 状态：设计冻结候选，2026-08-26
+> 状态：grill 决策已确认；采集尚未开始，2026-08-27 复核
 > 范围：Go2-X5、Liangzhu 场景、四 route 的完整导航—抓取—运输—放置任务
 > 目的：为新的双 action-expert 方案采集全新、可追溯、可直接执行的专家数据
 > 重要：本文定义的是新的 breaking-change 数据身份，不覆盖、不转换、也不混训冻结的
@@ -22,16 +22,16 @@
 | 阶段 | 数量 | 是否进入正式集 | 用途 |
 |---|---:|---|---|
 | pipeline smoke | 32 条成功 | 否 | 检查 schema、时钟、视频、关节命令和磁盘占用 |
-| overfit gate | 12 条成功 | 是，来自 train | 覆盖四 route、四 boundary，验证模型能够记住完整动作 |
+| overfit gate | 12 条成功 | 是，来自 train | 覆盖四 route、三 boundary，验证模型能够记住完整动作 |
 | learning pilot | 200 条成功 | schema 完全一致时可进入 | 验证 direct-joint head、连续夹爪和速度包络 |
 | formal release | 1,600 条成功 | 是 | 第一版正式训练、验证和测试 |
 | optional extension | 每次增加 400 条，最多先到 2,400 | 新 immutable revision | 只有 held-out 曲线仍明显受数据量限制时才增加 |
 
 1,600 不是理论上的“越多越好”，而是当前单场景、单目标物、预训练 Qwen 和
 step1250 选择性 warm-start 条件下的第一版合理规模。它约为旧 522 episode 的三倍，且每条
-成功 episode 都提供四次真实物理边界。若 1,200→1,600 条的 held-out 动作误差、route
-flicker 和闭环成功率均已进入平台期，不应为了凑数继续采集；若仍稳定改善，再按 400 条一批
-扩展到 2,400。
+成功 episode 都提供三次 route boundary 和一次独立 evaluator success。若 1,200→1,600 条的
+held-out 动作误差、route flicker 和闭环成功率均已进入平台期，不应为了凑数继续采集；若仍
+稳定改善，再按 400 条一批扩展到 2,400。
 
 核心时钟和输出合同冻结为：
 
@@ -44,8 +44,8 @@ flicker 和闭环成功率均已进入平台期，不应为了凑数继续采集
 | NAV output | `[10,3] @ 0.20 s`，覆盖 2.0 s |
 | Mani output | `[10,7] @ 0.04 s`，覆盖 0.4 s |
 | Mani input state | 6 关节角 + 6 关节速度 + 1 夹爪开度，共 13D |
-| route | `NAV_TO_SOURCE/PICK/NAV_TO_TARGET/PLACE`，另有 `DONE` |
-| runtime route commit | 初始、切换和 DONE 均需两次新观测一致确认 |
+| route | `NAV_TO_SOURCE/PICK/NAV_TO_TARGET/PLACE` |
+| runtime route commit | 初始和切换均需两次新观测一致确认 |
 
 ## 2. 为什么必须重新采集
 
@@ -87,7 +87,7 @@ Pass 1 只能读取：
 - wrist `[t-0.20 s, t]` 两帧。
 
 Pass 1 不得读取关节状态、base pose、GT route、teacher phase、物体位置、previous route 或
-runtime pending route。它受约束生成 `ACTION/DONE`、四选一 route 和 subtask 文本。
+runtime pending route。它受约束生成 `ACTION`、四选一 route 和 subtask 文本；不生成 DONE。
 
 ### 3.2 Pass 2 与两个 action expert
 
@@ -140,7 +140,7 @@ trusted prefix。若 10 点 horizon 穿过真实 route boundary：
 3. 派生数据可记录 `terminal_hold_start_index` 供审计，但不得把它作为模型输入或 runtime
    selector。
 
-episode tail 和 DONE 前同样使用 terminal-hold；不得通过 mask 让模型输出未监督 suffix。
+episode tail 和 evaluator-success tail 同样使用 terminal-hold；不得通过 mask 让模型输出未监督 suffix。
 
 ## 4. 专家演示必须呈现的完整物理顺序
 
@@ -177,17 +177,18 @@ episode tail 和 DONE 前同样使用 terminal-hold；不得通过 mask 让模�
 4. 到达目标箱后 base command 为零并稳定至少 0.4 s；
 5. 保留连续两次新观测，再进入 PLACE。
 
-### 4.4 `PLACE` 与 `DONE`
+### 4.4 `PLACE` 与 evaluator success
 
 1. 全阶段 base command 强制 `[0,0,0]`；
 2. 保持夹爪闭合，移动到目标箱上方；
 3. 慢速下降到合法释放高度；
 4. 稳定后连续打开夹爪并保持；
 5. 必要时以关节轨迹安全回撤；
-6. 物体释放并稳定进入目标区域后，连续两次新观测均支持 DONE 才结束。
+6. 物体脱离夹爪并在目标 box 有效区域内连续保持至少 1.0 s 后，由 evaluator 记录 success
+   并结束；物体姿态不限。
 
-GT 物体位置、接触、抓持和目标箱状态只用于教师、标签和评测，不得写入模型 request 或控制
-链。
+GT 物体位置、接触、抓持和目标箱状态只用于教师、标签和 evaluator termination，不得写入
+模型 request、route 或 action 控制链。
 
 ## 5. 时钟与整个运行速度
 
@@ -215,7 +216,7 @@ NAV:  Pass1 → Pass2 → 执行 2.0 s reference/PCT-DWA → 新观测
 Mani: Pass1 → Pass2 → 顺序执行 10 点/0.4 s → 保持末点 → 新观测
 ```
 
-初始 route、新 route 和 DONE 需要两次新观测确认。第一次出现新 route 时，base 零速、机械臂
+初始 route 和新 route 需要两次新观测确认。第一次出现新 route 时，base 零速、机械臂
 保持最后 target；第二次同一新 route 的概率仍高于已确认 route 后，才用第二次的完整模型
 prefix 运行 Pass 2。
 
@@ -436,7 +437,7 @@ row 数。
 
 - 每个 split 的 blue/yellow 各约 50%；
 - train 的 `destination × distance-bin × bearing-bin` 18 个主 cell，每个至少 40 条成功；
-- 每条成功 episode 都含四个 route 和四个 boundary，因此 train 每类 boundary 至少 1,280
+- 每条成功 episode 都含四个 route 和三个 boundary，因此 train 每类 boundary 至少 1,280
   个 event；
 - nominal/mild/moderate/edge 的 attempted 与 successful 分布都要报告；
 - 任一随机化 bin 成功率显著偏低时，先修教师或收窄不真实范围，不能只丢弃失败造成选择偏差。
@@ -492,7 +493,9 @@ instruction
 head_images[2], wrist_images[2]
 assistant solution / route token / subtask text
 route and action_domain
-boundary transition / signed time / phase progress (supervision only)
+boundary transition / signed time (supervision only)
+route-specific physical progress / valid mask (supervision only)
+physical-progress provenance (audit only)
 nav_action[10,3] | null
 mani_action[10,7] | null
 mani_state[13] | null
@@ -506,26 +509,42 @@ loader 必须证明：
 - Mani expert 恰好读取 13 个允许的连续量；
 - GT object、phase、operation、previous route 和 simulator target 均不进入模型输入。
 
-## 11. route、soft CE 与双确认所需数据
+## 11. route、soft CE、physical progress 与双确认所需数据
 
-阶段内部 route 使用硬 CE；每个真实 boundary 的前后窗口使用 old/new soft CE。推荐继续按
-相对边界时间构造：
+### 11.1 route 与 boundary 标签
+
+阶段内部 route 使用硬 CE；每个真实 boundary 的前后窗口使用 old/new soft CE。按相对边界
+时间和 transition-specific `tau` 构造：
 
 ```text
-p_new_label = sigmoid(boundary_signed_time_s / 0.2 s)
+p_new_label = sigmoid(boundary_signed_time_s / tau_transition)
 p_old_label = 1 - p_new_label
 ```
+
+初始候选为：`NAV_TO_SOURCE→PICK` 与 `NAV_TO_TARGET→PLACE` 使用 `tau=0.20 s`，
+`PICK→NAV_TO_TARGET` 使用 `tau=0.30 s`；最终值由 200-episode pilot 冻结。
 
 采集必须保证每个 boundary 前后都有至少两条 5 Hz query row，并保存同一 transition ID。
 runtime 不直接读取上述 label；它比较 Qwen 自己的 route probabilities：
 
 1. 初始 route 连续两次为同一最高概率项才提交；
 2. 新 route 连续两次为同一个候选，且每次 `P(new)>P(committed)` 才切换；
-3. DONE 连续两次 `P(DONE)>P(ACTION)` 才提交；
-4. 待确认期间只 hold，不执行新 route 或继续旧动作。
+3. 待确认期间只 hold，不执行新 route 或继续旧动作。
 
 训练数据不保存或监督 runtime 的 pending counter；它只是 model-output debounce，不是模型
 history 输入。
+
+### 11.2 route-specific physical progress
+
+progress 只能从 route 对应的物理完成度派生：NAV 使用目标相对距离、朝向和最终停稳；PICK
+使用 reach/alignment/descend/close/lift/carry-ready；PLACE 使用到释放位、下降、打开和物体
+脱离。NAV_TO_TARGET 还必须在携带状态下计算接近与停稳。每个标签都要保存物理来源、单位、
+归一化规则和 `valid` mask。
+
+禁止使用 episode elapsed time、segment 内 timestamp 比例、row index 或固定帧比例替代物理
+progress。hold 时标签保持，重新对准或物理倒退时允许下降；无法从可信 truth 构造时必须将
+该 row 的 progress loss mask 掉。physical progress 和其来源只作监督/审计，均不得进入模型
+输入或 runtime route/action 控制。
 
 ## 12. 质量硬门禁
 
@@ -534,7 +553,7 @@ history 输入。
 进入正式 expert 数据的每条 episode 必须：
 
 - 完整成功，且未使用 diagnostic assist；
-- route 物理顺序完整，四个 boundary 均存在；
+- route 物理顺序完整，三个 route boundary 均存在；
 - 无 robot fall、forbidden collision、错误物体抓取或目标物丢失；
 - head/wrist 全帧可解码、时间连续，overview 完整用于审计；
 - source support 高度正确，物体无穿透/悬空；
@@ -564,7 +583,7 @@ tracking error 超限不是简单删除单点的理由；它可能说明该整�
 必须报告：
 
 - 四 route 的 episode、row、duration 分布；
-- 四 boundary 的 before/after row 和 signed-time 分布；
+- 三个 boundary 的 before/after row 和 signed-time 分布；
 - base path length、方向反转次数、最终到达误差；
 - 六关节 command/measured 的速度、加速度、tracking error p50/p95/p99/max；
 - PICK close 相对 alignment 的时间差；
@@ -586,8 +605,8 @@ measured joint 和 boundary 时间。overview 只用于人工审计，严禁进�
 - gripper state 保留 `[0,1]`；
 - PICK/PLACE 不建立不同单位或不同语义的 gripper normalizer。
 
-训练 sampler 平衡五个 route、episode、progress bin 和 boundary event；每个完整 batch 保证
-NAV、Mani 和 DONE 覆盖，并定期放入同一 transition 的 before/after 配对。首版不配置
+训练 sampler 平衡四个 route、episode、progress bin 和 boundary event；每个完整 batch 保证
+NAV、Mani 和三个 boundary 覆盖，并定期放入同一 transition 的 before/after 配对。首版不配置
 on-policy correction mixture。
 
 ## 14. 采集发布流程
@@ -601,7 +620,7 @@ on-policy correction mixture。
 
 ### Gate B：12 条 overfit snapshot
 
-- 覆盖两个 destination、四 route、四 boundary 和主要初态；
+- 覆盖两个 destination、四 route、三个 boundary 和主要初态；
 - 新模型必须能过拟合 route、连续夹爪和 joint trajectory；
 - runtime replay 不得出现到第一个 Mani target 就提前闭合。
 

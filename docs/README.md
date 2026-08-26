@@ -1,27 +1,36 @@
 # ConveyorVLA 文档索引
 
-更新时间：2026-08-22。现行 runtime/eval 实现基线：
-`feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`；当前 durable
-checkpoint 为 `step_002000@a8d57a22c515`。四卡训练已按用户指令在 step 2090 后停止，
-2026-08-21 最后记录时没有本任务占用 H20；远端实时状态必须在操作前重新核验。
+更新时间：2026-08-27。Waypoint v1/v2 的旧数据、checkpoint 和合同继续作为冻结复现基线；
+新的 direct-joint successor 只在 `Manipulation_Navi_v1` 分支设计，尚未实现或启动训练。
+远端实时状态必须在任何操作前重新核验，本文档索引中的历史 GPU 状态不得用于资源判断。
 
 ## 权威性顺序
 
 出现冲突时按以下顺序判断：
 
-1. [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md) 决定模型输入、两次
-   Qwen forward、route 语法、动作 shape/坐标、planner 边界和门禁语义；它是已批准且
-   冻结的规范正文。
-2. [Waypoint v2 阶段切换执行与长训计划](waypoint_v2_stage_transition_execution_plan.md)
-   决定 successor 的实验顺序、内部晋级门禁、证据择优和正式长训启动条件；在最终 v2
-   合同冻结前，它不改变现行 v1 runtime。
-3. `configs/waypoint_v1.json`、`src/conveyor_bench/conveyorvla/waypoint*.py` 和
-   `scripts/*waypoint*.py` 是现行可执行实现。
-4. [当前状态](status.md) 只记录哪些实现和门禁已有证据、哪些仍未通过，不修改合同。
-5. 本索引中标为“历史”的页面只用于解释来源和失败，不得作为现行启动命令或接口规范。
+1. [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md) 与
+   [Waypoint Policy v2](conveyorvla_waypoint_policy_contract_v2.md) 分别决定其冻结数据、
+   checkpoint 和 runtime 的复现语义；新方案不得原地改写它们。
+2. [Joint-Trajectory 训练改进方案](conveyorvla_joint_trajectory_training_improvement_plan.md)
+   决定 `Manipulation_Navi_v1` successor 的目标模型、训练和 runtime 语义。
+3. [Joint-Trajectory 数据采集规范](conveyorvla_joint_trajectory_fresh_data_collection_spec.md)
+   决定 successor 的 raw/derived 数据、采集速度、随机化和质量门禁。
+4. 当前 Git 代码和 resolved config 只证明已经实现的行为；目标方案在代码、测试和 manifest
+   完成前不得宣称已落地。
+5. [当前状态](status.md) 只记录已有证据和未通过门禁，不修改合同。
+6. 本索引中标为“历史”的页面只用于解释来源和失败，不得作为现行启动命令或接口规范。
 
-合同中 2026-08-20 实施前写下的“尚未实现”等状态句应按第 4 项读取；合同的动作、
+合同中实施前写下的“尚未实现”等状态句应按第 5 项读取；冻结合同的动作、
 输入和执行决议本身没有被更改。
+
+## 已批准的 successor 目标
+
+- [Joint-Trajectory 训练改进方案](conveyorvla_joint_trajectory_training_improvement_plan.md)：
+  四 route、无 DONE、NAV `[10,3]@0.20s`、Mani direct-joint `[10,7]@0.04s`、Mani-only
+  13D state、M=1/10-step inference、分层 global batch 64 和约 2 个数据等效 epoch。
+- [Joint-Trajectory 数据采集规范](conveyorvla_joint_trajectory_fresh_data_collection_spec.md)：
+  1,600 条首版成功 episode、全新 immutable schema/manifest、applied joint target、采集
+  随机化、速度与质量门禁。
 
 ## 现行文档
 
