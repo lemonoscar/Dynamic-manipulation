@@ -57,6 +57,14 @@ tests/                    静态合同、数据、模型、服务、planner 和 
 数据集、checkpoint、日志、视频、3DGS sidecar、Conda 环境和 `handoff_private/` 不进入
 Git。它们只能由 manifest、SHA-256 和外部不可变路径引用。
 
+## Manipulation_Navi_v1 successor
+
+本分支另行实现了代码候选：NAV 改为 `[10,3]@0.20s` reference，Mani 改为读取 13D 可测
+关节状态并直接输出 `[10,7]@0.04s` joint/gripper trajectory；新 runtime 不使用 Mani IK、
+cuRobo、DONE 或 K*。当前只通过合成合同和旧基线定向回归，尚未获得 fresh data、训练或真实
+闭环证据。准确边界见
+[代码实施报告](docs/manipulation_navi_v1_code_implementation_20260827.md)。
+
 ## 快速检查
 
 从仓库根目录执行：
@@ -93,6 +101,7 @@ python -m pytest -p no:cacheprovider \
 ## 文档
 
 - [文档索引与权威性](docs/README.md)
+- [Manipulation_Navi_v1 代码实施报告](docs/manipulation_navi_v1_code_implementation_20260827.md)
 - [已批准且冻结的 Waypoint Policy v1 合同](docs/conveyorvla_waypoint_policy_contract_v1.md)
 - [Waypoint v2 阶段切换执行与长训计划](docs/waypoint_v2_stage_transition_execution_plan.md)：
   已批准的 successor 计划；冻结 v1，使用全新 v2 schema，并按证据选择 terminal-hold、动态

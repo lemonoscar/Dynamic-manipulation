@@ -1,7 +1,7 @@
 # ConveyorVLA Joint-Trajectory 训练改进方案
 
 - 文档版本：`conveyorvla-joint-trajectory-training-plan-v1`
-- 状态：grill 决策已确认；实现与正式训练尚未开始
+- 状态：代码实现与合成门禁已完成；fresh data、overfit、正式训练与真实闭环尚未开始
 - 决策冻结日期：2026-08-27 CST
 - 适用开发分支：`Manipulation_Navi_v1`
 - 目标模型合同：`conveyorvla-joint-trajectory-policy-v1`
@@ -537,6 +537,23 @@ soft CE 只让概率随物理边界平滑 crossover；runtime 始终执行离散
 
 checkpoint 排名策略当前明确 deferred；先验证训练主链和动作能力。
 
+### 11.4 2026-08-27 代码落地边界
+
+当前 `Manipulation_Navi_v1` 分支已经以独立 module/config 实现 Wave 1–4 的可离线部分：
+
+- 四 route、无 DONE、NAV/Mani 两种 10 点动作合同；
+- fresh raw applied-command 校验、派生、terminal-hold、train-only normalizer 和 immutable
+  materializer；
+- 两个独立的 self-attention→Qwen cross-attention→FFN action expert；
+- selective warm-start、answer/route mask、hard/soft route CE、boundary/progress、M=1 FM；
+- global batch 64 分层 sampler、Stage A/B 解冻、参数组 scheduler 和新 checkpoint identity；
+- Pass 1 双确认、pending hold、NAV reference、Mani direct-joint executor 与 evaluator success。
+
+以上只由 synthetic fixtures、静态合同和旧 Waypoint 定向回归证明。仓库中没有 fresh dataset、
+正式 manifest/normalizer、新 checkpoint、overfit、训练日志或 Isaac 闭环证据；纯 Python runtime
+也尚未证明已接入现场 PCT/DWA 与机器人底层 joint controller。完整实现清单和复现命令见
+[Manipulation_Navi_v1 代码实施报告](manipulation_navi_v1_code_implementation_20260827.md)。
+
 ## 12. 实施波次与回滚
 
 ### Wave 1：合同与 schema
@@ -654,5 +671,5 @@ REMOVE:
   old action-data mixing
 ```
 
-只有新实现、数据、overfit、训练健康和 runtime/evaluator 测试全部通过后，才能把本文的目标
-设计晋升为独立正式模型合同。本文本身不证明模型已经实现或训练成功。
+只有 fresh data、overfit、训练健康和真实 runtime/evaluator 测试全部通过后，才能把当前代码
+候选晋升为独立正式模型合同。本文及 synthetic tests 不证明模型已经训练成功。

@@ -1,0 +1,148 @@
+{
+  "schema_version": "conveyorvla-joint-trajectory-policy-config-v1",
+  "model_contract_id": "conveyorvla-joint-trajectory-policy-v1",
+  "dataset_schema_version": "conveyorvla-joint-trajectory-v1",
+  "dataset_profile": "conveyorvla-liangzhu-fresh-joint-trajectory-v1",
+  "vlm": {
+    "architecture": "Qwen3VLForConditionalGeneration",
+    "relative_path": "Qwen3-VL-4B-Instruct",
+    "hidden_size": 2560,
+    "full_finetuning_stage_b": true,
+    "dtype": "bfloat16"
+  },
+  "router": {
+    "active_routes": [
+      "NAV_TO_SOURCE",
+      "PICK",
+      "NAV_TO_TARGET",
+      "PLACE"
+    ],
+    "max_subtask_tokens": 24,
+    "done_token_active": false
+  },
+  "route": {
+    "interior_target": "hard_ce",
+    "transition_target": "old_new_soft_ce",
+    "transition_tau_s": {
+      "NAV_TO_SOURCE->PICK": 0.2,
+      "PICK->NAV_TO_TARGET": 0.3,
+      "NAV_TO_TARGET->PLACE": 0.2
+    },
+    "confirmation_observations": 2,
+    "confidence_threshold": null
+  },
+  "action_model": {
+    "architecture": "LayerwiseSelfCrossFlowMatching",
+    "action_horizon": 10,
+    "navigation_action_dim": 3,
+    "manipulation_action_dim": 7,
+    "manipulation_state_dim": 13,
+    "navigation_stride_s": 0.2,
+    "manipulation_stride_s": 0.04,
+    "cross_attention_dim": 2560,
+    "hidden_size": 1024,
+    "num_layers": 16,
+    "num_attention_heads": 16,
+    "attention_head_dim": 64,
+    "dropout": 0.0,
+    "max_seq_len": 32,
+    "noise_beta_alpha": 1.5,
+    "noise_beta_beta": 1.0,
+    "noise_s": 0.999,
+    "num_timestep_buckets": 1000,
+    "num_inference_timesteps": 10,
+    "expert_parameters_shared": false,
+    "future_tokens": false,
+    "block_order": [
+      "self_attention",
+      "qwen_cross_attention",
+      "ffn"
+    ]
+  },
+  "auxiliary": {
+    "progress_hidden_size": 256,
+    "progress_target": "route_specific_physical_only",
+    "elapsed_time_fallback": false,
+    "row_index_fallback": false
+  },
+  "loss": {
+    "lambda_answer": 1.0,
+    "lambda_route": 1.0,
+    "lambda_navigation": 1.0,
+    "lambda_manipulation": 1.0,
+    "lambda_boundary": 0.2,
+    "lambda_progress": 0.1,
+    "manipulation_joint_weight": 0.75,
+    "manipulation_gripper_weight": 0.25,
+    "boundary_rank_margin": 0.2,
+    "repeated_diffusion_steps": 1
+  },
+  "sampling": {
+    "global_batch_size": 64,
+    "nav_interior": 28,
+    "mani_interior": 28,
+    "boundary_rows": 8,
+    "ordinary_rows_per_episode_max": 1,
+    "minimum_distinct_episodes": 56,
+    "mani_gripper_transition_fraction_min": 0.25
+  },
+  "training": {
+    "stage_a_equivalent_epochs": 0.25,
+    "stage_b_equivalent_epochs": 1.75,
+    "total_equivalent_epochs": 2.0,
+    "save_interval_steps": 250,
+    "global_batch_size": 64,
+    "precision": "bf16"
+  },
+  "optimization": {
+    "optimizer": "AdamW",
+    "action_learning_rate": 2e-5,
+    "qwen_learning_rate": 2e-6,
+    "vision_learning_rate": 5e-7,
+    "route_lm_learning_rate": 1e-5,
+    "auxiliary_learning_rate": 1e-5,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "epsilon": 1e-8,
+    "weight_decay": 1e-8,
+    "max_gradient_norm": 1.0,
+    "action_warmup_steps": 200,
+    "qwen_warmup_steps": 100,
+    "decay": "cosine",
+    "cosine_min_ratio": 0.1
+  },
+  "initialization": {
+    "mode": "selective_warmstart_not_resume",
+    "source_contract": "qwen3vl-layerwise-dual-fm-waypoint-v2",
+    "source_checkpoint_step": 1250,
+    "progress_head": "reinitialize",
+    "optimizer_scheduler_rng": "reinitialize",
+    "normalizer": "fit_fresh_train_only"
+  },
+  "runtime": {
+    "navigation": "full_10_point_reference_to_pct_dwa",
+    "manipulation": "direct_joint_sequential_10_point",
+    "manipulation_base_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pending_behavior": "base_zero_and_hold_last_joint_target",
+    "joint_position_saturation": true,
+    "joint_rate_saturation": true,
+    "validation_saturation_rate_max": 0.005,
+    "success": "released_and_inside_target_for_1.0s_orientation_free"
+  },
+  "disabled": {
+    "done": true,
+    "prefix": true,
+    "crl": true,
+    "on_policy_correction": true,
+    "self_conditioned_auxiliary": true,
+    "image_augmentation": true,
+    "ik": true,
+    "curobo": true
+  }
+}
