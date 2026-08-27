@@ -1,12 +1,35 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-25 CST。冻结的 Waypoint v1 runtime/eval 基线为
+最后复核：2026-08-27 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
 [操作时序与夹爪监督修正](waypoint_v2_manipulation_sequence_and_gripper_correction_20260823.md)。
 当前正式训练参数由 [Waypoint Policy v2 合同](conveyorvla_waypoint_policy_contract_v2.md)
 冻结。
+
+## 0.A Manipulation_Navi_v1 breaking successor
+
+当前公开分支 `Manipulation_Navi_v1` 已在独立合同下完成离线 schema/model/trainer/runtime，
+并新增 Isaac/PCT/DWA/direct-joint/evaluator/raw-recorder 接线。它不是 Waypoint v1/v2 的原地
+升级：四 route、无 DONE，NAV `[10,3]@0.20s`，Mani `[10,7]@0.04s` + Mani-only 13D state，
+无 IK/cuRobo/K*/prefix selector，初始和切换 route 均需两个 fresh observation。
+
+2026-08-27 用户授权停止旧 4×H20 run。精确 agent-owned tmux/PID 退出后，GPU2/3 已释放；
+最后有效 event 为 step 1722，最后 durable checkpoint 为 step 1500，证据未覆盖。GPU1 的
+外部 StarVLA 保持未动。
+
+新 system adapter 已证明：全部 10 个 NAV reference 被变换/trace，第 10 点进入批准 PCT
+endpoint API，DWA 最多执行 2.0 s；Mani 10 点各占两个 50 Hz tick，连续夹爪 position target，
+requested/applied base 精确为零；truth 只进入独立 success evaluator。fresh raw recorder 要求
+本 tick Isaac apply count、严格 50/5 Hz 和原子发布，不生成正式 manifest。
+
+本地 joint-trajectory `26 passed`，与冻结 Waypoint 回归联合为 `74 passed, 2 skipped`。
+4×H20 的 clean-reference headless stage/reset smoke 以 exit 0 完成，状态为
+`completed/simulation_smoke`，结束后 GPU2 再次释放；但 Vulkan/RTX foundation 仍报告 device
+creation warning，因此相机、GPU PhysX 和真实 hold→NAV→Mani 控制尚未晋级。fresh data、
+normalizer、overfit、新 checkpoint、开环/闭环和训练全部仍未开始。详见
+[Manipulation_Navi_v1 系统接线与启动级验证](manipulation_navi_v1_system_wiring_20260827.md)。
 
 ## 0. Waypoint v2 最新状态
 

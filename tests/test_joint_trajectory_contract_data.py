@@ -138,6 +138,8 @@ def test_mani_label_requires_applied_controller_commands():
         samples.append(
             {
                 "tick_id": index * 2 + 2,
+                "sim_step": index * 2 + 2,
+                "model_tick": 0,
                 "timestamp_s": 1.04 + index * 0.04,
                 "q_measured": [0.0] * 6,
                 "dq_measured": [0.0] * 6,
@@ -146,6 +148,7 @@ def test_mani_label_requires_applied_controller_commands():
                 "q_command_applied": [0.009 * (index + 1)] * 6,
                 "gripper_command_requested": 0.9,
                 "gripper_command_applied": 0.85,
+                "base_command_requested": [0.0, 0.0, 0.0],
                 "base_command_applied": [0.0, 0.0, 0.0],
                 "base_pose_world": [0.0, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0],
                 "base_twist_world": [0.0] * 6,
@@ -167,6 +170,10 @@ def test_mani_label_requires_applied_controller_commands():
     moving_base[0]["base_command_applied"] = [0.001, 0.0, 0.0]
     with pytest.raises(ValueError, match="base command"):
         mani_action_from_applied_commands([0.0] * 12 + [1.0], moving_base)
+    requested_base = [dict(sample) for sample in samples]
+    requested_base[0]["base_command_requested"] = [0.001, 0.0, 0.0]
+    with pytest.raises(ValueError, match="base command"):
+        mani_action_from_applied_commands([0.0] * 12 + [1.0], requested_base)
 
 
 def test_fresh_derivation_uses_applied_targets_and_terminal_holds_at_route_boundary():
@@ -175,6 +182,8 @@ def test_fresh_derivation_uses_applied_targets_and_terminal_holds_at_route_bound
         route = "PICK" if tick <= 8 else "NAV_TO_TARGET"
         controls[tick] = {
             "tick_id": tick,
+            "sim_step": tick,
+            "model_tick": tick // 10,
             "timestamp_s": 1.0 + tick * 0.02,
             "q_measured": [0.1] * 6,
             "dq_measured": [0.0] * 6,
@@ -183,6 +192,7 @@ def test_fresh_derivation_uses_applied_targets_and_terminal_holds_at_route_bound
             "q_command_applied": [0.15 + 0.001 * tick] * 6,
             "gripper_command_requested": 1.0 if tick < 4 else 0.0,
             "gripper_command_applied": 1.0 if tick < 4 else 0.2,
+            "base_command_requested": [0.0, 0.0, 0.0],
             "base_command_applied": [0.0, 0.0, 0.0],
             "base_pose_world": [0.0, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0],
             "base_twist_world": [0.0] * 6,

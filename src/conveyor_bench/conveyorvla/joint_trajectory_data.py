@@ -235,6 +235,8 @@ def validate_applied_control_sample(sample: Mapping[str, Any]) -> None:
     """Validate one raw control tick without accepting measured-action fallback."""
 
     _nonnegative_integer(sample.get("tick_id"), "tick_id")
+    _nonnegative_integer(sample.get("sim_step"), "sim_step")
+    _nonnegative_integer(sample.get("model_tick"), "model_tick")
     timestamp = float(sample.get("timestamp_s", float("nan")))
     if not math.isfinite(timestamp) or timestamp < 0.0:
         raise ValueError("timestamp_s must be finite and non-negative")
@@ -245,17 +247,21 @@ def validate_applied_control_sample(sample: Mapping[str, Any]) -> None:
     _finite_vector(sample.get("q_command_applied", ()), 6, "q_command_applied")
     _unit_fraction(sample.get("gripper_command_requested"), "gripper_command_requested")
     _unit_fraction(sample.get("gripper_command_applied"), "gripper_command_applied")
+    requested_base = _finite_vector(
+        sample.get("base_command_requested", ()), 3, "base_command_requested"
+    )
     _finite_vector(sample.get("base_command_applied", ()), 3, "base_command_applied")
     _finite_vector(sample.get("base_pose_world", ()), 7, "base_pose_world")
     _finite_vector(sample.get("base_twist_world", ()), 6, "base_twist_world")
     route = JointTrajectoryRoute(str(sample.get("route", "")))
-    if action_domain(route) is JointTrajectoryDomain.MANIPULATION and any(
-        value != 0.0
-        for value in _finite_vector(
+    if action_domain(route) is JointTrajectoryDomain.MANIPULATION:
+        applied_base = _finite_vector(
             sample.get("base_command_applied", ()), 3, "base_command_applied"
         )
-    ):
-        raise ValueError("PICK/PLACE applied base command must be exactly zero")
+        if any(value != 0.0 for value in (*requested_base, *applied_base)):
+            raise ValueError(
+                "PICK/PLACE requested and applied base commands must be exactly zero"
+            )
     if sample.get("q_command_source") != "controller_applied_after_saturation":
         raise ValueError("q_command_source must prove the applied controller target")
 

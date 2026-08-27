@@ -5,7 +5,8 @@
 - 模型合同候选：`conveyorvla-joint-trajectory-policy-v1`
 - 数据 schema：`conveyorvla-joint-trajectory-v1`
 - 数据 profile：`conveyorvla-liangzhu-fresh-joint-trajectory-v1`
-- 结论：代码候选和 synthetic 门禁已完成；没有 fresh data，也没有启动任何新训练
+- 结论：离线代码、Isaac/controller 接线和启动级门禁已完成；没有 fresh data，也没有启动
+  任何新训练
 
 ## 1. 本轮完成了什么
 
@@ -26,6 +27,9 @@ normalizer、config、checkpoint、模型与 runtime 路径均保持不变。
 | trainer | 12-episode disposable overfit、immutable identity、warm-start≠resume、save250、两 data-equivalent epochs | `train_joint_trajectory.py` |
 | runtime | Pass 1 双确认、pending hold、Pass 2、NAV reference、direct-joint Mani | `joint_trajectory_runtime.py` |
 | evaluator | released + target interior 连续 1.0 s，truth 不回流控制 | `joint_trajectory_runtime.py` |
+| system adapter | 10 点 NAV→PCT/DWA、10×2 direct-joint、连续夹爪、零 base | `joint_trajectory_system.py` |
+| Isaac truth | placement region、released + 1.0 s dwell，独立于 request/control | `joint_trajectory_system.py` |
+| raw recorder | 50 Hz applied report、5 Hz query、三视角资产、atomic episode publish | `joint_trajectory_recording.py` |
 
 配置冻结在 `configs/manipulation_navi_v1.json`。三个脚本都只服务新合同，不复用旧训练 output
 或 checkpoint identity。
@@ -56,9 +60,14 @@ Pass 1 每次都只读任务和视觉。初始 route 及后续切换都需要连
 还必须满足同一个 new route 且 `P(new)>P(committed)`。pending 时不运行 Pass 2，base 为零并
 保持当前关节/夹爪。确认后才用本次模型自产 assistant prefix 运行第二次完整 Qwen forward。
 
-NAV 时输出完整 10 点 reference 给后续 PCT/DWA，并显式保持当前机械臂姿态。Mani 时 base
+NAV 时变换并审计完整 10 点 reference；批准 PCT API 只接受 endpoint，因此第 10 点是 local
+goal，前 9 点保留到 trace 而不虚构为 PCT via-point。Mani 时 base
 严格为零，按 query anchor 重建并顺序执行 10 个 joint/gripper target；policy 层不调用 IK、
 cuRobo、`plan_pose`、K* 或 feasibility selector，只保留底层 position/rate saturation 与 trace。
+
+Isaac adapter 把每个 0.04 s Mani target 执行成两个 50 Hz tick，夹爪以连续 joint position
+metadata 下发。raw recorder 只有在 arm/gripper apply count 对本 tick 真实增加时才接受
+controller-applied target，并要求 PICK/PLACE requested/applied base 同时精确为零。
 
 ## 3. 已执行的验证
 
@@ -72,7 +81,7 @@ python -m pytest -p no:cacheprovider \
   tests/test_joint_trajectory_runtime_training.py -q
 ```
 
-结果：`19 passed`。
+加入 system/recorder 后结果：`26 passed`。
 
 旧基线定向回归：
 
@@ -85,8 +94,17 @@ python -m pytest -p no:cacheprovider \
   tests/test_train_waypoint.py -q
 ```
 
-结果：`47 passed, 1 skipped`。此外，新 Python 文件通过 `py_compile`，公开 diff 通过
+当前环境结果：`48 passed, 2 skipped`；联合集合为 `74 passed, 2 skipped`。两个 skip 是
+缺少 `accelerate` 的旧训练模块和无 CUDA 的旧 device-alignment test。此外，新 Python 文件
+通过 `py_compile`，公开 diff 通过
 `git diff --check`。
+
+数据无关启动脚本已对批准 reference 的 commit/clean 状态、真实 RobotAction/Isaac runtime
+import、连续夹爪、NAV→PCT/DWA fixture 和 placement region 解析返回
+`startup_wiring_ready`。4×H20 的真实 headless stage/reset smoke 也以 exit 0 完成，但 H20
+Vulkan/RTX device-creation warning 仍存在，所以只证明 stage/episode 生命周期，不外推相机、
+GPU PhysX 或真实 control loop。完整证据见
+[系统接线与启动级验证](manipulation_navi_v1_system_wiring_20260827.md)。
 
 全仓 pytest 在当前 ROS Python 环境的 collection 阶段受到 `/opt/ros/humble/.../scripts`
 包遮蔽仓库 `scripts` namespace 的既存环境冲突，未进入八个旧测试模块的断言；本轮没有为
@@ -99,9 +117,8 @@ python -m pytest -p no:cacheprovider \
 - 没有 materialize 或加载新 checkpoint；
 - 没有启动、停止、续接或监控任何新 GPU 训练；
 - 没有固定 noise 开环动作图、gripper 时序评测或 route crossover 实测；
-- 没有 Isaac 采集侧 recorder/overview/FK 可视化接线；materializer 当前只消费并严格审计
-  已按 fresh raw contract 生成的 episode 文件；
-- 没有把纯 Python runtime adapter 接入现场 PCT/DWA、joint controller 和 Isaac evaluator；
+- 没有用 fresh episode 实测 recorder/FK 可视化或 materializer；
+- 没有在健康 Vulkan/RTX 节点跑真实 hold→NAV→Mani control smoke；
 - 没有真实闭环视频或任务 success 证据。
 
 因此当前可准确称为“代码基本功能实现完成”，不能称为“模型完成”或“训练完成”。
