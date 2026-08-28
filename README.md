@@ -61,9 +61,18 @@ Git。它们只能由 manifest、SHA-256 和外部不可变路径引用。
 
 本分支另行实现了代码候选：NAV 改为 `[10,3]@0.20s` reference，Mani 改为读取 13D 可测
 关节状态并直接输出 `[10,7]@0.04s` joint/gripper trajectory；新 runtime 不使用 Mani IK、
-cuRobo、DONE 或 K*。当前只通过合成合同和旧基线定向回归，尚未获得 fresh data、训练或真实
-闭环证据。准确边界见
-[代码实施报告](docs/manipulation_navi_v1_code_implementation_20260827.md)。
+cuRobo、DONE 或 learned K*/prefix selector。
+
+2026-08-28 已完成首批 4 条 Gate-A review episode 的 raw 数据审计：50 Hz control 时钟、
+applied joint/gripper command、三路图像、四 route 顺序和 Mani 抓取/放置时序基本通过；但
+当前 materializer 在 1,585 个 query 中暴露 11 个合法 zero-prefix tail，NAV 教师速度包络与
+冻结合同不一致，PLACE physical progress 又只覆盖 late bucket。为此已冻结严格的 `K=0`
+审计语义：它只允许由 raw 时序证明的 `boundary` 或 evaluator-confirmed `success_tail`，输出
+完整 10 点 hold；它不恢复模型 K* 或 runtime prefix 选择。该规则尚待代码和测试落地，正式
+immutable 数据、overfit、训练和真实闭环仍未开始。准确边界见
+[训练改进方案](docs/conveyorvla_joint_trajectory_training_improvement_plan.md)与
+[全新数据采集规范](docs/conveyorvla_joint_trajectory_fresh_data_collection_spec.md)；已完成代码
+边界见[实施报告](docs/manipulation_navi_v1_code_implementation_20260827.md)。
 
 ## 快速检查
 

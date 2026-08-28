@@ -1,6 +1,6 @@
 # 当前状态、证据与剩余门禁
 
-最后复核：2026-08-27 CST。冻结的 Waypoint v1 runtime/eval 基线为
+最后复核：2026-08-28 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见
 [阶段无法切换：证据链、根因与修正](waypoint_v2_transition_root_cause_20260823.md)和
@@ -27,9 +27,19 @@ requested/applied base 精确为零；truth 只进入独立 success evaluator。
 本地 joint-trajectory `26 passed`，与冻结 Waypoint 回归联合为 `74 passed, 2 skipped`。
 4×H20 的 clean-reference headless stage/reset smoke 以 exit 0 完成，状态为
 `completed/simulation_smoke`，结束后 GPU2 再次释放；但 Vulkan/RTX foundation 仍报告 device
-creation warning，因此相机、GPU PhysX 和真实 hold→NAV→Mani 控制尚未晋级。fresh data、
-normalizer、overfit、新 checkpoint、开环/闭环和训练全部仍未开始。详见
+creation warning，因此相机、GPU PhysX 和真实 hold→NAV→Mani 控制尚未晋级。详见
 [Manipulation_Navi_v1 系统接线与启动级验证](manipulation_navi_v1_system_wiring_20260827.md)。
+
+2026-08-28 已审计 seeds 6–9 的 4 条 Gate-A review success：48,117 个文件 hash 复核通过，
+共 15,879 control rows、1,585 query rows 和 23,820 张三视角图像；raw 时钟、applied
+joint/gripper command、四 route 顺序、Mani tracking 与夹爪时序基本通过。当前 materializer
+有 11 个合法 zero-prefix rows（10 个 boundary、1 个 success tail），因此冻结了仅由 raw
+时序/evaluator 证明的 `K=0 boundary/success_tail` 完整 10 点 hold；该规则尚待代码和测试
+落地。审计同时发现 NAV teacher 超出冻结速度/横移包络、PLACE progress 只有 late bucket，
+以及需校准的毫米级 support bbox 偏差。review 数据只可用于接线、validator 与 overfit 调试；
+正式 immutable release、normalizer、overfit、新 checkpoint、开环/闭环和训练仍未开始。完整
+证据与处置见
+[Joint-Trajectory 数据采集规范](conveyorvla_joint_trajectory_fresh_data_collection_spec.md#141-2026-08-28-gate-a-review-审计证据)。
 
 ## 0. Waypoint v2 最新状态
 

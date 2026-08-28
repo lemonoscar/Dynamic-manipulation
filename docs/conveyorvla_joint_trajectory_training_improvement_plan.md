@@ -1,8 +1,10 @@
 # ConveyorVLA Joint-Trajectory 训练改进方案
 
 - 文档版本：`conveyorvla-joint-trajectory-training-plan-v1`
-- 状态：代码实现与合成门禁已完成；fresh data、overfit、正式训练与真实闭环尚未开始
+- 状态：代码实现与合成门禁已完成，4 条 Gate-A review episode 已审计；正式数据 release、
+  overfit、正式训练与真实闭环尚未开始
 - 决策冻结日期：2026-08-27 CST
+- 最新语义修订：2026-08-28 CST，冻结 raw-derived `K=0` full-hold 合同
 - 适用开发分支：`Manipulation_Navi_v1`
 - 目标模型合同：`conveyorvla-joint-trajectory-policy-v1`
 - 目标数据 schema：`conveyorvla-joint-trajectory-v1`
@@ -42,7 +44,7 @@ commit、数据 manifest、resolved config 和远端运行身份；机器私有�
 | Mani state | `q6+dq6+gripper1=13D`，只进入 Mani expert |
 | Mani action | query-relative `delta_q6` + continuous absolute gripper |
 | action horizon | 完整 10 点监督和执行，无 `K*`、prefix selector 或 suffix mask |
-| boundary suffix | terminal-hold 到第 10 点 |
+| boundary suffix | `K>=1` 保留合法 prefix 后 hold；严格 raw-derived `K=0` 则完整 10 点 hold |
 | FM 训练采样 | `M=1` |
 | FM 推理积分 | 默认 10 步 |
 | route 训练 | interior 硬 CE + route-specific transition 软 CE |
@@ -227,7 +229,8 @@ route-specific 物理完成度标签从头学习。
 
 ### 5.1 完整 10 点监督
 
-NAV/Mani FM 始终监督全部 10 点。若 horizon 跨过真实 route boundary：
+NAV/Mani FM 始终监督全部 10 点。若第一个名义 target 仍属于 query 的 committed route，走
+普通 `K>=1` 路径；horizon 跨过真实 route boundary 时：
 
 1. 保留当前 committed route 的连续合法动作；
 2. 后续位置重复最后一个合法 target；
@@ -236,8 +239,18 @@ NAV/Mani FM 始终监督全部 10 点。若 horizon 跨过真实 route boundary�
 5. 不拼接下一 route 动作；
 6. 不保留 `K*`、`L_prefix` 或 suffix loss mask。
 
-episode tail 和 evaluator-success tail 同样 terminal-hold。异常截断不得伪装为 terminal-hold，
-必须剔除 action loss 或拒绝 episode。
+zero-prefix 只允许由连续的 50 Hz raw 时序证明：在第一个名义 target tick 到来前或正好到来
+时，control log 已提交到合法直接后继 route，则记 `boundary`；若 control log 在该 tick 前
+干净结束，且 evaluator、`summary.success=true`、`final_state=done` 同时确认，则记
+`success_tail`。固定输出完整 10 点 hold、mask 全真、`terminal_hold_start_index=0`；NAV hold
+为十个零 body reference，Mani hold 为 query 时刻 applied joint target 相对 measured q 的
+delta 与当前 applied gripper 的十次重复。
+
+raw `tail_reason` 不参与推导或兜底。tick/时间戳断裂、非法 route jump、pending/proposed-only
+切换、失败/timeout/truncation、未证明 tail 或其他 future 缺失都必须拒绝。`K=0` 和
+`terminal_hold_start_index` 只作审计，不恢复 learned K*/prefix head/runtime selector；runtime
+仍信任全部 10 点。完整判定顺序以
+[数据采集规范 3.5](conveyorvla_joint_trajectory_fresh_data_collection_spec.md#35-边界后缀)为准。
 
 ### 5.2 normalizer
 
@@ -500,6 +513,10 @@ soft CE 只让概率随物理边界平滑 crossover；runtime 始终执行离散
 - route 集合恰好四个且无 DONE；
 - NAV/Mani shape、stride、frame、normalizer round-trip；
 - action 10 点全部 valid，terminal-hold 无 suffix mask；
+- 第一个 target 仍属于当前 route 时必须走普通 `K>=1` 派生；
+- 合法直接后继在首 target 前/当时 committed 时，严格派生 `K=0 boundary` full hold；
+- evaluator-confirmed clean end 严格派生 `K=0 success_tail` full hold；
+- 其他 missing tick/tail、非法 jump、pending-only route 和 query `tail_reason` fallback 全部拒绝；
 - `repeated_diffusion_steps=1`、inference steps=10；
 - route token 不进入 `L_answer`；
 - transition subtask mask 正确；
@@ -537,7 +554,7 @@ soft CE 只让概率随物理边界平滑 crossover；runtime 始终执行离散
 
 checkpoint 排名策略当前明确 deferred；先验证训练主链和动作能力。
 
-### 11.4 2026-08-27 代码落地边界
+### 11.4 2026-08-28 代码与数据落地边界
 
 当前 `Manipulation_Navi_v1` 分支已经以独立 module/config 实现 Wave 1–4 的可离线部分：
 
@@ -549,9 +566,13 @@ checkpoint 排名策略当前明确 deferred；先验证训练主链和动作能
 - global batch 64 分层 sampler、Stage A/B 解冻、参数组 scheduler 和新 checkpoint identity；
 - Pass 1 双确认、pending hold、NAV reference、Mani direct-joint executor 与 evaluator success。
 
-以上只由 synthetic fixtures、静态合同和旧 Waypoint 定向回归证明。仓库中没有 fresh dataset、
-正式 manifest/normalizer、新 checkpoint、overfit、训练日志或 Isaac 闭环证据；纯 Python runtime
-也尚未证明已接入现场 PCT/DWA 与机器人底层 joint controller。完整实现清单和复现命令见
+以上代码只由 synthetic fixtures、静态合同和旧 Waypoint 定向回归证明。2026-08-28 审计的
+4 条 Gate-A review episode 已证明 raw 时钟、applied command、图像和 Mani 时序基本可用，
+但也暴露了 11 个合法 zero-prefix rows、NAV 教师包络不合规与 PLACE progress 只覆盖 late
+bucket。新冻结的 `K=0` 规则尚未在当前 materializer/validator/tests 中实现；因此 review 数据
+不是正式 immutable release，仓库中仍没有正式 manifest/normalizer、新 checkpoint、overfit、
+训练日志或真实 Isaac 闭环证据。纯 Python runtime 也尚未证明已接入现场 PCT/DWA 与机器人
+底层 joint controller。完整实现清单和复现命令见
 [Manipulation_Navi_v1 代码实施报告](manipulation_navi_v1_code_implementation_20260827.md)。
 
 ## 12. 实施波次与回滚
@@ -649,6 +670,7 @@ KEEP:
   NAV→PCT→DWA
   route hard/soft CE + boundary/progress
   complete 10-point terminal-hold supervision
+  raw-derived K=0 boundary/success-tail full hold (audit-only)
   low-level joint/rate protection
 
 CHANGE:
@@ -661,7 +683,7 @@ CHANGE:
 
 REMOVE:
   DONE
-  K*/prefix/suffix mask
+  learned K*/prefix/suffix mask (K=0 audit sentinel is not a model K)
   Mani IK/cuRobo runtime
   M=4
   CRL

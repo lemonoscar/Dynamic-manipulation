@@ -1,6 +1,8 @@
 # ConveyorVLA 全新 Joint-Trajectory 数据采集规范
 
-> 状态：grill 决策已确认；采集尚未开始，2026-08-27 复核
+> 状态：目标合同已确认；4 条 Gate-A review episode 已审计，正式采集与 immutable release
+> 尚未开始，2026-08-28 复核
+> 文档修订：冻结 raw-derived `K=0` boundary/success-tail 语义，并记录 Gate-A 预审证据
 > 范围：Go2-X5、Liangzhu 场景、四 route 的完整导航—抓取—运输—放置任务
 > 目的：为新的双 action-expert 方案采集全新、可追溯、可直接执行的专家数据
 > 重要：本文定义的是新的 breaking-change 数据身份，不覆盖、不转换、也不混训冻结的
@@ -133,14 +135,49 @@ selector。
 ### 3.5 边界后缀
 
 两个 action expert 都完整监督 10 点，不再存在 `K*`、prefix head、`L_prefix` 或运行时
-trusted prefix。若 10 点 horizon 穿过真实 route boundary：
+trusted prefix。派生器必须先证明完整 raw control tick 流以 50 Hz 连续、时间戳对齐，并令：
 
-1. 保留属于当前 route 的连续动作；
-2. boundary 后重复最后一个当前 route 的合法 target；
-3. 派生数据可记录 `terminal_hold_start_index` 供审计，但不得把它作为模型输入或 runtime
-   selector。
+```text
+query_tick = tq
+committed route at tq = R
+stride_ticks = 10 for NAV, 2 for Mani
+first_target_tick = tq + stride_ticks
+legal successor = NAV_TO_SOURCE→PICK→NAV_TO_TARGET→PLACE
+```
 
-episode tail 和 evaluator-success tail 同样使用 terminal-hold；不得通过 mask 让模型输出未监督 suffix。
+只要第一个名义 target tick 仍属于 `R`，就按普通 `K>=1` 路径派生：保留当前 route 的连续
+合法 target，遇到合法相邻 route boundary 或 evaluator-confirmed success tail 后，重复最后
+一个合法 target 到第 10 点。不得拼接下一 route 的动作。
+
+只有以下两种 raw 时序事实允许 `K=0`：
+
+1. **`boundary`**：不晚于第一个名义 target tick，raw control 中已经提交到 `R` 的合法直接
+   后继 route；该 route 必须是 control tick 上实际 committed route，不能来自 pending/
+   proposed route、teacher phase、GT metadata 或 query 声明；
+2. **`success_tail`**：control 流在第一个名义 target tick 前干净结束，并同时有 evaluator
+   确认、`summary.success=true` 和 `final_state=done`。
+
+`K=0` 固定派生为：
+
+```text
+NAV:   [[0,0,0]] * 10
+Mani:  repeat([q_command_applied(tq)-q_measured(tq),
+               gripper_command_applied(tq)]) * 10
+action_valid_mask:             [true] * 10
+terminal_hold_start_index:     0
+terminal_hold_reason:          boundary | success_tail
+```
+
+`terminal_hold_start_index` 的合法范围因此为 `0..10`：`0` 表示 zero-prefix full hold，`10`
+表示没有后缀 hold。它和 `K=0` 都只是派生审计哨兵，不是模型监督的 K、runtime selector 或
+动作 mask；runtime 仍信任完整 10 点。`terminal_hold_reason` 只能为 `null`（未发生 hold）、
+`boundary` 或 `success_tail`。
+
+raw query 的 `tail_reason` 不得参与推导，也不得作为 fallback；若保留，只能用于审计，且与
+raw 时序推导不一致时必须报错。找不到 future target、tick/时间戳断裂、非法 route jump、
+pending-only 切换、失败/timeout/truncation 或未经 evaluator 证明的 tail 一律硬报错。正式
+训练集只含完整 success，因此不接受通用 `episode_tail`。所有 10 点 FM loss 均有效，禁止用
+mask 让模型输出未监督 suffix。
 
 ## 4. 专家演示必须呈现的完整物理顺序
 
@@ -499,7 +536,8 @@ physical-progress provenance (audit only)
 nav_action[10,3] | null
 mani_action[10,7] | null
 mani_state[13] | null
-terminal-hold provenance (audit only)
+action_valid_mask[10]
+terminal_hold_start_index / terminal_hold_reason (audit only)
 ```
 
 loader 必须证明：
@@ -570,6 +608,9 @@ progress。hold 时标签保持，重新对准或物理倒退时允许下降；�
 | gripper command 越过 `[0,1]` | 0 |
 | Mani base command 非零 | 0 |
 | image/state/command timestamp 错配 `>40 ms` | 0 |
+| raw control tick 或 50 Hz timestamp gap | 0 |
+| 无法由 boundary/success 解释的 first-target 缺失 | 0 |
+| `K=0` reason 与 raw 时序/evaluator 不一致 | 0 |
 | joint command—measurement tracking error p95 | `<0.08 rad` |
 | joint command—measurement tracking error p99 | `<0.12 rad` |
 | normalizer train 单侧 clip rate | `<1%`，目标 `<0.5%` |
@@ -611,34 +652,57 @@ on-policy correction mixture。
 
 ## 14. 采集发布流程
 
-### Gate A：32 条 smoke
+### 14.1 2026-08-28 Gate-A review 审计证据
+
+预审批次 `gateA-seeds006-009-envelope-76bd875-20260828T110505CST` 来自 collection commit
+`76bd875b2d8f544d829b8fc1d7277c4e7a902045`，包含 seeds 6–9 共 4 条完整 success。它只是
+schema/语义预审，不把 4 条样本量、split 或随机化覆盖当作正式数据规模结论。
+
+| 审计项 | 证据 | 结论与处置 |
+|---|---|---|
+| 文件与任务 | 48,117 个文件 SHA-256 复核通过；4/4 success，四 route 顺序正确 | 通过预审 |
+| raw/query/图像 | 15,879 control rows、1,585 query rows、23,820 张 head/wrist/overview；全部可解码且无相邻重复帧 | 通过预审 |
+| command provenance | applied q/dq/gripper 完整；PICK/PLACE requested/applied base 精确为零 | 通过预审 |
+| Mani 可执行性 | 25 Hz 最大 joint target step 约为合同上限的 90%；tracking error p95 约 0.023 rad、p99 约 0.028 rad | 通过预审 |
+| gripper 时序 | PICK 先 open/reach，再 close/lift；首次 close 距物体约 16.6–17.7 mm；PLACE 正确 open | 通过预审 |
+| zero-prefix | 当前 materializer 有 11/1,585 rows 无同 route future：10 个 boundary、1 个 success tail | 采用本节 3.5 的严格 `K=0`；代码/测试落地后应恢复全部 1,585 rows，其余缺失仍硬报错 |
+| NAV 教师包络 | `NAV_TO_SOURCE` 达 `vx=0.45 m/s,wz=0.50 rad/s`，超过全局 `0.30/0.35`；`NAV_TO_TARGET` 达 `vx=0.25 m/s`，超过 loaded `0.24`，且出现非零 `vy` | 不得后处理 waypoint 冒充合规；正式 NAV 数据须修教师限幅后重采 |
+| PLACE progress | 四条 PLACE 均约从 0.78 开始，只有 late bucket | raw 几何足够；按 PLACE route-local 物理步骤离线重标，不按 elapsed time/row index 补齐 |
+| support 几何 | 物体 bbox 底部代理相对支撑面约低 4.2–7.9 mm，视频无明显整体嵌入 | 采集前校准 visual/collider/bbox；若证实真实穿透则修 Z 后重采 |
+| `tail_reason` | query 字段过宽，不能证明 future 缺失原因 | 派生完全忽略该字段，只信 raw 时序与 evaluator |
+
+因此，这批数据可继续用于系统接线、validator 和 overfit 调试，但在 NAV 教师包络修复、
+PLACE progress 重标、`K=0` materializer/测试落地及 support 几何校准完成前，不得进入正式
+immutable release 或正式训练。
+
+### 14.2 Gate A：32 条 smoke
 
 - 验证字段、时钟、command provenance、相机和存储；
 - 手工重放至少一条完整成功 episode；
 - 计算实际 RTF、成功率、字节/episode；
 - 发现 schema 或教师问题时全部作废，不修补后混入正式集。
 
-### Gate B：12 条 overfit snapshot
+### 14.3 Gate B：12 条 overfit snapshot
 
 - 覆盖两个 destination、四 route、三个 boundary 和主要初态；
 - 新模型必须能过拟合 route、连续夹爪和 joint trajectory；
 - runtime replay 不得出现到第一个 Mani target 就提前闭合。
 
-### Gate C：200 条 learning pilot
+### 14.4 Gate C：200 条 learning pilot
 
 - 验证随机化成功率和每个 bin 的覆盖；
 - 比较新 head selective warm-start 与 clean-head pilot；
 - 开环检查 joint trajectory、gripper crossover、boundary lag/flicker；
 - 至少多个预冻结 seed 完成 NAV→PICK→伸手→闭合→抬升的真实闭环能力验证。
 
-### Gate D：1,600 条 formal release
+### 14.5 Gate D：1,600 条 formal release
 
 - 只在 A–C 的 schema、teacher、速度和标签合同全部冻结后开始；
 - 按预冻结 split/seed shard 采集；
 - raw、derived、manifest、normalizer 均以 immutable ID 发布；
 - formal audit 全通过后才允许长训。
 
-### Gate E：是否扩展到 2,400
+### 14.6 Gate E：是否扩展到 2,400
 
 以 800/1,200/1,600 条 train-subset 学习曲线决定。只有以下至少一项仍随数据量稳定改善才扩展：
 
@@ -678,6 +742,7 @@ gripper move/hold:       0.70 / 0.30 s
 base settle:             <=0.02 m/s, <=0.10 rad/s, >=0.40 s
 normal runtime hold:     0.0–1.2 s, action endpoint held
 route commit:            two fresh observations
+K=0 terminal hold:       raw-derived boundary/success_tail only; audit-only
 training episodes:       complete unassisted successes only
 ```
 

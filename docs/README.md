@@ -1,8 +1,10 @@
 # ConveyorVLA 文档索引
 
-更新时间：2026-08-27。Waypoint v1/v2 的旧数据、checkpoint 和合同继续作为冻结复现基线；
+更新时间：2026-08-28。Waypoint v1/v2 的旧数据、checkpoint 和合同继续作为冻结复现基线；
 新的 direct-joint successor 已在 `Manipulation_Navi_v1` 分支完成代码候选、Isaac 接口接线
-和启动级门禁，但尚无 fresh data、overfit、正式训练或真实控制闭环证据。
+和启动级门禁，并审计了 4 条 Gate-A review episode，但尚无冻结的正式数据 release、overfit、
+正式训练或真实控制闭环证据。review 样本只证明 schema/时序可审计性，不代替正式规模与覆盖
+门禁。
 远端实时状态必须在任何操作前重新核验，本文档索引中的历史 GPU 状态不得用于资源判断。
 
 ## 权威性顺序
@@ -31,7 +33,8 @@
   13D state、M=1/10-step inference、分层 global batch 64 和约 2 个数据等效 epoch。
 - [Joint-Trajectory 数据采集规范](conveyorvla_joint_trajectory_fresh_data_collection_spec.md)：
   1,600 条首版成功 episode、全新 immutable schema/manifest、applied joint target、采集
-  随机化、速度与质量门禁。
+  随机化、速度与质量门禁；同时记录 2026-08-28 Gate-A 审计结果，并冻结由 raw 时序推导的
+  `K=0 boundary/success_tail` 完整 hold 规则。
 - [Manipulation_Navi_v1 代码实施报告](manipulation_navi_v1_code_implementation_20260827.md)：
   已实现文件、合成/回归验证、明确未完成门禁和 fresh data 到达后的执行顺序。
 - [Manipulation_Navi_v1 系统接线与启动级验证](manipulation_navi_v1_system_wiring_20260827.md)：
