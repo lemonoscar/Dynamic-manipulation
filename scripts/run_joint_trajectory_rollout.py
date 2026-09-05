@@ -25,6 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from scripts import run_waypoint_rollout as waypoint_runner  # noqa: E402
 from conveyor_bench.conveyorvla.formal_physics import FormalPhysics  # noqa: E402
+from conveyor_bench.conveyorvla.waypoint import yaw_from_quaternion  # noqa: E402
 from conveyor_bench.conveyorvla.joint_trajectory import (  # noqa: E402
     JointTrajectoryDomain,
     JointTrajectoryRoute,
@@ -333,6 +334,17 @@ class JointTrajectoryRolloutPipeline:
                 )
                 result = self.system.execute(step, local_map=local_map)
                 self._record("system_execution", asdict(result))
+                if "requested_goal_A_xyyaw" in result.trace:
+                    from conveyor_bench.conveyorvla.execution_consistency import navigation_decomposition
+                    operation = "pick" if step.committed_route is JointTrajectoryRoute.NAV_TO_SOURCE else "place"
+                    goal = self.episode_spec.raw_task[operation]["base_goal"]
+                    pose = result.final_state.robot_root_pose
+                    self._record("navigation_GABC", navigation_decomposition(
+                        nominal=(goal["x"], goal["y"], goal["yaw"]),
+                        requested=result.trace["requested_goal_A_xyyaw"],
+                        planned=result.trace["planned_endpoint_B_xyyaw"],
+                        measured=(pose[0], pose[1], yaw_from_quaternion(pose[3:])),
+                        reached=result.reason == "local_goal_reached"))
                 if result.failed:
                     failure_reason = result.reason or "joint_system_execution_failed"
                     break

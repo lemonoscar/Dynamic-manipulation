@@ -138,12 +138,28 @@ class ArmVLADWAControllerAdapter:
         measured_body_velocity: Sequence[float],
         local_map: Any,
     ) -> tuple[float, float, float]:
-        path = tuple(
-            tuple(_finite_vector(point, 2, "DWA path point")) for point in path_world
-        )
+        self.last_trace = {}
+        try:
+            path = tuple(
+                tuple(_finite_vector(point, 2, "DWA path point")) for point in path_world
+            )
+        except (TypeError, ValueError) as error:
+            self.last_trace = {"failure_status": "dwa_invalid_path",
+                               "phase": "input_validation", "error": str(error)}
+            raise ValueError("dwa_invalid_path: invalid XY points") from error
         pose = tuple(_finite_vector(current_world_pose, 3, "DWA world pose"))
         velocity = tuple(_finite_vector(measured_body_velocity, 3, "DWA velocity"))
         grid_map, raw_grid_map = _grid_maps(local_map)
+        # Reject a collapsed PCT route before the reference DWA projects onto
+        # an empty segment array. A valid all-free raster is allowed.
+        try:
+            input_trace = validate_dwa_inputs(path, grid_map)
+            if raw_grid_map is not None:
+                validate_dwa_inputs(path, raw_grid_map)
+        except ValueError as error:
+            self.last_trace = {"failure_status": str(error).split(":", 1)[0],
+                               "phase": "input_validation", "error": str(error)}
+            raise
         key = (path, id(grid_map), id(raw_grid_map))
         if self._controller is None or key != self._key:
             kwargs = {} if raw_grid_map is None else {"raw_grid_map": raw_grid_map}
@@ -162,10 +178,16 @@ class ArmVLADWAControllerAdapter:
             "current_world_pose": list(pose),
             "measured_body_velocity": list(velocity),
             "local_map_type": type(grid_map).__name__,
+            "input_validation": input_trace,
             "command": list(command),
             "elapsed_ms": elapsed_ms,
             "debug": _jsonable(debug),
         }
+        debug_trace = self.last_trace["debug"]
+        if (isinstance(debug_trace, Mapping) and debug_trace.get("sampled_candidates", 0) > 0
+                and debug_trace.get("feasible_candidates") == 0):
+            self.last_trace["failure_status"] = "dwa_no_legal_control_candidates"
+            raise ValueError("dwa_no_legal_control_candidates")
         return command
 
 
@@ -372,6 +394,34 @@ class JointPathController:
             "path_length": len(self._path),
             "gripper_target": self._gripper_target,
         }
+
+
+def validate_dwa_inputs(path, local_map):
+    """Distinguish an invalid raster/path from a valid all-free occupancy grid."""
+    import numpy as np
+    p = np.asarray(path, dtype=float)
+    if p.ndim != 2 or p.shape[1:] != (2,) or len(p) < 2 or not np.isfinite(p).all():
+        raise ValueError("dwa_invalid_path: expected at least two finite XY points")
+    if np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)) <= 1e-9:
+        raise ValueError("dwa_degenerate_path: zero geometric length")
+    grid = local_map.get("grid_map") if isinstance(local_map, Mapping) else local_map
+    occupancy = getattr(grid, "occupancy", None)
+    resolution = getattr(grid, "resolution", None)
+    origin = getattr(grid, "origin", None)
+    if occupancy is None:
+        raise ValueError("dwa_invalid_map: missing explicit occupancy raster")
+    array = np.asarray(occupancy)
+    if array.ndim != 2 or array.size == 0 or not np.isfinite(array).all():
+        raise ValueError("dwa_invalid_map: empty or nonfinite raster")
+    if resolution is None or not math.isfinite(resolution) or resolution <= 0:
+        raise ValueError("dwa_invalid_map: invalid resolution")
+    try:
+        _finite_vector(origin, 3, "DWA map origin")
+    except ValueError as error:
+        raise ValueError("dwa_invalid_map: invalid origin") from error
+    return {"path_points": len(p), "map_shape": list(array.shape),
+            "occupied_cells": int(np.count_nonzero(array)),
+            "valid_all_free_map": not bool(np.any(array))}
 
 
 def _grid_maps(value: Any) -> tuple[Any, Any | None]:

@@ -136,3 +136,6 @@ events.out.tfevents.*
 *.p12
 /.agents/
 /.codex/
+
+# Also ignore a worktree-local symlink to shared external artifacts.
+/artifacts

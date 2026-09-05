@@ -10,6 +10,7 @@
 - [正式训练与评估实验卡](experiments/formal_5hz_20260905.md)：固定模型、完整开环 95% 区间和带时间戳的闭环快照。
 - [正式评估操作](formal_joint_trajectory_evaluation.md)：验证集冻结、test 门禁、服务、任务准备、辅助物理与失败归因。
 - [架构分析](joint_trajectory_architecture_analysis_20260905.md)：源码和轨迹证据、待验证原因、下一轮对照实验。
+- [执行一致性验证](execution_consistency_validation_20260905.md)：无模型时序回放、完美标签裁剪、源抓取判据审计、PCT 成对探测与 DWA 异常复现。
 - [贡献与提交规则](../CONTRIBUTING.md)：测试、工件排除、不可变实验、分支与提交边界。
 - [SPCGVLA 设计草案](SPCGVLA/README.md)：独立未来模型合同；感知探针不等于点云已经接入正式模型。
 - [停止与保存设计草案](joint_trajectory_stop_and_save_pending_design.md)：pending design，不能当现有能力调用。

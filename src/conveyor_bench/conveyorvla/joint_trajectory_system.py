@@ -89,6 +89,14 @@ class JointNavigationControl:
     trace: Mapping[str, Any] = field(default_factory=dict)
 
 
+class JointNavigationPlanError(ValueError):
+    """Rejected planning result retaining A/B evidence for the evaluator."""
+
+    def __init__(self, message: str, trace: Mapping[str, Any]):
+        super().__init__(message)
+        self.trace = dict(trace)
+
+
 class PCTDWAJointNavigationExecutor:
     """Plan to point ten, then run strict PCT/DWA for at most two seconds.
 
@@ -134,10 +142,6 @@ class PCTDWAJointNavigationExecutor:
         pct_plan = self.pct_planner.plan(current, endpoint)
         if not isinstance(pct_plan, PCTPlan):
             raise TypeError("PCT planner must return the typed PCTPlan contract")
-        if len(pct_plan.path_world) < 2:
-            raise ValueError("PCT plan must contain at least two path points")
-        if pct_plan.snap_distance_m > self.config.pct_snap_max_m:
-            raise ValueError("PCT endpoint snap exceeds the joint-trajectory limit")
         plan = JointNavigationPlan(
             query_base_world=query,
             reference_world=world,
@@ -149,10 +153,17 @@ class PCTDWAJointNavigationExecutor:
                 "pct_input_mode": "endpoint_only_approved_api",
                 "pct_endpoint_reference_index": ACTION_HORIZON - 1,
                 "pct_endpoint_world": list(endpoint),
+                "requested_goal_A_xyyaw": [endpoint[0], endpoint[1], endpoint[3]],
+                "planned_endpoint_B_xyyaw": [pct_plan.snapped_goal_world[0], pct_plan.snapped_goal_world[1], pct_plan.snapped_goal_world[3]],
+                "endpoint_change_B_minus_A_m": pct_plan.snap_distance_m,
                 "unsupported_via_points_claimed": False,
                 "prefix_selected": False,
             },
         )
+        if len(pct_plan.path_world) < 2:
+            raise JointNavigationPlanError("PCT plan must contain at least two path points", plan.trace)
+        if pct_plan.snap_distance_m > self.config.pct_snap_max_m:
+            raise JointNavigationPlanError("PCT endpoint snap exceeds the joint-trajectory limit", plan.trace)
         self._active = plan
         return plan
 
@@ -186,6 +197,7 @@ class PCTDWAJointNavigationExecutor:
             "elapsed_s": max(0.0, elapsed),
             "distance_to_snapped_goal_m": distance,
             "yaw_error_to_snapped_goal_rad": yaw_error,
+            "measured_pose_C_xyyaw": list(pose),
         }
         if reached or timed_out:
             return JointNavigationControl(
@@ -513,8 +525,11 @@ class IsaacJointTrajectorySystemExecutor:
                 )
                 ticks += 1
         except Exception as error:
+            failure_trace = {**dict(plan.trace), "dwa_trace": dict(getattr(self.navigation_executor.dwa_controller, "last_trace", {}))}
             self.navigation_executor.reset()
-            return self._failed_hold(step, route, state, "dwa_control_failed", error, ticks)
+            failure = self._failed_hold(step, route, state, "dwa_control_failed", error, ticks)
+            from dataclasses import replace
+            return replace(failure, trace={**failure.trace, **failure_trace})
         self.navigation_executor.reset()
         reason = (
             last_control.reason
@@ -531,6 +546,8 @@ class IsaacJointTrajectorySystemExecutor:
                 **dict(plan.trace),
                 "execution": "pct_dwa_two_second_window",
                 "control_ticks": ticks,
+                "final_measured_pose_C_xyyaw": [state.robot_root_pose[0], state.robot_root_pose[1], yaw_from_quaternion(state.robot_root_pose[3:])],
+                "local_goal_reached": reason == "local_goal_reached",
                 "last_control": None if last_control is None else dict(last_control.trace),
             },
         )
@@ -564,7 +581,8 @@ class IsaacJointTrajectorySystemExecutor:
             failed=True,
             reason=f"{category}:{type(error).__name__}:{error}",
             final_state=state,
-            trace={"execution": "fail_closed_hold", "failure_category": category},
+            trace={"execution": "fail_closed_hold", "failure_category": category,
+                   **dict(getattr(error, "trace", {}))},
         )
 
     def _tick(

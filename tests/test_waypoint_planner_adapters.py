@@ -143,7 +143,7 @@ def test_dwa_adapter_reuses_controller_for_one_pct_path_and_traces_debug():
         SimpleNamespace(name="strict"),
         reference_commit=APPROVED_ARM_VLA_COMMIT,
     )
-    local_map = {"grid_map": object(), "raw_grid_map": object()}
+    local_map = {key: SimpleNamespace(occupancy=np.zeros((8, 8), dtype=bool), resolution=.1, origin=(0., 0., 0.)) for key in ("grid_map", "raw_grid_map")}
     path = ((0.0, 0.0), (0.2, 0.0))
     assert adapter.command(path, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), local_map) == (
         0.2,

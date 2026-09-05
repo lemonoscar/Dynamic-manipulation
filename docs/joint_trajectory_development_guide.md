@@ -15,6 +15,8 @@
 | 最终模型本机服务 | `scripts/serve_joint_trajectory.py` | `joint_trajectory_model.py`、`joint_trajectory_runtime.py` |
 | 迁移闭环任务准备与汇总 | `scripts/run_formal_closed_loop.py` | `formal_physics.py` |
 | 单 episode 仿真执行 | `scripts/run_joint_trajectory_rollout.py` | `joint_trajectory_system.py`、`isaac/` |
+| 无模型执行一致性 | `scripts/prepare_execution_validation.py`、`scripts/replay_sampled_joint_targets.py`、`scripts/audit_source_action_contract.py` | `execution_consistency.py` |
+| validation 源/模型 PCT 对照 | `scripts/probe_validation_navigation.py` | `waypoint_planner_adapters.py` |
 | 独立 LiDAR/分割诊断 | `scripts/probe_liangzhu_lidar.py`、`scripts/probe_sam2_coke.py`、`scripts/segment_sam2_lidar_coke.py`、`scripts/view_lidar_pointcloud.py` | `perception/`、`isaac/liangzhu_lidar_probe.py` |
 
 表中未写目录的核心模块位于 `src/conveyor_bench/conveyorvla/`。
@@ -49,6 +51,9 @@ LiDAR/SAM2 工具目前独立于正式模型输入；[SPCGVLA](SPCGVLA/README.md
 NAV 十点均被记录和坐标变换，PCT API 实际只接收第十点作为目标 A；PCT 返回路径的最后一点是 B。
 B 是规划结果端点，不是机器人已经走到的位置。现行检查要求 XY 距离 `|B-A|≤0.10m`；
 超过即拒绝该次规划。机器人随后由 DWA 跟踪整条 PCT 路径，最终实测站位还需另行记录。
+新诊断分支记录名义操作位姿 G、请求 A、规划 B、实测 C，并显式区分超时、到达和规划/控制失败。
+采样时序、20 cm 栅格量化、退化路径及无模型回放的证据边界见
+[执行一致性验证](execution_consistency_validation_20260905.md)。
 
 ## 3. 数据、初始化与 checkpoint
 

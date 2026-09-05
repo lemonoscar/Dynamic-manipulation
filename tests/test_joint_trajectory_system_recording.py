@@ -214,6 +214,9 @@ def test_nav_preserves_ten_points_uses_point_ten_and_runs_exact_two_seconds():
     )
     assert not result.failed and result.requires_requery
     assert result.control_ticks == 100
+    assert result.trace["local_goal_reached"] is False
+    assert result.trace["requested_goal_A_xyyaw"][:2] == pytest.approx([2., .09])
+    assert len(result.trace["final_measured_pose_C_xyyaw"]) == 3
     assert len(result.trace["reference_world"]) == 10
     assert result.trace["pct_input_mode"] == "endpoint_only_approved_api"
     assert result.trace["pct_endpoint_reference_index"] == 9
@@ -286,6 +289,28 @@ def test_dwa_failure_applies_one_zero_hold_then_stops_fail_closed():
     assert result.reason.startswith("dwa_control_failed:RuntimeError")
     assert simulation.actions[-1].base_velocity == (0.0, 0.0, 0.0)
     assert simulation.actions[-1].source == "joint_trajectory_dwa_control_failed_hold"
+    assert "requested_goal_A_xyyaw" in result.trace
+    assert "planned_endpoint_B_xyyaw" in result.trace
+
+
+def test_rejected_pct_endpoint_preserves_requested_and_planned_pose():
+    class MovedEndpoint(_PCT):
+        def plan(self, current, goal):
+            moved = (goal[0] + .1253, goal[1], goal[2], goal[3])
+            return PCTPlan(path_world=((current[0], current[1]), moved[:2]),
+                           snapped_goal_world=moved, snap_distance_m=.1253, metadata={})
+    simulation, dwa = _Simulation(), _DWA()
+    executor = IsaacJointTrajectorySystemExecutor(
+        simulation, IsaacJointActionAdapter(_RobotAction),
+        PCTDWAJointNavigationExecutor(MovedEndpoint(), dwa))
+    result = executor.execute(_runtime_step(
+        route=JointTrajectoryRoute.NAV_TO_SOURCE,
+        navigation=navigation_reference([[.1*(i+1), 0., 0.] for i in range(10)]),
+        hold=DirectJointCommand(0, (0.,)*6, 1.)), local_map="map")
+    assert result.failed and "endpoint snap exceeds" in result.reason
+    assert result.trace["endpoint_change_B_minus_A_m"] == pytest.approx(.1253)
+    assert result.trace["planned_endpoint_B_xyyaw"][0] - result.trace["requested_goal_A_xyyaw"][0] == pytest.approx(.1253)
+    assert not dwa.calls
 
 
 def test_applied_control_row_requires_fresh_isaac_reports():
