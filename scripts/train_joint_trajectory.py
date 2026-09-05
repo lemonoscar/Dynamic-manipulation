@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train ConveyorVLA Joint-Trajectory Policy v1 on fresh applied-command data."""
+"""Train the ABot-M0-initialized Joint-Trajectory policy on fresh command data."""
 
 from __future__ import annotations
 
@@ -27,6 +27,11 @@ from accelerate.utils import DistributedDataParallelKwargs, set_seed  # noqa: E4
 from torch.utils.data import DataLoader  # noqa: E402
 
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
+from conveyor_bench.conveyorvla.dit import (  # noqa: E402
+    M0DiTActionHead,
+    M0DiTConfig,
+    transfer_abot_pretrain_domain_weights,
+)
 from conveyor_bench.conveyorvla.joint_trajectory import (  # noqa: E402
     DATASET_SCHEMA_VERSION,
     MODEL_CONTRACT_ID,
@@ -38,18 +43,18 @@ from conveyor_bench.conveyorvla.joint_trajectory_data import (  # noqa: E402
 from conveyor_bench.conveyorvla.joint_trajectory_model import (  # noqa: E402
     ConveyorVLAJointTrajectoryPolicy,
     JointTrajectoryAuxiliaryHeads,
-    JointTrajectoryExpertConfig,
-    JointTrajectoryFlowMatchingExpert,
     JointTrajectoryLossConfig,
     JointTrajectoryQwenInterface,
-    selective_warmstart,
+    reinitialize_joint_trajectory_token_embeddings,
 )
+from conveyor_bench.conveyorvla.policy import transfer_qwen_checkpoint_weights  # noqa: E402
 from conveyor_bench.conveyorvla.joint_trajectory_training import (  # noqa: E402
     AccumulationMicroBatchSampler,
     StratifiedJointTrajectoryBatchSampler,
     TrainingStages,
     build_optimizer,
     build_scheduler,
+    configure_deepspeed_micro_batch,
     consolidated_checkpoint_identity,
     load_consolidated_checkpoint,
     load_joint_trajectory_config,
@@ -67,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset-root", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--model-root", required=True, type=Path)
-    parser.add_argument("--warmstart-checkpoint", type=Path)
+    parser.add_argument("--pretrained-checkpoint", type=Path)
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--max-steps", type=int)
@@ -85,7 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--overfit",
         action="store_true",
-        help="allow an explicit short max-steps value for the disposable 12-episode gate",
+        help="allow an explicit short max-steps value for a disposable overfit gate",
+    )
+    parser.add_argument(
+        "--overfit-episodes",
+        type=int,
+        default=12,
+        help="number of complete train episodes eligible for a disposable overfit run",
     )
     return parser
 
@@ -107,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
             even_batches=True,
         ),
     )
+    if accelerator.state.deepspeed_plugin is not None:
+        configure_deepspeed_micro_batch(
+            accelerator.state.deepspeed_plugin.deepspeed_config,
+            args.micro_batch_per_rank,
+        )
     validate_global_batch(
         accelerator.num_processes,
         args.micro_batch_per_rank,
@@ -123,7 +139,13 @@ def main(argv: list[str] | None = None) -> int:
             len(dataset), max_steps=int(args.max_steps)
         )
     else:
-        stages = TrainingStages.from_rows(len(dataset))
+        training = config["training"]
+        stages = TrainingStages.from_rows(
+            len(dataset),
+            global_batch_size=int(training["global_batch_size"]),
+            stage_a_epochs=float(training["stage_a_equivalent_epochs"]),
+            total_epochs=float(training["total_equivalent_epochs"]),
+        )
     max_steps = stages.total_steps if args.max_steps is None else args.max_steps
     if not args.overfit and max_steps != stages.total_steps:
         raise M0MobileError(
@@ -142,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             dataset.boundary_signed_times,
             dataset.gripper_transitions,
             seed=args.seed,
+            count=args.overfit_episodes,
         )
         if args.overfit
         else ()
@@ -175,12 +198,14 @@ def main(argv: list[str] | None = None) -> int:
         pin_memory=True,
     )
     model, token_ids = _build_model(config, args.model_root, args.attention_implementation)
-    warmstart_report: Mapping[str, Any] | None = None
-    warmstart_identity: Mapping[str, Any] | None = None
+    initialization_report: Mapping[str, Any] | None = None
+    pretrained_identity: Mapping[str, Any] | None = None
+    pretrained_checkpoint = _pretrained_checkpoint(args, config)
     if resume is None:
-        warmstart_identity = consolidated_checkpoint_identity(args.warmstart_checkpoint)
-        source_state = load_consolidated_checkpoint(args.warmstart_checkpoint)
-        warmstart_report = selective_warmstart(model, source_state).as_dict()
+        pretrained_identity = consolidated_checkpoint_identity(pretrained_checkpoint)
+        _validate_pretrained_identity(pretrained_identity, config)
+        source_state = load_consolidated_checkpoint(pretrained_checkpoint)
+        initialization_report = _initialize_from_abot(model, source_state)
         del source_state
     # Register every future Stage-B parameter with DDP/ZeRO.  Stage A is
     # applied only after distributed wrapping; otherwise later unfreezing may
@@ -190,10 +215,13 @@ def main(argv: list[str] | None = None) -> int:
     scheduler = build_scheduler(optimizer, stages, config)
 
     if accelerator.is_main_process and resume is None:
+        _write_source_patch(output)
         model.qwen.processor.save_pretrained(output / "processor")
         common._write_json_atomic(output / "dataset_audit.json", audit)
         common._write_json_atomic(output / "resolved_policy_config.json", config)
-        common._write_json_atomic(output / "warmstart_report.json", warmstart_report or {})
+        common._write_json_atomic(
+            output / "initialization_report.json", initialization_report or {}
+        )
         common._write_json_atomic(
             output / "resolved_run.json",
             _resolved_run(
@@ -205,8 +233,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_steps,
                 token_ids,
                 parameter_groups,
-                warmstart_report,
-                warmstart_identity,
+                pretrained_checkpoint,
+                initialization_report,
+                pretrained_identity,
                 overfit_episode_ids,
                 accelerator,
             ),
@@ -339,6 +368,7 @@ def _build_model(
     root = model_root.expanduser().resolve()
     qwen = JointTrajectoryQwenInterface.from_local(
         root / str(config["vlm"]["relative_path"]),
+        checkpoint_vocab_size=int(config["vlm"]["checkpoint_vocab_size"]),
         dtype=torch.bfloat16,
         attention_implementation=attention_implementation,
     )
@@ -347,29 +377,32 @@ def _build_model(
         key: action[key]
         for key in (
             "action_horizon",
-            "cross_attention_dim",
+            "input_embedding_dim",
             "hidden_size",
             "num_layers",
             "num_attention_heads",
             "attention_head_dim",
             "dropout",
             "max_seq_len",
+            "num_target_vision_tokens",
             "noise_beta_alpha",
             "noise_beta_beta",
             "noise_s",
             "num_timestep_buckets",
             "num_inference_timesteps",
+            "interleave_self_attention",
         )
     }
-    navigation = JointTrajectoryFlowMatchingExpert(
-        JointTrajectoryExpertConfig(
+    shared["vlm_hidden_dim"] = int(action["cross_attention_dim"])
+    navigation = M0DiTActionHead(
+        M0DiTConfig(
             action_dim=int(action["navigation_action_dim"]),
             state_dim=0,
             **shared,
         )
     )
-    manipulation = JointTrajectoryFlowMatchingExpert(
-        JointTrajectoryExpertConfig(
+    manipulation = M0DiTActionHead(
+        M0DiTConfig(
             action_dim=int(action["manipulation_action_dim"]),
             state_dim=int(action["manipulation_state_dim"]),
             **shared,
@@ -407,6 +440,52 @@ def _build_model(
     }
 
 
+def _initialize_from_abot(
+    model: ConveyorVLAJointTrajectoryPolicy,
+    source_state: Mapping[str, torch.Tensor],
+) -> Mapping[str, Any]:
+    qwen_report = transfer_qwen_checkpoint_weights(model.qwen, source_state)
+    navigation_report = transfer_abot_pretrain_domain_weights(
+        model.navigation_expert, source_state
+    )
+    manipulation_report = transfer_abot_pretrain_domain_weights(
+        model.manipulation_expert, source_state
+    )
+    reset_token_ids = reinitialize_joint_trajectory_token_embeddings(model.qwen)
+    return {
+        "schema_version": "conveyorvla-abot-m0-pretrain-initialization-v1",
+        "qwen_loaded_tensors": qwen_report.loaded_tensors,
+        "navigation_action": navigation_report.as_dict(),
+        "manipulation_action": manipulation_report.as_dict(),
+        "reinitialized_special_token_ids": list(reset_token_ids),
+    }
+
+
+def _pretrained_checkpoint(
+    args: argparse.Namespace,
+    config: Mapping[str, Any],
+) -> Path:
+    if args.pretrained_checkpoint is not None:
+        return args.pretrained_checkpoint.expanduser().resolve()
+    initialization = config["initialization"]
+    return (
+        args.model_root.expanduser().resolve()
+        / str(initialization["relative_path"])
+    ).resolve()
+
+
+def _validate_pretrained_identity(
+    identity: Mapping[str, Mapping[str, Any]],
+    config: Mapping[str, Any],
+) -> None:
+    expected = str(config["initialization"]["checkpoint_sha256"])
+    actual = [str(value.get("sha256", "")) for value in identity.values()]
+    if actual != [expected]:
+        raise M0MobileError(
+            "pretrained checkpoint SHA-256 does not match ABot-M0-Pretrain"
+        )
+
+
 def _validate_cli(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
     for name in ("dataset_root", "output_dir"):
         path = getattr(args, name).expanduser().resolve()
@@ -418,14 +497,19 @@ def _validate_cli(args: argparse.Namespace, config: Mapping[str, Any]) -> None:
             raise M0MobileError(
                 f"{name} must stay outside the Git worktree: {path}"
             )
-    if args.resume_from is None and args.warmstart_checkpoint is None:
-        raise M0MobileError("a fresh run requires --warmstart-checkpoint")
-    if args.resume_from is not None and args.warmstart_checkpoint is not None:
-        raise M0MobileError("resume and selective warm-start are mutually exclusive")
+    pretrained = _pretrained_checkpoint(args, config)
+    if args.resume_from is None and not pretrained.is_file():
+        raise M0MobileError(f"ABot-M0 pretrain checkpoint does not exist: {pretrained}")
+    if args.resume_from is not None and args.pretrained_checkpoint is not None:
+        raise M0MobileError("resume and explicit pretrain initialization are mutually exclusive")
     if args.overfit and args.resume_from is not None:
         raise M0MobileError("disposable overfit runs cannot resume")
     if args.overfit and (args.max_steps is None or args.max_steps <= 0):
         raise M0MobileError("disposable overfit requires positive explicit --max-steps")
+    if args.overfit_episodes <= 0:
+        raise M0MobileError("overfit-episodes must be positive")
+    if not args.overfit and args.overfit_episodes != 12:
+        raise M0MobileError("overfit-episodes can only be changed together with --overfit")
     if args.num_workers < 0:
         raise M0MobileError("num-workers cannot be negative")
     for name in (
@@ -485,14 +569,19 @@ def _resolved_run(
     max_steps: int,
     token_ids: Mapping[str, Any],
     parameter_groups: list[dict[str, Any]],
-    warmstart_report: Mapping[str, Any] | None,
-    warmstart_identity: Mapping[str, Any] | None,
+    pretrained_checkpoint: Path,
+    initialization_report: Mapping[str, Any] | None,
+    pretrained_identity: Mapping[str, Any] | None,
     overfit_episode_ids: Sequence[str],
     accelerator: Accelerator,
 ) -> Mapping[str, Any]:
     return {
         "schema_version": "conveyorvla-joint-trajectory-resolved-run-v1",
-        "run_kind": "disposable_12_episode_overfit" if overfit_episode_ids else "formal",
+        "run_kind": (
+            f"disposable_{len(overfit_episode_ids)}_episode_overfit"
+            if overfit_episode_ids
+            else "formal"
+        ),
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "git": _git_identity(),
         "model_contract_id": MODEL_CONTRACT_ID,
@@ -503,9 +592,10 @@ def _resolved_run(
         "normalizer_id": dataset.normalizer.payload["normalizer_id"],
         "policy_config_sha256": _sha256(args.config.expanduser().resolve()),
         "resolved_policy_config": config,
-        "warmstart_checkpoint": str(args.warmstart_checkpoint.expanduser().resolve()),
-        "warmstart_checkpoint_files": warmstart_identity,
-        "warmstart_report": warmstart_report,
+        "pretrained_model_id": config["initialization"]["source_model_id"],
+        "pretrained_checkpoint": str(pretrained_checkpoint),
+        "pretrained_checkpoint_files": pretrained_identity,
+        "initialization_report": initialization_report,
         "overfit_episode_ids": list(overfit_episode_ids),
         "special_token_ids": token_ids,
         "parameter_groups": parameter_groups,
@@ -687,16 +777,35 @@ def _git_identity() -> Mapping[str, Any]:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    dirty = bool(
-        subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=PROJECT_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    )
-    return {"head": head, "dirty": dirty}
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    patch = _git_patch()
+    return {
+        "head": head,
+        "dirty": bool(status),
+        "status_porcelain": status,
+        "tracked_patch_path": "source.patch",
+        "tracked_patch_size": len(patch),
+        "tracked_patch_sha256": hashlib.sha256(patch).hexdigest(),
+    }
+
+
+def _git_patch() -> bytes:
+    return subprocess.run(
+        ["git", "diff", "--binary", "HEAD"],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def _write_source_patch(output: Path) -> None:
+    (output / "source.patch").write_bytes(_git_patch())
 
 
 def _sha256(path: Path) -> str:

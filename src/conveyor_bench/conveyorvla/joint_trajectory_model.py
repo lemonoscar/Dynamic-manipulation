@@ -1,4 +1,4 @@
-"""Two-pass Qwen policy with independent NAV and direct-joint FM experts."""
+"""Two-pass Qwen policy with final-layer ABot-M0 NAV and Mani DiT experts."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from torch.distributions import Beta
 
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.dit import (
+    M0DiTActionHead,
     _ActionEncoder,
     _AdaLayerNorm,
     _Attention,
@@ -43,6 +44,7 @@ from conveyor_bench.conveyorvla.joint_trajectory import (
     transition_routes,
 )
 from conveyor_bench.conveyorvla.waypoint_model import WaypointQwenInterface
+from conveyor_bench.conveyorvla.waypoint import SPECIAL_TOKENS as WAYPOINT_SPECIAL_TOKENS
 
 
 ACTIVE_ROUTES = tuple(JointTrajectoryRoute)
@@ -591,8 +593,8 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
     def __init__(
         self,
         qwen: JointTrajectoryQwenInterface,
-        navigation_expert: JointTrajectoryFlowMatchingExpert,
-        manipulation_expert: JointTrajectoryFlowMatchingExpert,
+        navigation_expert: M0DiTActionHead,
+        manipulation_expert: M0DiTActionHead,
         auxiliary_heads: JointTrajectoryAuxiliaryHeads,
         *,
         max_subtask_tokens: int = 24,
@@ -602,15 +604,17 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
         if (
             navigation_expert.config.action_dim != NAVIGATION_ACTION_DIM
             or navigation_expert.config.state_dim != 0
+            or navigation_expert.config.action_horizon != ACTION_HORIZON
         ):
             raise ValueError("NAV expert contract is incompatible")
         if (
             manipulation_expert.config.action_dim != MANIPULATION_ACTION_DIM
             or manipulation_expert.config.state_dim != MANIPULATION_STATE_DIM
+            or manipulation_expert.config.action_horizon != ACTION_HORIZON
         ):
             raise ValueError("Mani expert contract is incompatible")
-        if navigation_expert.config.num_layers != manipulation_expert.config.num_layers:
-            raise ValueError("NAV and Mani experts need the same layerwise depth")
+        if navigation_expert.config.vlm_hidden_dim != manipulation_expert.config.vlm_hidden_dim:
+            raise ValueError("NAV and Mani experts need the same Qwen feature width")
         self.qwen = qwen
         self.navigation_expert = navigation_expert
         self.manipulation_expert = manipulation_expert
@@ -696,19 +700,19 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
                 device=route_logits.device,
             )
         ).float().mean()
-        layers = self._last_action_layers(outputs.hidden_states)
+        hidden = outputs.hidden_states[-1]
         attention_mask = inputs.get("attention_mask")
         if attention_mask is None:
             raise RuntimeError("Qwen processor did not return an attention mask")
         nav_loss, nav_samples = self._domain_loss(
             examples,
-            layers,
+            hidden,
             attention_mask,
             JointTrajectoryDomain.NAVIGATION,
         )
         mani_loss, mani_joint_loss, mani_gripper_loss, mani_samples = self._domain_loss(
             examples,
-            layers,
+            hidden,
             attention_mask,
             JointTrajectoryDomain.MANIPULATION,
         )
@@ -919,7 +923,9 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             use_cache=False,
             return_dict=True,
         )
-        layers = self._last_action_layers(outputs.hidden_states)
+        if outputs.hidden_states is None:
+            raise RuntimeError("Qwen did not return hidden states")
+        hidden = outputs.hidden_states[-1]
         attention_mask = inputs.get("attention_mask")
         if attention_mask is None:
             raise RuntimeError("Qwen processor did not return an attention mask")
@@ -934,12 +940,12 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             ]
             if not indices:
                 continue
-            index_tensor = torch.tensor(indices, device=layers[0].device)
+            index_tensor = torch.tensor(indices, device=hidden.device)
             device = next(expert.parameters()).device
             dtype = next(expert.parameters()).dtype
-            selected_layers = tuple(
-                layer.index_select(0, index_tensor).to(device=device, dtype=dtype)
-                for layer in layers
+            selected_hidden = hidden.index_select(0, index_tensor).to(
+                device=device,
+                dtype=dtype,
             )
             selected_attention = attention_mask.index_select(0, index_tensor).to(device)
             state = None
@@ -951,9 +957,9 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
                 )
             with _action_autocast(device, dtype):
                 sampled = expert.sample(
-                    selected_layers,
-                    encoder_attention_mask=selected_attention,
+                    selected_hidden,
                     state=state,
+                    encoder_attention_mask=selected_attention,
                 )
             for index, value in zip(indices, sampled.float().cpu().tolist(), strict=True):
                 actions[index] = tuple(
@@ -981,20 +987,10 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             for index, decision in enumerate(decisions)
         )
 
-    def _last_action_layers(
-        self, hidden_states: Sequence[torch.Tensor] | None
-    ) -> tuple[torch.Tensor, ...]:
-        if hidden_states is None:
-            raise RuntimeError("Qwen did not return hidden states")
-        count = self.navigation_expert.config.num_layers
-        if len(hidden_states) < count:
-            raise RuntimeError("Qwen has fewer layers than the action experts")
-        return tuple(hidden_states[-count:])
-
     def _domain_loss(
         self,
         examples: Sequence[Mapping[str, Any]],
-        layers: Sequence[torch.Tensor],
+        hidden: torch.Tensor,
         attention_mask: torch.Tensor,
         domain: JointTrajectoryDomain,
     ) -> Any:
@@ -1009,14 +1005,14 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             else self.manipulation_expert
         )
         if not indices:
-            zero = self._zero_expert_loss(layers, attention_mask, expert)
+            zero = self._zero_expert_loss(hidden, attention_mask, expert)
             return (zero, 0) if domain is JointTrajectoryDomain.NAVIGATION else (zero, zero, zero, 0)
-        index_tensor = torch.tensor(indices, device=layers[0].device)
+        index_tensor = torch.tensor(indices, device=hidden.device)
         device = next(expert.parameters()).device
         dtype = next(expert.parameters()).dtype
-        selected_layers = tuple(
-            layer.index_select(0, index_tensor).to(device=device, dtype=dtype)
-            for layer in layers
+        selected_hidden = hidden.index_select(0, index_tensor).to(
+            device=device,
+            dtype=dtype,
         )
         selected_attention = attention_mask.index_select(0, index_tensor).to(device)
         actions = torch.as_tensor(
@@ -1038,10 +1034,10 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             )
         with _action_autocast(device, dtype):
             dimensions = expert(
-                selected_layers,
+                selected_hidden,
                 actions,
-                encoder_attention_mask=selected_attention,
                 state=state,
+                encoder_attention_mask=selected_attention,
                 action_valid_mask=valid,
                 reduction="dimension_mean",
             )
@@ -1057,15 +1053,15 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
 
     def _zero_expert_loss(
         self,
-        layers: Sequence[torch.Tensor],
+        hidden: torch.Tensor,
         attention_mask: torch.Tensor,
-        expert: JointTrajectoryFlowMatchingExpert,
+        expert: M0DiTActionHead,
     ) -> torch.Tensor:
-        if not layers or not layers[0].shape[0]:
+        if not hidden.shape[0]:
             raise RuntimeError("dummy expert pass needs one Qwen row")
         device = next(expert.parameters()).device
         dtype = next(expert.parameters()).dtype
-        selected_layers = tuple(layer[:1].to(device=device, dtype=dtype) for layer in layers)
+        selected_hidden = hidden[:1].to(device=device, dtype=dtype)
         actions = torch.zeros(
             (1, ACTION_HORIZON, expert.config.action_dim), device=device, dtype=dtype
         )
@@ -1076,10 +1072,10 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
         )
         with _action_autocast(device, dtype):
             loss = expert(
-                selected_layers,
+                selected_hidden,
                 actions,
-                encoder_attention_mask=attention_mask[:1].to(device),
                 state=state,
+                encoder_attention_mask=attention_mask[:1].to(device),
                 action_valid_mask=torch.ones((1, ACTION_HORIZON), device=device, dtype=torch.bool),
                 noise=torch.zeros_like(actions),
                 time=torch.zeros(1, device=device, dtype=dtype),
@@ -1120,6 +1116,42 @@ def joint_trajectory_token_ids(interface: JointTrajectoryQwenInterface) -> Joint
     if len(set(all_ids)) != len(ACTIVE_SPECIAL_TOKENS):
         raise M0MobileError("joint-trajectory active tokens must have unique IDs")
     return ids
+
+
+def reinitialize_joint_trajectory_token_embeddings(
+    interface: JointTrajectoryQwenInterface,
+) -> tuple[int, ...]:
+    """Reset waypoint-token rows that overlap ABot's released action-token IDs."""
+
+    tokenizer = interface.processor.tokenizer
+    token_ids = tuple(
+        int(tokenizer.convert_tokens_to_ids(token)) for token in WAYPOINT_SPECIAL_TOKENS
+    )
+    if len(set(token_ids)) != len(WAYPOINT_SPECIAL_TOKENS) or any(
+        token_id < 0 for token_id in token_ids
+    ):
+        raise M0MobileError("waypoint special-token IDs are invalid")
+    model = interface.model
+    input_weight = model.get_input_embeddings().weight
+    output_module = model.get_output_embeddings()
+    weights = [input_weight]
+    if output_module is not None and output_module.weight is not input_weight:
+        weights.append(output_module.weight)
+    text_config = getattr(model.config, "text_config", model.config)
+    initializer_range = float(getattr(text_config, "initializer_range", 0.02))
+    with torch.no_grad():
+        for weight in weights:
+            if max(token_ids) >= weight.shape[0]:
+                raise M0MobileError("waypoint token exceeds the ABot checkpoint vocabulary")
+            indices = torch.tensor(token_ids, device=weight.device, dtype=torch.long)
+            values = torch.empty(
+                (len(token_ids), weight.shape[1]),
+                device=weight.device,
+                dtype=weight.dtype,
+            )
+            nn.init.normal_(values, mean=0.0, std=initializer_range)
+            weight.index_copy_(0, indices, values)
+    return token_ids
 
 
 def selective_warmstart(
@@ -1305,5 +1337,6 @@ __all__ = [
     "JointTrajectoryTokenIds",
     "SelectiveWarmstartReport",
     "joint_trajectory_token_ids",
+    "reinitialize_joint_trajectory_token_embeddings",
     "selective_warmstart",
 ]

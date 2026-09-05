@@ -9,15 +9,22 @@ import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Iterator, Mapping, MutableMapping, Sequence
 
 import torch
 from torch.utils.data import Sampler
 
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.joint_trajectory import (
+    ACTION_HORIZON,
+    DATASET_PROFILE,
     DATASET_SCHEMA_VERSION,
+    MANIPULATION_ACTION_DIM,
+    MANIPULATION_STATE_DIM,
+    MANIPULATION_STRIDE_S,
     MODEL_CONTRACT_ID,
+    NAVIGATION_ACTION_DIM,
+    NAVIGATION_STRIDE_S,
     POLICY_CONFIG_SCHEMA_VERSION,
     TRANSITION_TAU_S,
     TRAIN_GLOBAL_BATCH_SIZE,
@@ -451,6 +458,9 @@ class AccumulationMicroBatchSampler(Sampler[list[int]]):
         )
         self.global_sampler = global_sampler
         self.micro_global_batch = world_size * micro_batch_per_rank
+        # Accelerate's split-batch adapter reads this public BatchSampler
+        # contract before dividing each global micro-batch across ranks.
+        self.batch_size = self.micro_global_batch
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
     def __len__(self) -> int:
@@ -480,6 +490,22 @@ def validate_global_batch(
             f"effective global batch is {effective}, expected {GLOBAL_BATCH_SIZE}"
         )
     return effective
+
+
+def configure_deepspeed_micro_batch(
+    deepspeed_config: MutableMapping[str, Any], micro_batch_per_rank: int
+) -> None:
+    """Bind a custom split-batch sampler to DeepSpeed's per-device batch."""
+
+    if micro_batch_per_rank <= 0:
+        raise ValueError("micro batch per rank must be positive")
+    key = "train_micro_batch_size_per_gpu"
+    configured = deepspeed_config.get(key)
+    if configured not in (None, "auto", micro_batch_per_rank):
+        raise M0MobileError(
+            "DeepSpeed train micro batch conflicts with --micro-batch-per-rank"
+        )
+    deepspeed_config[key] = micro_batch_per_rank
 
 
 def set_training_stage(
@@ -709,33 +735,112 @@ def validate_joint_trajectory_config(config: Mapping[str, Any]) -> None:
         raise M0MobileError("joint-trajectory model contract ID is incompatible")
     if config.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
         raise M0MobileError("joint-trajectory dataset schema ID is incompatible")
+    if config.get("dataset_profile") != DATASET_PROFILE:
+        raise M0MobileError("joint-trajectory dataset profile is incompatible")
+    dataset = _mapping(config.get("dataset"), "dataset")
+    if dataset != {
+        "source": "modelscope",
+        "dataset_id": "OscarXu/liangzhuNeW_500",
+        "revision": "6806fadf2e8e125ca871f576676b60e7db1605dc",
+    }:
+        raise M0MobileError(
+            "joint-trajectory source dataset must be the pinned OscarXu/liangzhuNeW_500 snapshot"
+        )
+    vlm = _mapping(config.get("vlm"), "vlm")
+    _require_config_fields(
+        vlm,
+        {
+            "architecture": "Qwen3VLForConditionalGeneration",
+            "relative_path": "Qwen3-VL-4B-Instruct",
+            "hidden_size": 2560,
+            "checkpoint_vocab_size": 153984,
+            "action_feature_layer": "last_hidden_state",
+            "full_finetuning_stage_b": True,
+            "dtype": "bfloat16",
+        },
+        "vlm",
+    )
+    router = _mapping(config.get("router"), "router")
+    _require_config_fields(
+        router,
+        {
+            "active_routes": [route.value for route in JointTrajectoryRoute],
+            "max_subtask_tokens": 24,
+            "done_token_active": False,
+        },
+        "router",
+    )
     action = _mapping(config.get("action_model"), "action_model")
     expected_action = {
-        "action_horizon": 10,
-        "navigation_action_dim": 3,
-        "manipulation_action_dim": 7,
-        "manipulation_state_dim": 13,
-        "navigation_stride_s": 0.20,
-        "manipulation_stride_s": 0.04,
-        "num_inference_timesteps": 10,
+        "architecture": "ABotM0LastHiddenDualDiT",
+        "action_horizon": ACTION_HORIZON,
+        "navigation_action_dim": NAVIGATION_ACTION_DIM,
+        "manipulation_action_dim": MANIPULATION_ACTION_DIM,
+        "manipulation_state_dim": MANIPULATION_STATE_DIM,
+        "navigation_stride_s": NAVIGATION_STRIDE_S,
+        "manipulation_stride_s": MANIPULATION_STRIDE_S,
+        "cross_attention_dim": 2560,
+        "input_embedding_dim": 768,
+        "hidden_size": 1024,
+        "num_layers": 16,
+        "num_attention_heads": 12,
+        "attention_head_dim": 64,
+        "dropout": 0.2,
+        "max_seq_len": 1024,
+        "num_target_vision_tokens": 32,
+        "noise_beta_alpha": 1.5,
+        "noise_beta_beta": 1.0,
+        "noise_s": 0.999,
+        "num_timestep_buckets": 1000,
+        "num_inference_timesteps": 4,
+        "interleave_self_attention": True,
         "expert_parameters_shared": False,
-        "future_tokens": False,
-        "block_order": ["self_attention", "qwen_cross_attention", "ffn"],
+        "future_tokens": True,
+        "block_order": [
+            "qwen_cross_attention_on_even_blocks",
+            "self_attention_on_odd_blocks",
+            "ffn_each_block",
+        ],
     }
-    for key, expected in expected_action.items():
-        if action.get(key) != expected:
-            raise M0MobileError(f"action_model.{key} must be {expected!r}")
+    _require_config_fields(action, expected_action, "action_model")
+    auxiliary = _mapping(config.get("auxiliary"), "auxiliary")
+    _require_config_fields(
+        auxiliary,
+        {
+            "progress_hidden_size": 256,
+            "progress_target": "unavailable_in_sampled_5hz_source_masked",
+            "elapsed_time_fallback": False,
+            "row_index_fallback": False,
+        },
+        "auxiliary",
+    )
     loss = _mapping(config.get("loss"), "loss")
     expected_loss = {
+        "lambda_answer": 1.0,
+        "lambda_route": 1.0,
+        "lambda_navigation": 1.0,
+        "lambda_manipulation": 1.0,
         "repeated_diffusion_steps": 1,
         "manipulation_joint_weight": 0.75,
         "manipulation_gripper_weight": 0.25,
         "lambda_boundary": 0.2,
-        "lambda_progress": 0.1,
+        "lambda_progress": 0.0,
+        "boundary_rank_margin": 0.2,
     }
-    for key, expected in expected_loss.items():
-        if loss.get(key) != expected:
-            raise M0MobileError(f"loss.{key} must be {expected!r}")
+    _require_config_fields(loss, expected_loss, "loss")
+    initialization = _mapping(config.get("initialization"), "initialization")
+    expected_initialization = {
+        "mode": "abot_m0_pretrain_strict_domain_transfer",
+        "source_model_id": "amap_cvlab/ABot-M0-Pretrain",
+        "relative_path": "ABot-M0-Pretrain/checkpoints/ABot_M0_Pretrain.pt",
+        "checkpoint_sha256": "94478682b5c9eecf6f02179ba67ae47ea41257ca059bea6dd20e161716f5e16b",
+        "qwen": "strict_load_then_reinitialize_waypoint_token_rows",
+        "action": "strict_trunk_load_reinitialize_domain_boundaries",
+        "progress_head": "reinitialize",
+        "optimizer_scheduler_rng": "reinitialize",
+        "normalizer": "fit_sampled_5hz_train_only",
+    }
+    _require_config_fields(initialization, expected_initialization, "initialization")
     disabled = _mapping(config.get("disabled"), "disabled")
     required_disabled = {
         "done",
@@ -758,11 +863,94 @@ def validate_joint_trajectory_config(config: Mapping[str, Any]) -> None:
         BOUNDARY_ROWS_PER_BATCH,
     ]:
         raise M0MobileError("joint-trajectory batch mixture changed")
+    _require_config_fields(
+        sampling,
+        {
+            "ordinary_rows_per_episode_max": 1,
+            "minimum_distinct_episodes": MIN_DISTINCT_EPISODES,
+            "mani_gripper_transition_fraction_min": 0.25,
+        },
+        "sampling",
+    )
+    training = _mapping(config.get("training"), "training")
+    _require_config_fields(
+        training,
+        {
+            "stage_a_equivalent_epochs": 0.25,
+            "stage_b_equivalent_epochs": 1.75,
+            "total_equivalent_epochs": 2.0,
+            "save_interval_steps": 250,
+            "global_batch_size": GLOBAL_BATCH_SIZE,
+            "precision": "bf16",
+        },
+        "training",
+    )
+    if not math.isclose(
+        float(training["stage_a_equivalent_epochs"])
+        + float(training["stage_b_equivalent_epochs"]),
+        float(training["total_equivalent_epochs"]),
+        rel_tol=0.0,
+        abs_tol=1.0e-12,
+    ):
+        raise M0MobileError("joint-trajectory training stage lengths do not sum to total")
+    optimization = _mapping(config.get("optimization"), "optimization")
+    _require_config_fields(
+        optimization,
+        {
+            "optimizer": "AdamW",
+            "action_learning_rate": 2.0e-5,
+            "qwen_learning_rate": 2.0e-6,
+            "vision_learning_rate": 5.0e-7,
+            "route_lm_learning_rate": 1.0e-5,
+            "auxiliary_learning_rate": 1.0e-5,
+            "betas": [0.9, 0.95],
+            "epsilon": 1.0e-8,
+            "weight_decay": 1.0e-8,
+            "max_gradient_norm": 1.0,
+            "action_warmup_steps": 200,
+            "qwen_warmup_steps": 100,
+            "decay": "cosine",
+            "cosine_min_ratio": 0.1,
+        },
+        "optimization",
+    )
     route = _mapping(config.get("route"), "route")
-    if route.get("confirmation_observations") != 2 or route.get("confidence_threshold") is not None:
-        raise M0MobileError("runtime route confirmation contract changed")
-    if route.get("transition_tau_s") != dict(TRANSITION_TAU_S):
-        raise M0MobileError("route transition tau values changed")
+    _require_config_fields(
+        route,
+        {
+            "interior_target": "hard_ce",
+            "transition_target": "old_new_soft_ce",
+            "transition_tau_s": dict(TRANSITION_TAU_S),
+            "confirmation_observations": 2,
+            "confidence_threshold": None,
+        },
+        "route",
+    )
+    runtime = _mapping(config.get("runtime"), "runtime")
+    _require_config_fields(
+        runtime,
+        {
+            "navigation": "full_10_point_reference_to_pct_dwa",
+            "manipulation": "direct_joint_sequential_10_point",
+            "manipulation_command_period_s": MANIPULATION_STRIDE_S,
+            "manipulation_horizon_s": ACTION_HORIZON * MANIPULATION_STRIDE_S,
+            "manipulation_base_velocity": [0, 0, 0],
+            "pending_behavior": "base_zero_and_hold_last_joint_target",
+            "joint_position_saturation": True,
+            "joint_rate_saturation": True,
+            "validation_saturation_rate_max": 0.005,
+            "success": "released_and_inside_target_for_1.0s_orientation_free",
+        },
+        "runtime",
+    )
+
+
+def _require_config_fields(
+    value: Mapping[str, Any], expected: Mapping[str, Any], section: str
+) -> None:
+    for key, expected_value in expected.items():
+        if value.get(key) != expected_value:
+            raise M0MobileError(f"{section}.{key} must be {expected_value!r}")
 
 
 def _cosine_ratio(step: int, warmup: int, total: int, floor: float) -> float:
@@ -794,6 +982,7 @@ __all__ = [
     "TrainingStages",
     "build_optimizer",
     "build_scheduler",
+    "configure_deepspeed_micro_batch",
     "load_joint_trajectory_config",
     "load_consolidated_checkpoint",
     "consolidated_checkpoint_identity",

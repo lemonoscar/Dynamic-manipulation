@@ -4,6 +4,7 @@ import pytest
 import torch
 from torch import nn
 
+from conveyor_bench.conveyorvla.dit import M0DiTActionHead, M0DiTConfig
 from conveyor_bench.conveyorvla.joint_trajectory import (
     ACTION_HORIZON,
     ACTIVE_SPECIAL_TOKENS,
@@ -15,12 +16,8 @@ from conveyor_bench.conveyorvla.joint_trajectory import (
 from conveyor_bench.conveyorvla.joint_trajectory_model import (
     ConveyorVLAJointTrajectoryPolicy,
     JointTrajectoryAuxiliaryHeads,
-    JointTrajectoryExpertConfig,
-    JointTrajectoryFlowMatchingExpert,
     JointTrajectoryLossConfig,
     JointTrajectoryRouter,
-    _warmstart_source_key,
-    selective_warmstart,
 )
 
 
@@ -118,17 +115,21 @@ class _Qwen(nn.Module):
 
 
 def _expert(action_dim, state_dim):
-    return JointTrajectoryFlowMatchingExpert(
-        JointTrajectoryExpertConfig(
+    return M0DiTActionHead(
+        M0DiTConfig(
             action_dim=action_dim,
             state_dim=state_dim,
-            cross_attention_dim=8,
-            hidden_size=8,
+            action_horizon=ACTION_HORIZON,
+            vlm_hidden_dim=8,
+            input_embedding_dim=8,
+            hidden_size=12,
             num_layers=2,
             num_attention_heads=2,
             attention_head_dim=4,
             max_seq_len=16,
-            num_inference_timesteps=10,
+            num_target_vision_tokens=2,
+            num_inference_timesteps=4,
+            dropout=0.0,
         )
     )
 
@@ -170,27 +171,28 @@ def _example(route, index, *, transition=None, signed=None, episode=None):
     }
 
 
-def test_experts_have_self_cross_ffn_no_future_tokens_and_strict_state_boundary():
+def test_experts_are_abot_dit_heads_with_strict_state_boundary():
     nav = _expert(3, 0)
     mani = _expert(7, 13)
-    assert not hasattr(nav, "future_tokens") and not hasattr(mani, "future_tokens")
-    for block in (*nav.blocks, *mani.blocks):
-        assert hasattr(block, "self_attention")
-        assert hasattr(block, "cross_attention")
+    assert nav.future_tokens.num_embeddings == 2
+    assert mani.future_tokens.num_embeddings == 2
+    for block in (*nav.model.transformer_blocks, *mani.model.transformer_blocks):
+        assert hasattr(block, "attn1")
         assert hasattr(block, "ff")
-    layers = (torch.randn(2, 6, 8), torch.randn(2, 6, 8))
+    hidden = torch.randn(2, 6, 8)
     attention = torch.ones(2, 6, dtype=torch.long)
     nav_action = torch.randn(2, 10, 3)
     with pytest.raises(ValueError, match="must not receive state"):
-        nav(layers, nav_action, encoder_attention_mask=attention, state=torch.zeros(2, 13))
-    with pytest.raises(ValueError, match="requires state"):
-        mani(layers, torch.randn(2, 10, 7), encoder_attention_mask=attention)
-    with pytest.raises(ValueError, match="all ten"):
+        nav(hidden, nav_action, torch.zeros(2, 13), encoder_attention_mask=attention)
+    with pytest.raises(ValueError, match="state must have shape"):
+        mani(hidden, torch.randn(2, 10, 7), None, encoder_attention_mask=attention)
+    with pytest.raises(ValueError, match="true prefix"):
         nav(
-            layers,
+            hidden,
             nav_action,
+            None,
             encoder_attention_mask=attention,
-            action_valid_mask=torch.tensor([[True] * 9 + [False]] * 2),
+            action_valid_mask=torch.tensor([[True, False, True] + [False] * 7] * 2),
         )
 
 
@@ -291,24 +293,18 @@ def test_router_has_no_done_candidate_or_fixed_confidence_rejection():
     assert not hasattr(router, "route_confidence_min")
 
 
-def test_selective_warmstart_loads_qwen_cross_ffn_time_and_reinitializes_new_semantics():
+def test_policy_conditions_action_heads_on_only_qwen_final_hidden_state():
     policy = _policy()
-    source = {}
-    for target_key, value in policy.state_dict().items():
-        source_key = _warmstart_source_key(target_key)
-        if source_key is not None:
-            source[source_key] = torch.full_like(value, 0.125)
-    source["navigation_head.future_tokens.weight"] = torch.ones(10, 8)
-    source["auxiliary_heads.progress_head.0.weight"] = torch.ones(8, 8)
-    report = selective_warmstart(policy, source)
-    assert any(key.startswith("qwen.") for key in report.loaded)
-    assert any("cross_attention" in key for key in report.loaded)
-    assert any("self_attention" in key for key in report.reinitialized)
-    assert any("progress_head" in key for key in report.reinitialized)
-    assert any("future_tokens" in key for key in report.rejected)
-    assert any("progress_head" in key for key in report.rejected)
-    qwen_key = next(key for key in source if key.startswith("qwen."))
-    incompatible = dict(source)
-    incompatible[qwen_key] = torch.zeros(source[qwen_key].numel() + 1)
-    with pytest.raises(Exception, match="incompatible Qwen"):
-        selective_warmstart(_policy(), incompatible)
+    seen: list[torch.Tensor] = []
+    hook = policy.navigation_expert.model.register_forward_pre_hook(
+        lambda _module, inputs: seen.append(inputs[1].detach().clone())
+    )
+    example = _example(JointTrajectoryRoute.NAV_TO_SOURCE, 0)
+
+    output = policy([example])
+    hook.remove()
+
+    assert torch.isfinite(output["loss"])
+    assert seen
+    expected = policy.qwen.model.hidden[-1][:6].unsqueeze(0)
+    torch.testing.assert_close(seen[0], expected)

@@ -4,17 +4,25 @@ import torch
 import pytest
 
 from conveyor_bench.conveyorvla.dit import (
+    ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS,
+    ABOT_DOMAIN_STATE_REINITIALIZED_KEYS,
     GO2_X5_REINITIALIZED_ACTION_KEYS,
     M0DiTActionHead,
     M0DiTConfig,
+    transfer_abot_pretrain_domain_weights,
     transfer_robocasa_action_weights,
 )
 
 
-def _tiny_config(*, num_layers: int = 2) -> M0DiTConfig:
+def _tiny_config(
+    *,
+    num_layers: int = 2,
+    action_dim: int = 3,
+    state_dim: int = 5,
+) -> M0DiTConfig:
     return M0DiTConfig(
-        action_dim=3,
-        state_dim=5,
+        action_dim=action_dim,
+        state_dim=state_dim,
         action_horizon=4,
         vlm_hidden_dim=8,
         input_embedding_dim=8,
@@ -174,6 +182,35 @@ def test_four_step_sample_is_finite_and_zeros_masked_dimensions() -> None:
     assert torch.count_nonzero(sampled.masked_select(~mask[:, None, :])) == 0
 
 
+def test_stateless_action_head_uses_vlm_device_and_dimension_reduction() -> None:
+    torch.manual_seed(0)
+    config = _tiny_config(state_dim=0)
+    model = M0DiTActionHead(config)
+    vl_embeddings = torch.randn(2, 3, config.vlm_hidden_dim)
+    actions = torch.randn(2, config.action_horizon, config.action_dim)
+
+    dimensions = model(
+        vl_embeddings,
+        actions,
+        None,
+        noise=torch.zeros_like(actions),
+        time=torch.tensor([0.25, 0.75]),
+        reduction="dimension_mean",
+    )
+    sampled = model.sample(
+        vl_embeddings,
+        None,
+        noise=torch.ones_like(actions),
+    )
+
+    assert model.state_encoder is None
+    assert dimensions.shape == (config.action_dim,)
+    assert torch.isfinite(dimensions).all()
+    assert sampled.shape == actions.shape
+    with pytest.raises(ValueError, match="must not receive state"):
+        model(vl_embeddings, actions, torch.zeros(2, 1), time=torch.zeros(2))
+
+
 def _robocasa_checkpoint(model: M0DiTActionHead) -> dict[str, torch.Tensor]:
     source = {
         f"action_model.{key}": torch.full_like(value, 0.125)
@@ -228,3 +265,46 @@ def test_robocasa_transfer_fails_closed_on_unapproved_structure(corruption: str)
 
     with pytest.raises(RuntimeError, match="checkpoint|shape mismatch"):
         transfer_robocasa_action_weights(model, checkpoint)
+
+
+def test_abot_pretrain_transfer_reuses_trunk_for_nav_and_mani_boundaries() -> None:
+    source_model = M0DiTActionHead(
+        _tiny_config(action_dim=14, state_dim=14)
+    )
+    checkpoint = {
+        f"action_model.{key}": torch.full_like(value, 0.125)
+        for key, value in source_model.state_dict().items()
+    }
+    nav = M0DiTActionHead(_tiny_config(action_dim=3, state_dim=0))
+    mani = M0DiTActionHead(_tiny_config(action_dim=7, state_dim=13))
+    nav_initial = {
+        key: nav.state_dict()[key].clone()
+        for key in ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS
+    }
+    mani_reinitialized = (
+        ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS
+        | ABOT_DOMAIN_STATE_REINITIALIZED_KEYS
+    )
+    mani_initial = {
+        key: mani.state_dict()[key].clone() for key in mani_reinitialized
+    }
+
+    nav_report = transfer_abot_pretrain_domain_weights(nav, checkpoint)
+    mani_report = transfer_abot_pretrain_domain_weights(mani, checkpoint)
+
+    assert set(nav_report.reinitialized_keys) == ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS
+    assert set(nav_report.ignored_source_keys) == {
+        key for key in source_model.state_dict() if key.startswith("state_encoder.")
+    }
+    assert set(mani_report.reinitialized_keys) == mani_reinitialized
+    assert not mani_report.ignored_source_keys
+    for key, value in nav.state_dict().items():
+        if key in nav_initial:
+            assert torch.equal(value, nav_initial[key])
+        else:
+            assert torch.equal(value, checkpoint[f"action_model.{key}"])
+    for key, value in mani.state_dict().items():
+        if key in mani_initial:
+            assert torch.equal(value, mani_initial[key])
+        else:
+            assert torch.equal(value, checkpoint[f"action_model.{key}"])

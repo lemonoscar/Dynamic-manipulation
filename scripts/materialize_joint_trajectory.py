@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize immutable Joint-Trajectory v1 data from fresh episode logs."""
+"""Materialize the immutable 5 Hz Joint-Trajectory training dataset."""
 
 from __future__ import annotations
 
@@ -15,22 +15,19 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from conveyor_bench.conveyorvla.config import M0MobileError  # noqa: E402
 from conveyor_bench.conveyorvla.joint_trajectory_data import (  # noqa: E402
     audit_joint_trajectory_dataset,
-    materialize_fresh_joint_trajectory_dataset,
+    materialize_modelscope_sampled_5hz_dataset,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episodes-root", required=True, type=Path)
+    parser.add_argument("--modelscope-dataset-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    root = args.episodes_root.expanduser().resolve()
-    if not root.is_dir():
-        raise M0MobileError(f"fresh episodes root does not exist: {root}")
     output = args.output_root.expanduser().resolve()
     try:
         output.relative_to(PROJECT_ROOT)
@@ -38,18 +35,11 @@ def main(argv: list[str] | None = None) -> int:
         pass
     else:
         raise M0MobileError("joint-trajectory data output must stay outside the Git worktree")
-    episodes = tuple(
-        sorted(
-            path.parent
-            for path in root.glob("*/joint_commands_50hz.jsonl")
-            if (path.parent / "joint_queries_5hz.jsonl").is_file()
-            and (path.parent / "summary.json").is_file()
-        )
-    )
-    if not episodes:
-        raise M0MobileError("no complete fresh joint-trajectory episodes were found")
-    manifest = materialize_fresh_joint_trajectory_dataset(
-        episodes, output
+    modelscope_root = args.modelscope_dataset_root.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    manifest = materialize_modelscope_sampled_5hz_dataset(
+        modelscope_root,
+        output,
     )
     audit = audit_joint_trajectory_dataset(output)
     if not audit["ok"]:

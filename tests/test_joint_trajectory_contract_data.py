@@ -7,6 +7,7 @@ import numpy as np
 
 from conveyor_bench.conveyorvla.joint_trajectory import (
     ACTION_HORIZON,
+    DATASET_PROFILE,
     DATASET_SCHEMA_VERSION,
     MANIPULATION_STRIDE_S,
     NAVIGATION_STRIDE_S,
@@ -20,10 +21,12 @@ from conveyor_bench.conveyorvla.joint_trajectory import (
 from conveyor_bench.conveyorvla.joint_trajectory_data import (
     ConveyorVLAJointTrajectoryDataset,
     JointTrajectoryNormalizer,
+    NoLegalFutureTargetError,
     derive_fresh_joint_trajectory_record,
     mani_action_from_applied_commands,
     validate_joint_trajectory_record,
 )
+from conveyor_bench.conveyorvla import joint_trajectory_data
 
 
 def _record(route: JointTrajectoryRoute, sample: int = 0) -> dict:
@@ -100,7 +103,7 @@ def test_contract_has_four_routes_ten_full_targets_and_independent_clocks():
     ]
     assert ACTION_HORIZON == 10
     assert NAVIGATION_STRIDE_S == 0.20
-    assert MANIPULATION_STRIDE_S == 0.04
+    assert MANIPULATION_STRIDE_S == 0.20
     assert "<|pred_done|>" not in joint_trajectory_prompt("move the Coke")
     for route in JointTrajectoryRoute:
         assert canonical_solution(route).startswith("<|pred_action|><|route_")
@@ -137,10 +140,10 @@ def test_mani_label_requires_applied_controller_commands():
     for index in range(ACTION_HORIZON):
         samples.append(
             {
-                "tick_id": index * 2 + 2,
-                "sim_step": index * 2 + 2,
+                "tick_id": index * 10 + 10,
+                "sim_step": index * 10 + 10,
                 "model_tick": 0,
-                "timestamp_s": 1.04 + index * 0.04,
+                "timestamp_s": 1.20 + index * 0.20,
                 "q_measured": [0.0] * 6,
                 "dq_measured": [0.0] * 6,
                 "gripper_measured": 1.0,
@@ -164,7 +167,7 @@ def test_mani_label_requires_applied_controller_commands():
         mani_action_from_applied_commands([0.0] * 12 + [1.0], missing)
     off_clock = [dict(sample) for sample in samples]
     off_clock[1]["timestamp_s"] += 0.01
-    with pytest.raises(ValueError, match="25 Hz"):
+    with pytest.raises(ValueError, match="5 Hz"):
         mani_action_from_applied_commands([0.0] * 12 + [1.0], off_clock)
     moving_base = [dict(sample) for sample in samples]
     moving_base[0]["base_command_applied"] = [0.001, 0.0, 0.0]
@@ -178,8 +181,8 @@ def test_mani_label_requires_applied_controller_commands():
 
 def test_fresh_derivation_uses_applied_targets_and_terminal_holds_at_route_boundary():
     controls = {}
-    for tick in range(0, 23):
-        route = "PICK" if tick <= 8 else "NAV_TO_TARGET"
+    for tick in range(0, 61):
+        route = "PICK" if tick <= 49 else "NAV_TO_TARGET"
         controls[tick] = {
             "tick_id": tick,
             "sim_step": tick,
@@ -220,8 +223,97 @@ def test_fresh_derivation_uses_applied_targets_and_terminal_holds_at_route_bound
     assert record["terminal_hold_start_index"] == 4
     assert record["terminal_hold_reason"] == "boundary"
     assert record["action_valid_mask"] == [True] * 10
-    assert record["mani_delta_q_gripper"][0][0] == pytest.approx(0.052)
+    assert record["mani_delta_q_gripper"][0][0] == pytest.approx(0.06)
     assert record["mani_delta_q_gripper"][4:] == [record["mani_delta_q_gripper"][3]] * 6
+
+    no_future = dict(query, control_tick_id=40, sample_id="boundary-last-query")
+    with pytest.raises(NoLegalFutureTargetError, match="no legal future target"):
+        derive_fresh_joint_trajectory_record(no_future, controls)
+
+
+def test_sampled_5hz_derivation_uses_exact_observation_and_next_saved_control():
+    pipeline_states = (
+        ["reset_episode"]
+        + ["plan_nav_to_pick"] * 12
+        + ["plan_pick"] * 12
+        + ["plan_nav_to_place"] * 12
+        + ["plan_place"] * 12
+    )
+    names = [f"arm_joint{index}" for index in range(1, 9)]
+    samples = []
+    frames = []
+    for index, pipeline_state in enumerate(pipeline_states):
+        timestamp = index * 0.2
+        q = [0.01 * index + axis * 0.001 for axis in range(6)]
+        gripper_m = 0.04 if pipeline_state != "plan_place" else 0.02
+        action = [0.0, 0.0, 0.0] + [value + 0.005 for value in q] + [gripper_m] * 2
+        base_pose = [0.01 * index, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0]
+        camera_frames = {
+            camera: {
+                "frame_index": index,
+                "timestamp": timestamp,
+                "state_step": index * 10,
+                "camera_capture_step": index * 10,
+                "raw_image_path": f"images/{camera}/{index:05d}.jpg",
+            }
+            for camera in ("front", "wrist")
+        }
+        samples.append(
+            {
+                "frame_index": index,
+                "timestamp": timestamp,
+                "simulation_step": index * 10,
+                "pipeline_state": pipeline_state,
+                "base_pose": base_pose,
+                "gripper_position": gripper_m,
+                "camera_state_synchronized": True,
+                "camera_frames": camera_frames,
+                "action": action,
+            }
+        )
+        frames.append(
+            {
+                "dataset_frame_index": index,
+                "pipeline_state": pipeline_state,
+                "action": {
+                    "base_velocity": action[:3],
+                    "arm_joint_positions": action[3:9],
+                    "metadata": {"gripper_joint_positions": action[9:11]},
+                },
+                "observation": {
+                    "step_index": index * 10,
+                    "timestamp": timestamp,
+                    "robot_root_pose": base_pose,
+                    "joint_positions": q + [gripper_m, gripper_m],
+                    "joint_velocities": [0.1] * 6 + [0.0, 0.0],
+                    "metadata": {"joint_names": names},
+                },
+                # A deliberately different post-step state proves it is not used.
+                "post_step_observation": {"joint_positions": [99.0] * 8},
+            }
+        )
+    records, dropped = joint_trajectory_data._derive_sampled_5hz_episode_records(
+        {"instruction": "move the Coke", "samples": samples, "frames": frames},
+        episode_id="sampled-episode",
+        split="train",
+    )
+    joint_trajectory_data._validate_complete_episode_records(records)
+    first_pick = next(record for record in records if record["route"] == "PICK")
+    query_index = int(first_pick["sample_id"].rsplit("-", maxsplit=1)[1])
+    expected_first_target = [
+        samples[query_index + 1]["action"][axis + 3]
+        - frames[query_index]["observation"]["joint_positions"][axis]
+        for axis in range(6)
+    ]
+    assert first_pick["mani_delta_q_gripper"][0][:6] == pytest.approx(
+        expected_first_target
+    )
+    assert first_pick["mani_state"][:6] == pytest.approx(
+        frames[query_index]["observation"]["joint_positions"][:6]
+    )
+    assert first_pick["action_provenance"] == "sampled_control_target_5hz"
+    assert not first_pick["physical_progress_valid"]
+    assert dropped == 4
 
 
 def test_train_only_normalizer_roundtrip_and_lazy_batch_state_boundary(tmp_path: Path):
@@ -261,6 +353,7 @@ def test_train_only_normalizer_roundtrip_and_lazy_batch_state_boundary(tmp_path:
         json.dumps(
             {
                 "schema_version": DATASET_SCHEMA_VERSION,
+                "profile": DATASET_PROFILE,
                 "records": {
                     "train": {
                         "relative_path": "train.jsonl",

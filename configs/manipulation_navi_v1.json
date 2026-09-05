@@ -1,12 +1,19 @@
 {
-  "schema_version": "conveyorvla-joint-trajectory-policy-config-v1",
-  "model_contract_id": "conveyorvla-joint-trajectory-policy-v1",
-  "dataset_schema_version": "conveyorvla-joint-trajectory-v1",
-  "dataset_profile": "conveyorvla-liangzhu-fresh-joint-trajectory-v1",
+  "schema_version": "conveyorvla-joint-trajectory-policy-config-5hz-v1",
+  "model_contract_id": "conveyorvla-joint-trajectory-policy-5hz-v1",
+  "dataset_schema_version": "conveyorvla-joint-trajectory-5hz-v1",
+  "dataset_profile": "conveyorvla-liangzhunew500-sampled-control-5hz-v1",
+  "dataset": {
+    "source": "modelscope",
+    "dataset_id": "OscarXu/liangzhuNeW_500",
+    "revision": "6806fadf2e8e125ca871f576676b60e7db1605dc"
+  },
   "vlm": {
     "architecture": "Qwen3VLForConditionalGeneration",
     "relative_path": "Qwen3-VL-4B-Instruct",
     "hidden_size": 2560,
+    "checkpoint_vocab_size": 153984,
+    "action_feature_layer": "last_hidden_state",
     "full_finetuning_stage_b": true,
     "dtype": "bfloat16"
   },
@@ -32,36 +39,39 @@
     "confidence_threshold": null
   },
   "action_model": {
-    "architecture": "LayerwiseSelfCrossFlowMatching",
+    "architecture": "ABotM0LastHiddenDualDiT",
     "action_horizon": 10,
     "navigation_action_dim": 3,
     "manipulation_action_dim": 7,
     "manipulation_state_dim": 13,
     "navigation_stride_s": 0.2,
-    "manipulation_stride_s": 0.04,
+    "manipulation_stride_s": 0.2,
     "cross_attention_dim": 2560,
+    "input_embedding_dim": 768,
     "hidden_size": 1024,
     "num_layers": 16,
-    "num_attention_heads": 16,
+    "num_attention_heads": 12,
     "attention_head_dim": 64,
-    "dropout": 0.0,
-    "max_seq_len": 32,
+    "dropout": 0.2,
+    "max_seq_len": 1024,
+    "num_target_vision_tokens": 32,
     "noise_beta_alpha": 1.5,
     "noise_beta_beta": 1.0,
     "noise_s": 0.999,
     "num_timestep_buckets": 1000,
-    "num_inference_timesteps": 10,
+    "num_inference_timesteps": 4,
+    "interleave_self_attention": true,
     "expert_parameters_shared": false,
-    "future_tokens": false,
+    "future_tokens": true,
     "block_order": [
-      "self_attention",
-      "qwen_cross_attention",
-      "ffn"
+      "qwen_cross_attention_on_even_blocks",
+      "self_attention_on_odd_blocks",
+      "ffn_each_block"
     ]
   },
   "auxiliary": {
     "progress_hidden_size": 256,
-    "progress_target": "route_specific_physical_only",
+    "progress_target": "unavailable_in_sampled_5hz_source_masked",
     "elapsed_time_fallback": false,
     "row_index_fallback": false
   },
@@ -71,7 +81,7 @@
     "lambda_navigation": 1.0,
     "lambda_manipulation": 1.0,
     "lambda_boundary": 0.2,
-    "lambda_progress": 0.1,
+    "lambda_progress": 0.0,
     "manipulation_joint_weight": 0.75,
     "manipulation_gripper_weight": 0.25,
     "boundary_rank_margin": 0.2,
@@ -114,16 +124,21 @@
     "cosine_min_ratio": 0.1
   },
   "initialization": {
-    "mode": "selective_warmstart_not_resume",
-    "source_contract": "qwen3vl-layerwise-dual-fm-waypoint-v2",
-    "source_checkpoint_step": 1250,
+    "mode": "abot_m0_pretrain_strict_domain_transfer",
+    "source_model_id": "amap_cvlab/ABot-M0-Pretrain",
+    "relative_path": "ABot-M0-Pretrain/checkpoints/ABot_M0_Pretrain.pt",
+    "checkpoint_sha256": "94478682b5c9eecf6f02179ba67ae47ea41257ca059bea6dd20e161716f5e16b",
+    "qwen": "strict_load_then_reinitialize_waypoint_token_rows",
+    "action": "strict_trunk_load_reinitialize_domain_boundaries",
     "progress_head": "reinitialize",
     "optimizer_scheduler_rng": "reinitialize",
-    "normalizer": "fit_fresh_train_only"
+    "normalizer": "fit_sampled_5hz_train_only"
   },
   "runtime": {
     "navigation": "full_10_point_reference_to_pct_dwa",
     "manipulation": "direct_joint_sequential_10_point",
+    "manipulation_command_period_s": 0.2,
+    "manipulation_horizon_s": 2.0,
     "manipulation_base_velocity": [
       0.0,
       0.0,

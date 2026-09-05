@@ -169,6 +169,7 @@ class WaypointQwenInterface(Qwen3VLInterface):
         cls,
         model_dir: str | Path,
         *,
+        checkpoint_vocab_size: int | None = None,
         dtype: torch.dtype = torch.bfloat16,
         attention_implementation: str | None = None,
     ) -> "WaypointQwenInterface":
@@ -195,6 +196,14 @@ class WaypointQwenInterface(Qwen3VLInterface):
             attn_implementation=implementation,
         )
         model.config.hidden_size = model.config.text_config.hidden_size
+        if checkpoint_vocab_size is not None:
+            if checkpoint_vocab_size <= 0:
+                raise M0MobileError("checkpoint_vocab_size must be positive")
+            if model.get_input_embeddings().num_embeddings != checkpoint_vocab_size:
+                model.resize_token_embeddings(
+                    checkpoint_vocab_size,
+                    mean_resizing=False,
+                )
         processor.tokenizer.add_special_tokens(
             {"additional_special_tokens": list(SPECIAL_TOKENS)},
             replace_additional_special_tokens=False,

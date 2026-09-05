@@ -436,12 +436,12 @@ class IsaacJointTrajectorySystemExecutor:
         if chunk is None or len(chunk.commands) != ACTION_HORIZON:
             raise ValueError("Mani runtime step must provide ten direct joint commands")
         ticks_per_command = round(MANIPULATION_STRIDE_S / CONTROL_STRIDE_S)
-        if ticks_per_command != 2:
-            raise AssertionError("Mani command must span exactly two 50 Hz ticks")
+        if ticks_per_command != 10:
+            raise AssertionError("Mani command must span exactly ten 50 Hz ticks")
         tick_index = 0
         for command in chunk.commands:
             if not math.isclose(command.duration_s, MANIPULATION_STRIDE_S):
-                raise ValueError("Mani command duration must remain 0.04 s")
+                raise ValueError("Mani command duration must remain 0.20 s")
             action = self.action_adapter.manipulation(
                 command,
                 route=route,

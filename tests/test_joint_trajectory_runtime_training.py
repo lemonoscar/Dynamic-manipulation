@@ -1,7 +1,9 @@
+import copy
 import inspect
 
 import pytest
 
+from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.joint_trajectory import JointTrajectoryRoute
 from conveyor_bench.conveyorvla.joint_trajectory_runtime import (
     DirectJointTrajectoryExecutor,
@@ -18,9 +20,11 @@ from conveyor_bench.conveyorvla.joint_trajectory_training import (
     AccumulationMicroBatchSampler,
     StratifiedJointTrajectoryBatchSampler,
     TrainingStages,
+    configure_deepspeed_micro_batch,
     load_joint_trajectory_config,
     select_disposable_overfit_episodes,
     validate_global_batch,
+    validate_joint_trajectory_config,
 )
 
 
@@ -69,7 +73,7 @@ def test_nav_passes_all_points_and_direct_joint_has_no_pose_planner():
     assert len(chunk.commands) == 10
     assert all(command.base_velocity == (0.0, 0.0, 0.0) for command in chunk.commands)
     assert all(
-        command.joint_position[0] == pytest.approx(0.02 * (command.index + 1))
+        command.joint_position[0] == pytest.approx(0.10 * (command.index + 1))
         for command in chunk.commands
     )
     assert chunk.rate_saturation_count > 0 and chunk.gripper_saturation_count == 10
@@ -248,13 +252,24 @@ def test_sampler_builds_one_scientific_batch_then_micro_batches():
     )
     chunks = list(micro)
     assert len(chunks) == 8 and all(len(chunk) == 8 for chunk in chunks)
+    assert micro.batch_size == 8
     assert len({index for chunk in chunks for index in chunk}) == 64
     assert validate_global_batch(2, 2, 16) == 64
     with pytest.raises(Exception, match="boundary pairs"):
         validate_global_batch(4, 1, 16)
 
 
-def test_disposable_overfit_selects_exactly_twelve_complete_episodes_and_reuses_only_them():
+def test_deepspeed_custom_sampler_micro_batch_is_explicit_and_conflict_checked():
+    config = {"train_micro_batch_size_per_gpu": "auto"}
+    configure_deepspeed_micro_batch(config, 4)
+    assert config["train_micro_batch_size_per_gpu"] == 4
+    with pytest.raises(Exception, match="conflicts"):
+        configure_deepspeed_micro_batch(
+            {"train_micro_batch_size_per_gpu": 2}, 4
+        )
+
+
+def test_disposable_overfit_selects_requested_complete_episodes_and_reuses_only_them():
     routes = []
     episodes = []
     transitions = []
@@ -262,7 +277,7 @@ def test_disposable_overfit_selects_exactly_twelve_complete_episodes_and_reuses_
     buckets = []
     gripper = []
     pairs = list(zip(tuple(JointTrajectoryRoute), tuple(JointTrajectoryRoute)[1:]))
-    for episode_index in range(14):
+    for episode_index in range(34):
         episode = f"complete-{episode_index}"
         for route in JointTrajectoryRoute:
             routes.append(route.value)
@@ -281,9 +296,9 @@ def test_disposable_overfit_selects_exactly_twelve_complete_episodes_and_reuses_
                 buckets.append("late" if time < 0.0 else "early")
                 gripper.append(False)
     selected = select_disposable_overfit_episodes(
-        routes, episodes, transitions, signed, gripper, seed=3
+        routes, episodes, transitions, signed, gripper, seed=3, count=32
     )
-    assert len(selected) == len(set(selected)) == 12
+    assert len(selected) == len(set(selected)) == 32
     sampler = StratifiedJointTrajectoryBatchSampler(
         routes,
         episodes,
@@ -308,10 +323,29 @@ def test_disposable_overfit_selects_exactly_twelve_complete_episodes_and_reuses_
 def test_config_and_stage_boundaries_are_frozen():
     config = load_joint_trajectory_config("configs/manipulation_navi_v1.json")
     assert config["loss"]["repeated_diffusion_steps"] == 1
-    assert config["action_model"]["num_inference_timesteps"] == 10
+    assert config["vlm"]["action_feature_layer"] == "last_hidden_state"
+    assert config["action_model"]["num_inference_timesteps"] == 4
+    assert config["action_model"]["manipulation_stride_s"] == 0.2
+    assert config["runtime"]["manipulation_horizon_s"] == 2.0
+    assert config["dataset"]["dataset_id"] == "OscarXu/liangzhuNeW_500"
+    assert config["initialization"]["source_model_id"] == "amap_cvlab/ABot-M0-Pretrain"
     assert all(config["disabled"].values())
     stages = TrainingStages.from_rows(6400)
     assert stages.equivalent_epoch_steps == 100
     assert stages.stage_a_steps == 25
     assert stages.total_steps == 200
     assert stages.stage(24) == "A" and stages.stage(25) == "B"
+
+
+def test_config_gate_rejects_training_and_abot_initialization_drift():
+    config = load_joint_trajectory_config("configs/manipulation_navi_v1.json")
+    for section, key, changed in (
+        ("training", "stage_a_equivalent_epochs", 0.5),
+        ("optimization", "qwen_learning_rate", 3.0e-6),
+        ("action_model", "cross_attention_dim", 2048),
+        ("initialization", "source_model_id", "Qwen/Qwen3-VL-4B-Instruct"),
+    ):
+        candidate = copy.deepcopy(config)
+        candidate[section][key] = changed
+        with pytest.raises(M0MobileError, match=rf"{section}\.{key}"):
+            validate_joint_trajectory_config(candidate)

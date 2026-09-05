@@ -1,8 +1,8 @@
 """Immutable contracts for ConveyorVLA Joint-Trajectory Policy v1.
 
 This successor intentionally does not import the Waypoint v1/v2 horizon,
-DONE route, TCP action, prefix selector, or runtime masks.  The tokenizer
-tokens are shared only so a frozen Waypoint-v2 Qwen can be warm-started.
+DONE route, TCP action, prefix selector, or runtime masks.  It reuses the
+token strings while initializing Qwen and both action trunks from ABot-M0.
 """
 
 from __future__ import annotations
@@ -20,19 +20,19 @@ from conveyor_bench.conveyorvla.waypoint import (
 )
 
 
-MODEL_CONTRACT_ID = "conveyorvla-joint-trajectory-policy-v1"
-DATASET_SCHEMA_VERSION = "conveyorvla-joint-trajectory-v1"
-DATASET_PROFILE = "conveyorvla-liangzhu-fresh-joint-trajectory-v1"
-POLICY_CONFIG_SCHEMA_VERSION = "conveyorvla-joint-trajectory-policy-config-v1"
-NORMALIZATION_SCHEMA_VERSION = "conveyorvla-joint-trajectory-normalization-v1"
-RUNTIME_PROTOCOL_VERSION = "conveyorvla-joint-trajectory-runtime/v1"
+MODEL_CONTRACT_ID = "conveyorvla-joint-trajectory-policy-5hz-v1"
+DATASET_SCHEMA_VERSION = "conveyorvla-joint-trajectory-5hz-v1"
+DATASET_PROFILE = "conveyorvla-liangzhunew500-sampled-control-5hz-v1"
+POLICY_CONFIG_SCHEMA_VERSION = "conveyorvla-joint-trajectory-policy-config-5hz-v1"
+NORMALIZATION_SCHEMA_VERSION = "conveyorvla-joint-trajectory-normalization-5hz-v1"
+RUNTIME_PROTOCOL_VERSION = "conveyorvla-joint-trajectory-runtime/5hz-v1"
 
 ACTION_HORIZON = 10
 NAVIGATION_ACTION_DIM = 3
 MANIPULATION_ACTION_DIM = 7
 MANIPULATION_STATE_DIM = 13
 NAVIGATION_STRIDE_S = 0.20
-MANIPULATION_STRIDE_S = 0.04
+MANIPULATION_STRIDE_S = 0.20
 HISTORY_SPAN_S = 0.20
 SUCCESS_DWELL_S = 1.0
 TRAIN_GLOBAL_BATCH_SIZE = 64

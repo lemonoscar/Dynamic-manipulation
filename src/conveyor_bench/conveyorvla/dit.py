@@ -25,6 +25,20 @@ GO2_X5_REINITIALIZED_ACTION_KEYS = frozenset(
         "action_decoder.layer2.bias",
     }
 )
+ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS = frozenset(
+    {
+        "action_encoder.layer1.weight",
+        "action_encoder.layer1.bias",
+        "action_decoder.layer2.weight",
+        "action_decoder.layer2.bias",
+    }
+)
+ABOT_DOMAIN_STATE_REINITIALIZED_KEYS = frozenset(
+    {
+        "state_encoder.layer1.weight",
+        "state_encoder.layer1.bias",
+    }
+)
 DOMAIN_ACTION_REINITIALIZED_KEYS = frozenset(
     {
         "action_encoder.layer1.weight",
@@ -59,7 +73,6 @@ class M0DiTConfig:
     def __post_init__(self) -> None:
         positive = (
             "action_dim",
-            "state_dim",
             "action_horizon",
             "vlm_hidden_dim",
             "input_embedding_dim",
@@ -74,6 +87,8 @@ class M0DiTConfig:
         )
         if any(getattr(self, name) <= 0 for name in positive):
             raise ValueError("all AL0 DiT dimensions and counts must be positive")
+        if self.state_dim < 0:
+            raise ValueError("AL0 DiT state_dim cannot be negative")
         if self.num_attention_heads * self.attention_head_dim != self.input_embedding_dim:
             raise ValueError("attention dimensions must equal input_embedding_dim")
         if not 0.0 <= self.dropout < 1.0:
@@ -88,6 +103,14 @@ class M0DiTConfig:
 class ActionTransferReport:
     loaded_keys: tuple[str, ...]
     reinitialized_keys: tuple[str, ...]
+    ignored_source_keys: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "loaded_keys": list(self.loaded_keys),
+            "reinitialized_keys": list(self.reinitialized_keys),
+            "ignored_source_keys": list(self.ignored_source_keys),
+        }
 
 
 class _SinusoidalActionTime(nn.Module):
@@ -332,8 +355,10 @@ class M0DiTActionHead(nn.Module):
         super().__init__()
         self.config = config
         self.model = _DiT(config)
-        self.state_encoder = _MLP(
-            config.state_dim, config.hidden_size, config.input_embedding_dim
+        self.state_encoder = (
+            None
+            if config.state_dim == 0
+            else _MLP(config.state_dim, config.hidden_size, config.input_embedding_dim)
         )
         self.action_encoder = _ActionEncoder(config.action_dim, config.input_embedding_dim)
         self.action_decoder = _MLP(config.hidden_size, config.hidden_size, config.action_dim)
@@ -352,16 +377,17 @@ class M0DiTActionHead(nn.Module):
         self,
         vl_embeddings: torch.Tensor,
         actions: torch.Tensor,
-        state: torch.Tensor,
+        state: torch.Tensor | None,
         *,
         encoder_attention_mask: torch.Tensor | None = None,
         action_dimension_mask: torch.Tensor | None = None,
         action_valid_mask: torch.Tensor | None = None,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
+        reduction: str = "element_mean",
     ) -> torch.Tensor:
         batch_size = self._validate_inputs(vl_embeddings, actions, state)
-        state = _state_token(state)
+        state = None if state is None else _state_token(state)
         mask = _action_dimension_mask(
             action_dimension_mask, batch_size, self.config.action_dim, actions.device
         )
@@ -420,6 +446,13 @@ class M0DiTActionHead(nn.Module):
         target_velocity = (actions - noisy_actions) / denominator
         predicted_velocity = (predicted_actions - noisy_actions) / denominator
         squared_error = (predicted_velocity - target_velocity).square()
+        if reduction == "dimension_mean":
+            if element_mask is None:
+                return squared_error.mean(dim=(0, 1))
+            counts = element_mask.sum(dim=(0, 1))
+            return (squared_error * element_mask).sum(dim=(0, 1)) / counts.clamp_min(1)
+        if reduction != "element_mean":
+            raise ValueError("unsupported ABot-M0 action loss reduction")
         if element_mask is None:
             return squared_error.mean()
         return (squared_error * element_mask).sum() / element_mask.sum()
@@ -428,7 +461,7 @@ class M0DiTActionHead(nn.Module):
     def sample(
         self,
         vl_embeddings: torch.Tensor,
-        state: torch.Tensor,
+        state: torch.Tensor | None,
         *,
         encoder_attention_mask: torch.Tensor | None = None,
         action_dimension_mask: torch.Tensor | None = None,
@@ -436,22 +469,22 @@ class M0DiTActionHead(nn.Module):
         steps: int | None = None,
     ) -> torch.Tensor:
         batch_size = vl_embeddings.shape[0]
-        state = _state_token(state)
-        if state.shape != (batch_size, 1, self.config.state_dim):
-            raise ValueError("state must have shape [batch, 1, state_dim]")
+        self._validate_state(state, batch_size)
+        state = None if state is None else _state_token(state)
         sample_steps = self.config.num_inference_timesteps if steps is None else steps
         if sample_steps <= 0:
             raise ValueError("steps must be positive")
         shape = (batch_size, self.config.action_horizon, self.config.action_dim)
+        reference = vl_embeddings if state is None else state
         actions = (
-            torch.randn(shape, device=state.device, dtype=state.dtype)
+            torch.randn(shape, device=reference.device, dtype=reference.dtype)
             if noise is None
-            else noise.to(state).clone()
+            else noise.to(reference).clone()
         )
         if actions.shape != shape:
             raise ValueError("noise has the wrong shape")
         mask = _action_dimension_mask(
-            action_dimension_mask, batch_size, self.config.action_dim, state.device
+            action_dimension_mask, batch_size, self.config.action_dim, reference.device
         )
         if mask is not None:
             actions *= mask[:, None, :]
@@ -460,8 +493,8 @@ class M0DiTActionHead(nn.Module):
             time = torch.full(
                 (batch_size,),
                 index / sample_steps,
-                device=state.device,
-                dtype=state.dtype,
+                device=reference.device,
+                dtype=reference.dtype,
             )
             predicted = self._predict_clean(
                 vl_embeddings, state, actions, time, encoder_attention_mask
@@ -477,7 +510,7 @@ class M0DiTActionHead(nn.Module):
         self,
         vl_embeddings: torch.Tensor,
         actions: torch.Tensor,
-        state: torch.Tensor,
+        state: torch.Tensor | None,
     ) -> int:
         if vl_embeddings.ndim != 3 or vl_embeddings.shape[-1] != self.config.vlm_hidden_dim:
             raise ValueError("vl_embeddings has the wrong shape")
@@ -488,14 +521,25 @@ class M0DiTActionHead(nn.Module):
             self.config.action_dim,
         ):
             raise ValueError("actions has the wrong shape")
-        if _state_token(state).shape != (batch_size, 1, self.config.state_dim):
-            raise ValueError("state must have shape [batch, 1, state_dim]")
+        self._validate_state(state, batch_size)
         return batch_size
+
+    def _validate_state(self, state: torch.Tensor | None, batch_size: int) -> None:
+        if self.config.state_dim == 0:
+            if state is not None:
+                raise ValueError("stateless ABot-M0 action head must not receive state")
+            return
+        if state is None or _state_token(state).shape != (
+            batch_size,
+            1,
+            self.config.state_dim,
+        ):
+            raise ValueError("state must have shape [batch, 1, state_dim]")
 
     def _predict_clean(
         self,
         vl_embeddings: torch.Tensor,
-        state: torch.Tensor,
+        state: torch.Tensor | None,
         noisy_actions: torch.Tensor,
         time: torch.Tensor,
         encoder_attention_mask: torch.Tensor | None,
@@ -506,9 +550,14 @@ class M0DiTActionHead(nn.Module):
             action_features.shape[1], device=action_features.device
         )
         action_features = action_features + self.position_embedding(positions)[None]
-        state_features = self.state_encoder(state)
         future = self.future_tokens.weight[None].expand(vl_embeddings.shape[0], -1, -1)
-        hidden = torch.cat((state_features, future, action_features), dim=1)
+        hidden_parts = []
+        if self.state_encoder is not None:
+            if state is None:
+                raise ValueError("stateful ABot-M0 action head requires state")
+            hidden_parts.append(self.state_encoder(state))
+        hidden_parts.extend((future, action_features))
+        hidden = torch.cat(hidden_parts, dim=1)
         output = self.model(
             hidden,
             vl_embeddings,
@@ -623,6 +672,76 @@ def transfer_conveyorvla_action_trunk(
     )
 
 
+def transfer_abot_pretrain_domain_weights(
+    model: M0DiTActionHead,
+    checkpoint: str | Path | Mapping[str, torch.Tensor],
+) -> ActionTransferReport:
+    """Load the ABot-M0-Pretrain trunk and reset only domain-specific boundaries."""
+
+    source_state = (
+        torch.load(
+            Path(checkpoint),
+            map_location="cpu",
+            mmap=True,
+            weights_only=True,
+        )
+        if isinstance(checkpoint, (str, Path))
+        else checkpoint
+    )
+    if not isinstance(source_state, Mapping):
+        raise RuntimeError("ABot-M0 pretrain checkpoint must contain a tensor mapping")
+    source = {
+        key.removeprefix("action_model."): value
+        for key, value in source_state.items()
+        if key.startswith("action_model.")
+    }
+    target_shapes = parameter_state_shapes(model)
+    reinitialized = set(ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS)
+    if model.config.state_dim > 0:
+        reinitialized.update(ABOT_DOMAIN_STATE_REINITIALIZED_KEYS)
+    if not reinitialized <= set(target_shapes):
+        raise RuntimeError("ABot domain target lacks a required boundary tensor")
+
+    ignored = set(source) - set(target_shapes)
+    allowed_ignored = (
+        {key for key in source if key.startswith("state_encoder.")}
+        if model.config.state_dim == 0
+        else set()
+    )
+    if ignored != allowed_ignored:
+        raise RuntimeError(
+            f"ABot domain checkpoint has unexpected tensors: {sorted(ignored)}"
+        )
+    missing = set(target_shapes) - set(source)
+    if missing:
+        raise RuntimeError(f"ABot domain checkpoint is missing tensors: {sorted(missing)}")
+
+    compatible: dict[str, torch.Tensor] = {}
+    bad_shapes: list[str] = []
+    for key, target_shape in target_shapes.items():
+        value = source[key]
+        if not isinstance(value, torch.Tensor):
+            raise RuntimeError(f"ABot checkpoint value is not a tensor: {key}")
+        if key in reinitialized:
+            continue
+        if value.shape != target_shape:
+            bad_shapes.append(
+                f"{key}: source={tuple(value.shape)} target={tuple(target_shape)}"
+            )
+        else:
+            compatible[key] = value
+    if bad_shapes:
+        raise RuntimeError(
+            "unapproved ABot domain tensor mismatch: " + "; ".join(bad_shapes)
+        )
+    copy_parameter_tensors(model, compatible)
+    return ActionTransferReport(
+        loaded_keys=tuple(sorted(compatible)),
+        reinitialized_keys=tuple(sorted(reinitialized)),
+        ignored_source_keys=tuple(sorted(ignored)),
+    )
+
+
 def parameter_state_shapes(module: nn.Module) -> dict[str, torch.Size]:
     """Return logical parameter shapes before or after ZeRO-3 partitioning."""
 
@@ -727,6 +846,8 @@ def _attention_mask(
 
 
 __all__ = [
+    "ABOT_DOMAIN_ACTION_REINITIALIZED_KEYS",
+    "ABOT_DOMAIN_STATE_REINITIALIZED_KEYS",
     "DOMAIN_ACTION_REINITIALIZED_KEYS",
     "GO2_X5_REINITIALIZED_ACTION_KEYS",
     "ActionTransferReport",
@@ -736,4 +857,5 @@ __all__ = [
     "parameter_state_shapes",
     "transfer_robocasa_action_weights",
     "transfer_conveyorvla_action_trunk",
+    "transfer_abot_pretrain_domain_weights",
 ]

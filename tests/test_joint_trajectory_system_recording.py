@@ -231,7 +231,7 @@ def test_nav_preserves_ten_points_uses_point_ten_and_runs_exact_two_seconds():
     assert dwa.reset_count == 1
 
 
-def test_mani_executes_all_ten_targets_for_two_ticks_with_zero_base_and_no_ik():
+def test_mani_executes_all_ten_targets_for_ten_ticks_with_zero_base_and_no_ik():
     simulation = _Simulation()
     ticks = []
     executor = IsaacJointTrajectorySystemExecutor(
@@ -252,12 +252,12 @@ def test_mani_executes_all_ten_targets_for_two_ticks_with_zero_base_and_no_ik():
     result = executor.execute(
         _runtime_step(route=JointTrajectoryRoute.PICK, manipulation=chunk)
     )
-    assert not result.failed and result.control_ticks == 20
-    assert len(ticks) == len(simulation.actions) == 20
-    assert [tick.command_index for tick in ticks] == [index for index in range(10) for _ in range(2)]
+    assert not result.failed and result.control_ticks == 100
+    assert len(ticks) == len(simulation.actions) == 100
+    assert [tick.command_index for tick in ticks] == [index for index in range(10) for _ in range(10)]
     for index in range(10):
-        left, right = simulation.actions[2 * index : 2 * index + 2]
-        assert left.arm_joint_positions == right.arm_joint_positions == commands[index].joint_position
+        actions = simulation.actions[10 * index : 10 * index + 10]
+        assert all(action.arm_joint_positions == commands[index].joint_position for action in actions)
     assert all(action.base_velocity == (0.0, 0.0, 0.0) for action in simulation.actions)
     assert all(action.metadata["manipulation_base_lock"] is False for action in simulation.actions)
     assert all(action.metadata["segment_type"] == "direct_joint_motion" for action in simulation.actions)

@@ -1,8 +1,9 @@
-"""Data boundary for the fresh ConveyorVLA joint-trajectory dataset.
+"""Data boundary for the ConveyorVLA 5 Hz joint-trajectory dataset.
 
-The module deliberately contains validators and a lazy reader, but no adapter
-from old Waypoint/TCP rows.  Fresh manipulation labels must come from applied
-joint commands; future measured joints are never an accepted fallback.
+The current adapter consumes only camera-aligned saved control vectors from
+the pinned Liangzhu 500-episode snapshot.  It does not interpolate unavailable
+50 Hz commands, consume CuRobo plans, or use future measured joints as labels.
+The earlier applied-command helpers remain for recorder compatibility only.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 import math
 import os
 import shutil
+import tarfile
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -22,6 +24,7 @@ import numpy as np
 from conveyor_bench.conveyorvla.config import M0MobileError
 from conveyor_bench.conveyorvla.joint_trajectory import (
     ACTION_HORIZON,
+    DATASET_PROFILE,
     DATASET_SCHEMA_VERSION,
     HISTORY_SPAN_S,
     MANIPULATION_STRIDE_S,
@@ -91,6 +94,10 @@ FORBIDDEN_MODEL_KEYS = frozenset(
         "row_index_progress",
     }
 )
+
+
+class NoLegalFutureTargetError(ValueError):
+    """A boundary/tail query has no future command in its current route."""
 PROGRESS_PROVENANCE = frozenset(
     {
         "source_distance_and_settle",
@@ -103,8 +110,42 @@ TERMINAL_HOLD_REASONS = frozenset(
     {"boundary", "episode_tail", "success_tail"}
 )
 CONTROL_STRIDE_S = 0.02
-JOINT_TARGET_STEP_LIMIT_25HZ = (0.016, 0.020, 0.020, 0.020, 0.016, 0.020)
+JOINT_TARGET_STEP_LIMIT_5HZ = (0.080, 0.100, 0.100, 0.100, 0.080, 0.100)
 CLOCK_ABS_TOLERANCE_S = 1.0e-4
+SAMPLED_5HZ_DATASET_SOURCE = "modelscope_liangzhunew500_sampled_control_targets_5hz"
+SAMPLED_5HZ_MANIPULATION_PROVENANCE = "sampled_control_target_5hz"
+SAMPLED_5HZ_NAVIGATION_PROVENANCE = "sampled_future_base_pose_5hz"
+SAMPLED_5HZ_SOURCE_DATASET_ID = "OscarXu/liangzhuNeW_500"
+SAMPLED_5HZ_SOURCE_REVISION = "6806fadf2e8e125ca871f576676b60e7db1605dc"
+SAMPLED_5HZ_EXECUTION_ROUTES = {
+    "plan_nav_to_pick": JointTrajectoryRoute.NAV_TO_SOURCE,
+    "exec_nav_to_pick": JointTrajectoryRoute.NAV_TO_SOURCE,
+    "verify_pick_reachable": JointTrajectoryRoute.NAV_TO_SOURCE,
+    "plan_pick": JointTrajectoryRoute.PICK,
+    "exec_pick": JointTrajectoryRoute.PICK,
+    "verify_pick_success": JointTrajectoryRoute.PICK,
+    "plan_nav_to_place": JointTrajectoryRoute.NAV_TO_TARGET,
+    "exec_nav_to_place": JointTrajectoryRoute.NAV_TO_TARGET,
+    "verify_place_reachable": JointTrajectoryRoute.NAV_TO_TARGET,
+    "plan_place": JointTrajectoryRoute.PLACE,
+    "exec_place": JointTrajectoryRoute.PLACE,
+}
+SAMPLED_5HZ_CONTROL_ACTION_NAMES = (
+    "base_cmd_vx",
+    "base_cmd_vy",
+    "base_cmd_wz",
+    "arm_joint1_target",
+    "arm_joint2_target",
+    "arm_joint3_target",
+    "arm_joint4_target",
+    "arm_joint5_target",
+    "arm_joint6_target",
+    "gripper_joint7_target",
+    "gripper_joint8_target",
+)
+SAMPLED_5HZ_REQUIRED_JOINTS = tuple(
+    f"arm_joint{index}" for index in range(1, 9)
+)
 
 
 class JointTrajectoryNormalizer:
@@ -286,7 +327,7 @@ def mani_action_from_applied_commands(
             raise ValueError("applied command ticks must be strictly increasing")
         timestamp = float(sample["timestamp_s"])
         if previous_tick >= 0 and (
-            tick - previous_tick != 2
+            tick - previous_tick != 10
             or not math.isclose(
                 timestamp - float(previous_timestamp),
                 MANIPULATION_STRIDE_S,
@@ -294,7 +335,7 @@ def mani_action_from_applied_commands(
                 abs_tol=CLOCK_ABS_TOLERANCE_S,
             )
         ):
-            raise ValueError("Mani applied targets must be aligned at 25 Hz")
+            raise ValueError("Mani applied targets must be aligned at 5 Hz")
         previous_tick = tick
         previous_timestamp = timestamp
         target = _finite_vector(sample["q_command_applied"], 6, "q_command_applied")
@@ -377,7 +418,9 @@ def derive_fresh_joint_trajectory_record(
                 )
             )
     if not prefix:
-        raise ValueError("query has no legal future target in its committed route")
+        raise NoLegalFutureTargetError(
+            "query has no legal future target in its committed route"
+        )
     action = terminal_hold(prefix, domain)
     hold_start = len(prefix) if len(prefix) < ACTION_HORIZON else ACTION_HORIZON
     progress_valid = bool(query.get("physical_progress_valid"))
@@ -476,6 +519,7 @@ def materialize_fresh_joint_trajectory_dataset(
     route_counts: Counter[str] = Counter()
     episode_splits: dict[str, str] = {}
     sample_ids: set[str] = set()
+    dropped_no_future_targets = 0
     try:
         for root_value in episode_roots:
             root = Path(root_value).expanduser().resolve()
@@ -507,9 +551,14 @@ def materialize_fresh_joint_trajectory_dataset(
             if episode_id in episode_splits:
                 raise M0MobileError(f"fresh materialization repeats episode ID: {episode_id}")
             episode_splits[episode_id] = split
-            episode_records = [
-                derive_fresh_joint_trajectory_record(query, controls) for query in queries
-            ]
+            episode_records = []
+            for query in queries:
+                try:
+                    episode_records.append(
+                        derive_fresh_joint_trajectory_record(query, controls)
+                    )
+                except NoLegalFutureTargetError:
+                    dropped_no_future_targets += 1
             _validate_complete_episode_records(episode_records)
             for record in episode_records:
                 sample_id = str(record["sample_id"])
@@ -554,6 +603,7 @@ def materialize_fresh_joint_trajectory_dataset(
             "source": "fresh_applied_joint_commands_only",
             "row_count": sum(split_counts.values()),
             "episode_count": len(episode_splits),
+            "dropped_no_future_target_queries": dropped_no_future_targets,
             "records": records,
             "route_split_counts": dict(sorted(route_counts.items())),
             "normalization_relative_path": "normalization.json",
@@ -577,6 +627,770 @@ def materialize_fresh_joint_trajectory_dataset(
         if staging.exists():
             shutil.rmtree(staging)
         raise
+
+
+def materialize_modelscope_sampled_5hz_dataset(
+    snapshot_root: str | Path,
+    output_root: str | Path,
+) -> Mapping[str, Any]:
+    """Publish the pinned 500-episode snapshot using only exact 5 Hz samples.
+
+    Images, measured state, and the sampled control target are joined by the
+    source ``frame_index``, control step, and timestamp.  This adapter neither
+    interpolates missing 50 Hz controls nor reads CuRobo planning artifacts.
+    """
+
+    snapshot = Path(snapshot_root).expanduser().resolve()
+    output = Path(output_root).expanduser().resolve()
+    if output.exists():
+        raise FileExistsError(f"joint-trajectory output already exists: {output}")
+    entries, snapshot_manifest_sha256 = _sampled_5hz_snapshot_entries(snapshot)
+    split_by_index = _sampled_5hz_episode_splits(entries)
+    staging = output.with_name(f".{output.name}.{uuid.uuid4().hex}.staging")
+    staging.mkdir(parents=True)
+    streams = {
+        split: (staging / f"{split}.jsonl").open("x", encoding="utf-8")
+        for split in ("train", "val", "test")
+    }
+    split_counts: Counter[str] = Counter()
+    split_episode_counts: Counter[str] = Counter()
+    route_counts: Counter[str] = Counter()
+    sample_ids: set[str] = set()
+    archive_hashes: dict[str, str] = {}
+    dropped_no_future_targets = 0
+    copied_image_count = 0
+    try:
+        entries_by_archive: dict[str, list[Mapping[str, Any]]] = {}
+        for entry in entries:
+            entries_by_archive.setdefault(str(entry["archive"]), []).append(entry)
+        for archive_number, archive_relative in enumerate(
+            sorted(entries_by_archive), start=1
+        ):
+            archive_path = snapshot / archive_relative
+            archive_hashes[archive_relative] = _sha256(archive_path)
+            with tarfile.open(archive_path, mode="r:") as archive:
+                members = {member.name: member for member in archive.getmembers()}
+                for entry in entries_by_archive[archive_relative]:
+                    index = int(entry["index"])
+                    episode_id = f"liangzhunew500-{index:06d}"
+                    split = split_by_index[index]
+                    source_prefix = str(entry["member_path"]).rstrip("/") + "/"
+                    episode = _read_sampled_5hz_tar_episode(
+                        archive,
+                        members,
+                        source_prefix,
+                        expected_frame_count=int(entry["frame_count"]),
+                    )
+                    records, dropped = _derive_sampled_5hz_episode_records(
+                        episode,
+                        episode_id=episode_id,
+                        split=split,
+                    )
+                    dropped_no_future_targets += dropped
+                    _validate_complete_episode_records(records)
+                    copied: set[str] = set()
+                    for record in records:
+                        sample_id = str(record["sample_id"])
+                        if sample_id in sample_ids:
+                            raise M0MobileError(
+                                f"sampled 5 Hz materialization repeats sample ID: {sample_id}"
+                            )
+                        sample_ids.add(sample_id)
+                        for key in ("head_images", "wrist_images"):
+                            converted = []
+                            for value in record[key]:
+                                source_relative = _safe_sampled_relative(str(value))
+                                destination_relative = (
+                                    Path("assets") / episode_id / source_relative
+                                )
+                                converted.append(destination_relative.as_posix())
+                                source_name = source_prefix + source_relative.as_posix()
+                                if source_name not in copied:
+                                    _copy_tar_asset(
+                                        archive,
+                                        members,
+                                        source_name,
+                                        staging / destination_relative,
+                                    )
+                                    copied.add(source_name)
+                                    copied_image_count += 1
+                            record[key] = converted
+                        json.dump(
+                            record,
+                            streams[split],
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                        streams[split].write("\n")
+                        split_counts[split] += 1
+                        route_counts[f"{split}:{record['route']}"] += 1
+                    split_episode_counts[split] += 1
+            print(
+                f"verified and materialized archive {archive_number}/20",
+                flush=True,
+            )
+        for stream in streams.values():
+            stream.flush()
+            os.fsync(stream.fileno())
+            stream.close()
+        expected_episode_counts = {"train": 400, "val": 50, "test": 50}
+        if dict(split_episode_counts) != expected_episode_counts:
+            raise M0MobileError(
+                "sampled 5 Hz split episode counts are not exactly 400/50/50"
+            )
+        normalizer = JointTrajectoryNormalizer.fit(
+            _read_jsonl(staging / "train.jsonl")
+        )
+        normalization_path = staging / "normalization.json"
+        normalization_path.write_text(
+            json.dumps(normalizer.payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        records = {
+            split: {
+                "relative_path": f"{split}.jsonl",
+                "row_count": split_counts[split],
+                "episode_count": split_episode_counts[split],
+                "sha256": _sha256(staging / f"{split}.jsonl"),
+            }
+            for split in streams
+        }
+        manifest = {
+            "schema_version": DATASET_SCHEMA_VERSION,
+            "profile": DATASET_PROFILE,
+            "dataset_id": "joint-trajectory-liangzhunew500-sampled-5hz-v1",
+            "immutable": True,
+            "source": SAMPLED_5HZ_DATASET_SOURCE,
+            "source_dataset_id": SAMPLED_5HZ_SOURCE_DATASET_ID,
+            "source_revision": SAMPLED_5HZ_SOURCE_REVISION,
+            "source_snapshot_manifest_sha256": snapshot_manifest_sha256,
+            "source_archive_sha256": dict(sorted(archive_hashes.items())),
+            "source_episode_count": 500,
+            "source_sample_rate_hz": 5.0,
+            "source_control_rate_hz": 50.0,
+            "alignment": "exact_frame_index_control_step_timestamp_no_interpolation",
+            "navigation_action_provenance": SAMPLED_5HZ_NAVIGATION_PROVENANCE,
+            "manipulation_action_provenance": SAMPLED_5HZ_MANIPULATION_PROVENANCE,
+            "gripper_target_mapping": "mean_then_clip_source_joint_range_0.00_0.04m_to_0.0_1.0",
+            "manipulation_action_stride_s": MANIPULATION_STRIDE_S,
+            "manipulation_horizon_s": ACTION_HORIZON * MANIPULATION_STRIDE_S,
+            "physical_progress_supervision": "unavailable_masked",
+            "row_count": sum(split_counts.values()),
+            "episode_count": sum(split_episode_counts.values()),
+            "split_episode_counts": dict(split_episode_counts),
+            "dropped_no_future_target_queries": dropped_no_future_targets,
+            "copied_image_count": copied_image_count,
+            "records": records,
+            "route_split_counts": dict(sorted(route_counts.items())),
+            "normalization_relative_path": "normalization.json",
+            "normalization_sha256": _sha256(normalization_path),
+            "normalizer_id": normalizer.payload["normalizer_id"],
+        }
+        (staging / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(staging, output)
+        return {
+            **manifest,
+            "dataset_root": str(output),
+            "manifest_sha256": _sha256(output / "manifest.json"),
+        }
+    except Exception:
+        for stream in streams.values():
+            if not stream.closed:
+                stream.close()
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+
+def _sampled_5hz_snapshot_entries(
+    snapshot: Path,
+) -> tuple[tuple[Mapping[str, Any], ...], str]:
+    if not snapshot.is_dir():
+        raise M0MobileError(f"ModelScope snapshot root does not exist: {snapshot}")
+    manifest_path = snapshot / "manifest.ndjson"
+    stats = _read_json(snapshot / "snapshot_stats.json")
+    entries = tuple(_read_jsonl(manifest_path))
+    if (
+        stats.get("schema_version") != "liangzhu_success_snapshot_v1"
+        or stats.get("episode_count") != 500
+        or stats.get("archive_count") != 20
+        or stats.get("episodes_per_archive") != 25
+        or stats.get("all_success") is not True
+        or stats.get("all_training_quality_gate_passed") is not True
+    ):
+        raise M0MobileError("liangzhuNeW_500 snapshot statistics are incompatible")
+    if len(entries) != 500:
+        raise M0MobileError("liangzhuNeW_500 must contain exactly 500 manifest rows")
+    archive_counts: Counter[str] = Counter()
+    member_paths: set[str] = set()
+    for expected_index, entry in enumerate(entries):
+        if (
+            entry.get("index") != expected_index
+            or entry.get("success") is not True
+            or entry.get("training_quality_gate_passed") is not True
+            or not isinstance(entry.get("frame_count"), int)
+            or int(entry["frame_count"]) <= 0
+        ):
+            raise M0MobileError(
+                f"invalid liangzhuNeW_500 manifest row {expected_index}"
+            )
+        archive_relative = _safe_sampled_relative(str(entry.get("archive", "")))
+        if (
+            archive_relative.parts[:1] != ("data",)
+            or archive_relative.suffix != ".tar"
+        ):
+            raise M0MobileError("snapshot manifest references a non-data archive")
+        archive_name = archive_relative.as_posix()
+        archive_counts[archive_name] += 1
+        if not (snapshot / archive_relative).is_file():
+            raise M0MobileError(f"snapshot archive is missing: {archive_name}")
+        member_path = _safe_sampled_relative(str(entry.get("member_path", ""))).as_posix()
+        if member_path in member_paths:
+            raise M0MobileError(f"snapshot repeats member path: {member_path}")
+        member_paths.add(member_path)
+    if len(archive_counts) != 20 or set(archive_counts.values()) != {25}:
+        raise M0MobileError("liangzhuNeW_500 must contain 20 archives of 25 episodes")
+    return entries, _sha256(manifest_path)
+
+
+def _sampled_5hz_episode_splits(
+    entries: Sequence[Mapping[str, Any]],
+) -> Mapping[int, str]:
+    ranked = sorted(
+        entries,
+        key=lambda entry: hashlib.sha256(
+            (
+                "conveyorvla-liangzhunew500-split-v1|"
+                + str(entry["index"])
+                + "|"
+                + str(entry["member_path"])
+                + "|"
+                + str(entry.get("seed"))
+            ).encode("utf-8")
+        ).hexdigest(),
+    )
+    result = {}
+    for rank, entry in enumerate(ranked):
+        result[int(entry["index"])] = (
+            "train" if rank < 400 else "val" if rank < 450 else "test"
+        )
+    return result
+
+
+def _read_sampled_5hz_tar_episode(
+    archive: tarfile.TarFile,
+    members: Mapping[str, tarfile.TarInfo],
+    prefix: str,
+    *,
+    expected_frame_count: int,
+) -> Mapping[str, Any]:
+    task = _read_tar_json(archive, members, prefix + "task.json")
+    summary = _read_tar_json(archive, members, prefix + "summary.json")
+    source_manifest = _read_tar_json(
+        archive, members, prefix + "lerobot_manifest.json"
+    )
+    samples = tuple(_read_tar_jsonl(archive, members, prefix + "samples.jsonl"))
+    frames = tuple(_read_tar_jsonl(archive, members, prefix + "frames.jsonl"))
+    if summary.get("frame_count") != expected_frame_count:
+        raise M0MobileError(
+            f"snapshot summary frame count mismatch for {prefix}: "
+            f"{summary.get('frame_count')} != {expected_frame_count}"
+        )
+    if summary.get("success") is not True or summary.get("failure_reason"):
+        raise M0MobileError(f"source episode is not successful: {prefix}")
+    for name in (
+        "execution_provenance_verified",
+        "training_quality_gate_passed",
+        "training_visual_source_verified",
+    ):
+        if summary.get(name) is not True:
+            raise M0MobileError(f"source episode lacks {name}: {prefix}")
+    if source_manifest.get("raw_episode_ready") is not True:
+        raise M0MobileError(f"source raw episode is not ready: {prefix}")
+    if source_manifest.get("sampled_frame_count") != len(samples):
+        raise M0MobileError(f"source sampled frame count is inconsistent: {prefix}")
+    if (
+        source_manifest.get("vla_training_action_available") is not False
+        or source_manifest.get("vla_training_ineligibility_reason")
+        != "lerobot_export_not_training_ready"
+    ):
+        raise M0MobileError(f"source VLA export declaration changed: {prefix}")
+    if source_manifest.get("camera_keys") != ["front", "wrist"]:
+        raise M0MobileError(f"source camera order is incompatible: {prefix}")
+    if source_manifest.get("missing_camera_keys") != []:
+        raise M0MobileError(f"source episode has missing cameras: {prefix}")
+    synchronization = _mapping(
+        source_manifest.get("camera_state_synchronization"),
+        "camera_state_synchronization",
+    )
+    if synchronization.get("verified") is not True or synchronization.get(
+        "error_count"
+    ) != 0:
+        raise M0MobileError(f"source camera/state synchronization failed: {prefix}")
+    frequency = _mapping(source_manifest.get("frequency_report"), "frequency_report")
+    if frequency != {
+        "physics_dt": 0.0025,
+        "physics_hz": 400.0,
+        "control_dt": 0.02,
+        "control_hz": 50.0,
+        "dataset_fps": 5.0,
+        "capture_every_n_control_steps": 10,
+        "sampling_mode": "fixed_dataset_time_grid",
+    }:
+        raise M0MobileError(f"source episode clock contract changed: {prefix}")
+    if source_manifest.get("control_action_schema") != (
+        "base_velocity_arm_joint_gripper_targets_v1"
+    ) or tuple(source_manifest.get("control_action_names", ())) != (
+        SAMPLED_5HZ_CONTROL_ACTION_NAMES
+    ):
+        raise M0MobileError(f"source control action schema changed: {prefix}")
+    training_action = _mapping(task.get("training_action"), "task.training_action")
+    if (
+        training_action.get("enabled") is not True
+        or training_action.get("source_gripper_joint_range_m") != [0.0, 0.04]
+    ):
+        raise M0MobileError(f"source task action mapping is incompatible: {prefix}")
+    instruction = str(task.get("instruction", "")).strip()
+    if not instruction:
+        raise M0MobileError(f"source task instruction is missing: {prefix}")
+    return {
+        "instruction": instruction,
+        "samples": samples,
+        "frames": frames,
+        "members": members,
+        "prefix": prefix,
+    }
+
+
+def _derive_sampled_5hz_episode_records(
+    episode: Mapping[str, Any],
+    *,
+    episode_id: str,
+    split: str,
+) -> tuple[list[dict[str, Any]], int]:
+    samples = tuple(episode["samples"])
+    frames = tuple(episode["frames"])
+    aligned = _align_sampled_5hz_rows(samples, frames)
+    route_by_index = {
+        index: SAMPLED_5HZ_EXECUTION_ROUTES[str(sample.get("pipeline_state", ""))]
+        for index, (sample, _frame, _observation) in enumerate(aligned)
+        if str(sample.get("pipeline_state", "")) in SAMPLED_5HZ_EXECUTION_ROUTES
+    }
+    collapsed: list[JointTrajectoryRoute] = []
+    for index in sorted(route_by_index):
+        route = route_by_index[index]
+        if not collapsed or collapsed[-1] is not route:
+            collapsed.append(route)
+    if tuple(collapsed) != tuple(JointTrajectoryRoute):
+        raise M0MobileError(
+            f"sampled 5 Hz source does not contain four ordered execution routes: {episode_id}"
+        )
+    route_first_indices = {
+        route: min(index for index, candidate in route_by_index.items() if candidate is route)
+        for route in JointTrajectoryRoute
+    }
+    transitions = []
+    for old, new in zip(tuple(JointTrajectoryRoute), tuple(JointTrajectoryRoute)[1:]):
+        new_index = route_first_indices[new]
+        transitions.append(
+            (
+                old,
+                new,
+                float(samples[new_index]["timestamp"]),
+                f"{episode_id}:{old.value}->{new.value}",
+            )
+        )
+    records: list[dict[str, Any]] = []
+    dropped = 0
+    for index, route in sorted(route_by_index.items()):
+        if index == 0:
+            raise M0MobileError("sampled 5 Hz execution row has no visual history")
+        source, _frame, observation = aligned[index]
+        history, _history_frame, _history_observation = aligned[index - 1]
+        source_time = float(source["timestamp"])
+        if not math.isclose(
+            source_time - float(history["timestamp"]),
+            HISTORY_SPAN_S,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        ):
+            raise M0MobileError("sampled 5 Hz visual history is not exactly 0.20 s")
+        domain = action_domain(route)
+        prefix = []
+        for future_index in range(index + 1, min(len(aligned), index + ACTION_HORIZON + 1)):
+            if route_by_index.get(future_index) is not route:
+                break
+            future, _future_frame, _future_observation = aligned[future_index]
+            expected_offset = future_index - index
+            if not math.isclose(
+                float(future["timestamp"]) - source_time,
+                MANIPULATION_STRIDE_S * expected_offset,
+                rel_tol=0.0,
+                abs_tol=1.0e-9,
+            ):
+                raise M0MobileError("sampled 5 Hz future target clock is misaligned")
+            if domain is JointTrajectoryDomain.NAVIGATION:
+                prefix.append(
+                    nav_waypoint_body(source["base_pose"], future["base_pose"])
+                )
+            else:
+                query_q, _query_dq, _query_gripper = _sampled_5hz_joint_state(
+                    observation
+                )
+                action = _finite_vector(future.get("action"), 11, "sample.action")
+                gripper = _sampled_5hz_gripper_target(action[9:11])
+                prefix.append(
+                    tuple(action[axis + 3] - query_q[axis] for axis in range(6))
+                    + (gripper,)
+                )
+        if not prefix:
+            dropped += 1
+            continue
+        action_rows = terminal_hold(prefix, domain)
+        hold_start = len(prefix) if len(prefix) < ACTION_HORIZON else ACTION_HORIZON
+        hold_reason = None
+        if hold_start < ACTION_HORIZON:
+            hold_reason = (
+                "success_tail"
+                if route is JointTrajectoryRoute.PLACE
+                else "boundary"
+            )
+        boundary_transition = None
+        transition_id = None
+        signed_time = None
+        eligible_transitions = []
+        for old, new, boundary_time, candidate_id in transitions:
+            candidate_signed = source_time - boundary_time
+            if (
+                (route is old and candidate_signed < 0.0)
+                or (route is new and candidate_signed >= 0.0)
+            ) and abs(candidate_signed) <= 1.0 + 1.0e-9:
+                eligible_transitions.append(
+                    (abs(candidate_signed), old, new, candidate_signed, candidate_id)
+                )
+        if eligible_transitions:
+            _distance, old, new, signed_time, transition_id = min(
+                eligible_transitions, key=lambda value: value[0]
+            )
+            boundary_transition = f"{old.value}->{new.value}"
+        head_images = [
+            _sampled_5hz_image_path(row, "front") for row in (history, source)
+        ]
+        wrist_images = [
+            _sampled_5hz_image_path(row, "wrist") for row in (history, source)
+        ]
+        q, dq, measured_gripper = _sampled_5hz_joint_state(observation)
+        gripper_values = (
+            []
+            if domain is JointTrajectoryDomain.NAVIGATION
+            else [float(row[6]) for row in action_rows]
+        )
+        record = {
+            "sample_id": f"{episode_id}:frame-{int(source['frame_index']):06d}",
+            "episode_id": episode_id,
+            "split": split,
+            "query_timestamp_s": source_time,
+            "history_timestamps_s": [float(history["timestamp"]), source_time],
+            "global_instruction": str(episode["instruction"]),
+            "head_images": head_images,
+            "wrist_images": wrist_images,
+            "route": route.value,
+            "route_token": ROUTE_TOKENS[route],
+            "assistant_solution": canonical_solution(route),
+            "action_domain": domain.value,
+            "nav_trajectory_body": (
+                [list(row) for row in action_rows]
+                if domain is JointTrajectoryDomain.NAVIGATION
+                else None
+            ),
+            "mani_delta_q_gripper": (
+                [list(row) for row in action_rows]
+                if domain is JointTrajectoryDomain.MANIPULATION
+                else None
+            ),
+            "mani_state": (
+                None
+                if domain is JointTrajectoryDomain.NAVIGATION
+                else [*q, *dq, measured_gripper]
+            ),
+            "action_provenance": (
+                SAMPLED_5HZ_NAVIGATION_PROVENANCE
+                if domain is JointTrajectoryDomain.NAVIGATION
+                else SAMPLED_5HZ_MANIPULATION_PROVENANCE
+            ),
+            "action_valid_mask": [True] * ACTION_HORIZON,
+            "terminal_hold_start_index": hold_start,
+            "terminal_hold_reason": hold_reason,
+            "transition_window": boundary_transition is not None,
+            "boundary_transition": boundary_transition,
+            "transition_id": transition_id,
+            "boundary_signed_time_s": signed_time,
+            "physical_progress": None,
+            "physical_progress_valid": False,
+            "physical_progress_provenance": None,
+            "progress_bucket": None,
+            "gripper_transition": (
+                bool(gripper_values)
+                and max(gripper_values) - min(gripper_values) > 1.0e-3
+            ),
+        }
+        validate_joint_trajectory_record(record)
+        records.append(record)
+    return records, dropped
+
+
+def _align_sampled_5hz_rows(
+    samples: Sequence[Mapping[str, Any]],
+    frames: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], ...]:
+    frame_by_index: dict[int, Mapping[str, Any]] = {}
+    for frame in frames:
+        frame_index = frame.get("dataset_frame_index")
+        if frame_index is None:
+            continue
+        index = _nonnegative_integer(frame_index, "dataset_frame_index")
+        if index in frame_by_index:
+            raise M0MobileError(f"source repeats dataset frame index {index}")
+        frame_by_index[index] = frame
+    if len(frame_by_index) != len(samples):
+        raise M0MobileError("source sampled frames and sample rows are not one-to-one")
+    result = []
+    previous_step = None
+    previous_time = None
+    for expected_index, sample in enumerate(samples):
+        frame_index = _nonnegative_integer(sample.get("frame_index"), "frame_index")
+        step = _nonnegative_integer(sample.get("simulation_step"), "simulation_step")
+        timestamp = float(sample.get("timestamp", float("nan")))
+        if frame_index != expected_index or not math.isfinite(timestamp):
+            raise M0MobileError("source sample index/timestamp sequence is invalid")
+        if previous_step is not None and (
+            step - previous_step != 10
+            or not math.isclose(
+                timestamp - float(previous_time), 0.2, rel_tol=0.0, abs_tol=1.0e-9
+            )
+        ):
+            raise M0MobileError("source samples are not uniformly aligned at 5 Hz")
+        previous_step, previous_time = step, timestamp
+        frame = frame_by_index.get(frame_index)
+        if frame is None or frame.get("pipeline_state") != sample.get("pipeline_state"):
+            raise M0MobileError("source sample/frame phase alignment failed")
+        observation = _mapping(frame.get("observation"), "frame.observation")
+        if (
+            observation.get("step_index") != step
+            or not math.isclose(
+                float(observation.get("timestamp", float("nan"))),
+                timestamp,
+                rel_tol=0.0,
+                abs_tol=1.0e-9,
+            )
+        ):
+            raise M0MobileError("source observation is not the camera-aligned pre-action state")
+        _assert_vector_close(
+            sample.get("base_pose"),
+            observation.get("robot_root_pose"),
+            7,
+            "sample/frame base pose",
+        )
+        q, dq, gripper = _sampled_5hz_joint_state(observation)
+        del q, dq, gripper
+        if not math.isclose(
+            float(sample.get("gripper_position", float("nan"))),
+            _sampled_5hz_measured_gripper_m(observation),
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        ):
+            raise M0MobileError("source sample/frame measured gripper alignment failed")
+        if sample.get("camera_state_synchronized") is not True:
+            raise M0MobileError("source sample camera/state synchronization is false")
+        for camera in ("front", "wrist"):
+            camera_frame = _mapping(
+                _mapping(sample.get("camera_frames"), "camera_frames").get(camera),
+                f"camera_frames.{camera}",
+            )
+            if (
+                camera_frame.get("frame_index") != frame_index
+                or camera_frame.get("state_step") != step
+                or camera_frame.get("camera_capture_step") != step
+                or not math.isclose(
+                    float(camera_frame.get("timestamp", float("nan"))),
+                    timestamp,
+                    rel_tol=0.0,
+                    abs_tol=1.0e-9,
+                )
+            ):
+                raise M0MobileError(f"source {camera} camera/sample alignment failed")
+            _sampled_5hz_image_path(sample, camera)
+        route = SAMPLED_5HZ_EXECUTION_ROUTES.get(str(sample.get("pipeline_state", "")))
+        if route is not None:
+            sampled_action = _finite_vector(sample.get("action"), 11, "sample.action")
+            frame_action = _mapping(frame.get("action"), "frame.action")
+            _assert_vector_close(
+                sampled_action[:3],
+                frame_action.get("base_velocity"),
+                3,
+                "sample/frame base action",
+            )
+            if action_domain(route) is JointTrajectoryDomain.MANIPULATION:
+                if any(value != 0.0 for value in sampled_action[:3]):
+                    raise M0MobileError("sampled Mani base action must be exactly zero")
+                if frame_action.get("arm_joint_positions") is not None:
+                    _assert_vector_close(
+                        sampled_action[3:9],
+                        frame_action.get("arm_joint_positions"),
+                        6,
+                        "sample/frame arm target",
+                    )
+                metadata = _mapping(frame_action.get("metadata"), "frame.action.metadata")
+                if metadata.get("gripper_joint_positions") is not None:
+                    _assert_vector_close(
+                        sampled_action[9:11],
+                        metadata.get("gripper_joint_positions"),
+                        2,
+                        "sample/frame gripper target",
+                    )
+                _sampled_5hz_gripper_target(sampled_action[9:11])
+        result.append((sample, frame, observation))
+    return tuple(result)
+
+
+def _sampled_5hz_joint_state(
+    observation: Mapping[str, Any],
+) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+    metadata = _mapping(observation.get("metadata"), "observation.metadata")
+    names = metadata.get("joint_names")
+    if isinstance(names, (str, bytes)) or not isinstance(names, Sequence):
+        raise M0MobileError("source observation joint names are missing")
+    index = {str(name): offset for offset, name in enumerate(names)}
+    missing = [name for name in SAMPLED_5HZ_REQUIRED_JOINTS if name not in index]
+    if missing:
+        raise M0MobileError("source observation is missing joints: " + ", ".join(missing))
+    positions = _finite_vector(
+        observation.get("joint_positions"), len(names), "observation.joint_positions"
+    )
+    velocities = _finite_vector(
+        observation.get("joint_velocities"), len(names), "observation.joint_velocities"
+    )
+    q = tuple(positions[index[name]] for name in SAMPLED_5HZ_REQUIRED_JOINTS[:6])
+    dq = tuple(velocities[index[name]] for name in SAMPLED_5HZ_REQUIRED_JOINTS[:6])
+    gripper_positions = tuple(positions[index[name]] for name in SAMPLED_5HZ_REQUIRED_JOINTS[6:])
+    if any(not -1.0e-3 <= value <= 0.05 for value in gripper_positions):
+        raise M0MobileError("source measured gripper is outside its physical range")
+    gripper = min(1.0, max(0.0, sum(gripper_positions) / 2.0 / 0.04))
+    return q, dq, gripper
+
+
+def _sampled_5hz_measured_gripper_m(observation: Mapping[str, Any]) -> float:
+    metadata = _mapping(observation.get("metadata"), "observation.metadata")
+    names = tuple(str(name) for name in metadata.get("joint_names", ()))
+    index = {name: offset for offset, name in enumerate(names)}
+    positions = _finite_vector(
+        observation.get("joint_positions"), len(names), "observation.joint_positions"
+    )
+    try:
+        return sum(positions[index[name]] for name in SAMPLED_5HZ_REQUIRED_JOINTS[6:]) / 2.0
+    except KeyError as error:
+        raise M0MobileError("source observation is missing gripper joints") from error
+
+
+def _sampled_5hz_gripper_target(values: Sequence[float]) -> float:
+    target = _finite_vector(values, 2, "sample gripper target")
+    if any(not -1.0e-3 <= value <= 0.05 for value in target):
+        raise M0MobileError("sample gripper target exceeds the [0, 0.04] m tolerance")
+    return min(1.0, max(0.0, sum(target) / 2.0 / 0.04))
+
+
+def _sampled_5hz_image_path(sample: Mapping[str, Any], camera: str) -> str:
+    frame = _mapping(
+        _mapping(sample.get("camera_frames"), "camera_frames").get(camera),
+        f"camera_frames.{camera}",
+    )
+    return _safe_sampled_relative(str(frame.get("raw_image_path", ""))).as_posix()
+
+
+def _read_tar_json(
+    archive: tarfile.TarFile,
+    members: Mapping[str, tarfile.TarInfo],
+    name: str,
+) -> Mapping[str, Any]:
+    member = members.get(name)
+    if member is None or not member.isfile():
+        raise M0MobileError(f"snapshot archive lacks required file: {name}")
+    source = archive.extractfile(member)
+    if source is None:
+        raise M0MobileError(f"snapshot archive member is unreadable: {name}")
+    try:
+        return _mapping(json.load(source), name)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise M0MobileError(f"snapshot JSON is invalid: {name}: {error}") from error
+
+
+def _read_tar_jsonl(
+    archive: tarfile.TarFile,
+    members: Mapping[str, tarfile.TarInfo],
+    name: str,
+) -> Iterable[Mapping[str, Any]]:
+    member = members.get(name)
+    if member is None or not member.isfile():
+        raise M0MobileError(f"snapshot archive lacks required file: {name}")
+    source = archive.extractfile(member)
+    if source is None:
+        raise M0MobileError(f"snapshot archive member is unreadable: {name}")
+    for line_number, line in enumerate(source, start=1):
+        if line.strip():
+            try:
+                yield _mapping(json.loads(line), f"{name}:{line_number}")
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise M0MobileError(
+                    f"snapshot JSONL is invalid: {name}:{line_number}: {error}"
+                ) from error
+
+
+def _copy_tar_asset(
+    archive: tarfile.TarFile,
+    members: Mapping[str, tarfile.TarInfo],
+    source_name: str,
+    destination: Path,
+) -> None:
+    member = members.get(source_name)
+    if member is None or not member.isfile():
+        raise M0MobileError(f"snapshot image is missing: {source_name}")
+    source = archive.extractfile(member)
+    if source is None:
+        raise M0MobileError(f"snapshot image is unreadable: {source_name}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("xb") as output:
+        shutil.copyfileobj(source, output, length=1024 * 1024)
+
+
+def _safe_sampled_relative(value: str) -> Path:
+    relative = Path(value)
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise M0MobileError(f"unsafe snapshot-relative path: {value!r}")
+    return relative
+
+
+def _assert_vector_close(
+    left: Any,
+    right: Any,
+    length: int,
+    name: str,
+    *,
+    tolerance: float = 1.0e-6,
+) -> None:
+    first = _finite_vector(left, length, name)
+    second = _finite_vector(right, length, name)
+    if any(
+        not math.isclose(a, b, rel_tol=0.0, abs_tol=tolerance)
+        for a, b in zip(first, second, strict=True)
+    ):
+        raise M0MobileError(f"{name} differs")
 
 
 def validate_joint_trajectory_record(
@@ -640,6 +1454,11 @@ def validate_joint_trajectory_record(
         fixed_action(nav, domain)
         if manipulation is not None or state is not None:
             raise ValueError("NAV record exposes Mani action/state")
+        if record.get("action_provenance") not in {
+            "teacher_base_reference",
+            SAMPLED_5HZ_NAVIGATION_PROVENANCE,
+        }:
+            raise ValueError("NAV action provenance is unsupported")
     else:
         rows = fixed_action(manipulation, domain)
         mani_state(state)
@@ -647,8 +1466,11 @@ def validate_joint_trajectory_record(
             raise ValueError("Mani record exposes NAV action")
         if any(not 0.0 <= row[6] <= 1.0 for row in rows):
             raise ValueError("Mani gripper action must stay within [0, 1]")
-        if record.get("action_provenance") != "controller_applied_after_saturation":
-            raise ValueError("Mani action lacks applied-command provenance")
+        if record.get("action_provenance") not in {
+            "controller_applied_after_saturation",
+            SAMPLED_5HZ_MANIPULATION_PROVENANCE,
+        }:
+            raise ValueError("Mani action provenance is unsupported")
 
     hold_start = _bounded_integer(
         record.get("terminal_hold_start_index"),
@@ -728,10 +1550,10 @@ def _validate_joint_target_step(
     if any(
         abs(after - before) > limit + 1.0e-9
         for before, after, limit in zip(
-            left, right, JOINT_TARGET_STEP_LIMIT_25HZ, strict=True
+            left, right, JOINT_TARGET_STEP_LIMIT_5HZ, strict=True
         )
     ):
-        raise ValueError("Mani 25 Hz applied joint target exceeds the collection envelope")
+        raise ValueError("Mani 5 Hz applied joint target exceeds the collection envelope")
 
 
 def _validate_complete_episode_records(records: Sequence[Mapping[str, Any]]) -> None:
@@ -757,9 +1579,9 @@ def _validate_complete_episode_records(records: Sequence[Mapping[str, Any]]) -> 
         transition_ids = {str(record.get("transition_id")) for record in matching}
         before = sum(float(record["boundary_signed_time_s"]) < 0.0 for record in matching)
         after = sum(float(record["boundary_signed_time_s"]) >= 0.0 for record in matching)
-        if len(transition_ids) != 1 or before < 2 or after < 2:
+        if len(transition_ids) != 1 or before < 1 or after < 1:
             raise M0MobileError(
-                f"fresh episode needs one {transition} event with at least two before/after rows"
+                f"fresh episode needs one {transition} event with before/after rows"
             )
 
 
@@ -773,6 +1595,8 @@ class ConveyorVLAJointTrajectoryDataset:
         self.manifest = _read_json(self.root / "manifest.json")
         if self.manifest.get("schema_version") != DATASET_SCHEMA_VERSION:
             raise M0MobileError("joint-trajectory dataset schema is incompatible")
+        if self.manifest.get("profile") != DATASET_PROFILE:
+            raise M0MobileError("joint-trajectory dataset profile is incompatible")
         records = _mapping(self.manifest.get("records"), "records")
         info = _mapping(records.get(split), f"records.{split}")
         self.path = self.root / str(info.get("relative_path", ""))
@@ -901,10 +1725,44 @@ def audit_joint_trajectory_dataset(root: str | Path) -> dict[str, Any]:
     problems: list[str] = []
     if manifest.get("schema_version") != DATASET_SCHEMA_VERSION:
         problems.append("dataset schema is incompatible")
+    if manifest.get("profile") != DATASET_PROFILE:
+        problems.append("dataset profile is incompatible")
     if manifest.get("immutable") is not True:
         problems.append("dataset manifest is not immutable")
-    if manifest.get("source") != "fresh_applied_joint_commands_only":
-        problems.append("dataset source is not fresh applied commands")
+    if manifest.get("source") != SAMPLED_5HZ_DATASET_SOURCE:
+        problems.append("dataset source is not the sampled 5 Hz ModelScope snapshot")
+    if manifest.get("source_dataset_id") != SAMPLED_5HZ_SOURCE_DATASET_ID:
+        problems.append("source dataset ID is incompatible")
+    if manifest.get("source_revision") != SAMPLED_5HZ_SOURCE_REVISION:
+        problems.append("source dataset revision is incompatible")
+    if manifest.get("source_episode_count") != 500:
+        problems.append("source dataset must contain exactly 500 episodes")
+    if manifest.get("source_sample_rate_hz") != 5.0:
+        problems.append("source sample rate must be exactly 5 Hz")
+    if manifest.get("alignment") != (
+        "exact_frame_index_control_step_timestamp_no_interpolation"
+    ):
+        problems.append("dataset does not prove exact non-interpolated alignment")
+    if manifest.get("manipulation_action_stride_s") != MANIPULATION_STRIDE_S:
+        problems.append("dataset manipulation stride is incompatible")
+    if manifest.get("manipulation_horizon_s") != ACTION_HORIZON * MANIPULATION_STRIDE_S:
+        problems.append("dataset manipulation horizon is incompatible")
+    if manifest.get("gripper_target_mapping") != (
+        "mean_then_clip_source_joint_range_0.00_0.04m_to_0.0_1.0"
+    ):
+        problems.append("dataset gripper target mapping is incompatible")
+    archive_hashes = manifest.get("source_archive_sha256")
+    if (
+        not isinstance(archive_hashes, Mapping)
+        or len(archive_hashes) != 20
+        or any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in archive_hashes.values()
+        )
+    ):
+        problems.append("source archive hash inventory is invalid")
     if not str(manifest.get("dataset_id", "")).strip():
         problems.append("dataset ID is missing")
     records = _mapping(manifest.get("records"), "records")
@@ -913,6 +1771,7 @@ def audit_joint_trajectory_dataset(root: str | Path) -> dict[str, Any]:
     episode_splits: dict[str, set[str]] = {}
     sample_ids: set[str] = set()
     row_count = 0
+    split_episode_counts: Counter[str] = Counter()
     for split in ("train", "val", "test"):
         info = _mapping(records.get(split), f"records.{split}")
         path = dataset_root / str(info.get("relative_path", ""))
@@ -928,6 +1787,20 @@ def audit_joint_trajectory_dataset(root: str | Path) -> dict[str, Any]:
             except (TypeError, ValueError) as error:
                 problems.append(f"{split}:{line_number}: {error}")
                 continue
+            route = JointTrajectoryRoute(str(record["route"]))
+            expected_provenance = (
+                SAMPLED_5HZ_NAVIGATION_PROVENANCE
+                if action_domain(route) is JointTrajectoryDomain.NAVIGATION
+                else SAMPLED_5HZ_MANIPULATION_PROVENANCE
+            )
+            if record.get("action_provenance") != expected_provenance:
+                problems.append(
+                    f"{split}:{line_number}: action provenance does not match sampled 5 Hz source"
+                )
+            if record.get("physical_progress_valid") is not False:
+                problems.append(
+                    f"{split}:{line_number}: unavailable physical progress must be masked"
+                )
             sample_id = str(record["sample_id"])
             if sample_id in sample_ids:
                 problems.append(f"duplicate sample ID: {sample_id}")
@@ -944,6 +1817,10 @@ def audit_joint_trajectory_dataset(root: str | Path) -> dict[str, Any]:
             episode_splits.setdefault(str(record["episode_id"]), set()).add(split)
         if split_row_count != int(info.get("row_count", -1)):
             problems.append(f"manifest {split} row_count does not match records")
+        split_episode_count = sum(split in values for values in episode_splits.values())
+        split_episode_counts[split] = split_episode_count
+        if split_episode_count != int(info.get("episode_count", -1)):
+            problems.append(f"manifest {split} episode_count does not match records")
     for split in ("train", "val", "test"):
         for route in JointTrajectoryRoute:
             if route_counts[f"{split}:{route.value}"] == 0:
@@ -971,6 +1848,8 @@ def audit_joint_trajectory_dataset(root: str | Path) -> dict[str, Any]:
         problems.append("manifest row_count does not match records")
     if len(episode_splits) != int(manifest.get("episode_count", -1)):
         problems.append("manifest episode_count does not match records")
+    if dict(split_episode_counts) != manifest.get("split_episode_counts"):
+        problems.append("manifest split_episode_counts do not match records")
     if manifest.get("route_split_counts") != dict(sorted(route_counts.items())):
         problems.append("manifest route_split_counts do not match records")
     return {
@@ -1141,12 +2020,14 @@ __all__ = [
     "FORBIDDEN_MODEL_KEYS",
     "JointTrajectoryNormalizer",
     "MODEL_BATCH_KEYS",
+    "NoLegalFutureTargetError",
     "PROGRESS_PROVENANCE",
     "TERMINAL_HOLD_REASONS",
     "audit_joint_trajectory_dataset",
     "derive_fresh_joint_trajectory_record",
     "mani_action_from_applied_commands",
     "materialize_fresh_joint_trajectory_dataset",
+    "materialize_modelscope_sampled_5hz_dataset",
     "normalization_identity",
     "progress_bucket",
     "validate_applied_control_sample",
