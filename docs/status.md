@@ -1,5 +1,17 @@
 # 当前状态、证据与剩余门禁
 
+## 2026-09-05：当前 5 Hz 正式模型
+
+`Manipulation_Navi_v1` 的最终 `step_002414` 已完成训练和全量 validation/test 开环。
+Test episode 等权路由准确率 98.33%、NAV ADE 4.19cm、六关节 MAE 0.0466rad；
+裁剪事件率 10.90%，未通过 ≤0.5% 门槛。闭环仍在运行，不能报告最终完整任务成功率。
+带精确快照时间、95% 区间及失败分类的结果见[实验卡](experiments/formal_5hz_20260905.md)。
+现行 Mani 为 10 点 ×0.20s，实际 M0 DiT 采样 4 步；开发入口见[指南](joint_trajectory_development_guide.md)。
+
+## 历史状态归档：下文截至 2026-08-28
+
+下文保留当时的证据与未完成事项，不表示当前 5 Hz 模型仍未训练，也不修改其历史合同。
+
 最后复核：2026-08-28 CST。冻结的 Waypoint v1 runtime/eval 基线为
 `feature/conveyorvla-waypoint-v1@cfed498eff780d390426962f309a3002173e9ed3`，durable
 checkpoint 为 `step_002000@a8d57a22c515`。Waypoint v2 最新根因、修正和训练决策见

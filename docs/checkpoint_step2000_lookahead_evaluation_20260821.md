@@ -152,7 +152,7 @@ artifacts/evaluation/waypoint_step002000_lookahead_20260821T033113Z/
 远端 run root 为：
 
 ```text
-/diff/wallx_workspace/dzb/runs/conveyorvla-waypoint-v1-step2000-lookahead-eval-20260821T033113Z
+artifacts/runs/conveyorvla-waypoint-v1-step2000-lookahead-eval-20260821T033113Z
 ```
 
 评测结束后仅停止本次创建的服务/tmux。GPU 0/1 服务均已退出，四张 H20 回到

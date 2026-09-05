@@ -1,5 +1,9 @@
 # 数据、训练与测评操作
 
+本文保留 Waypoint v1/v2 的历史操作命令。当前 Joint-Trajectory 5 Hz 的训练和复现见
+[开发指南](joint_trajectory_development_guide.md)，正式测试见[评估操作](formal_joint_trajectory_evaluation.md)。
+历史 GPU 分配不表示当前资源可用；不同合同的 checkpoint、数据与命令不能混用。
+
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
 `cfed498eff780d390426962f309a3002173e9ed3`。当前 step 2000 checkpoint 的训练 source
 为 `a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。所有命令从干净仓库根目录执行，输出必须
@@ -81,7 +85,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   scripts/train_waypoint.py \
   --dataset-root "$WAYPOINT_DATASET" \
   --output-dir "$WAYPOINT_RUN/output" \
-  --model-root /diff/wallx_workspace/dzb/models/base \
+  --model-root artifacts/models/base \
   --config configs/waypoint_v1.json \
   --max-steps 10000 \
   --batch-size 3 \
@@ -118,7 +122,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch \
   scripts/train_waypoint.py \
   --dataset-root "$WAYPOINT_DATASET" \
   --output-dir "$WAYPOINT_RESUME_RUN/output" \
-  --model-root /diff/wallx_workspace/dzb/models/base \
+  --model-root artifacts/models/base \
   --config configs/waypoint_v1.json \
   --resume-from "$WAYPOINT_CHECKPOINT" \
   --max-steps 10000 \

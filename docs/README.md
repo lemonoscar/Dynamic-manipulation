@@ -1,32 +1,33 @@
 # ConveyorVLA 文档索引
 
-更新时间：2026-08-28。Waypoint v1/v2 的旧数据、checkpoint 和合同继续作为冻结复现基线；
-新的 direct-joint successor 已在 `Manipulation_Navi_v1` 分支完成代码候选、Isaac 接口接线
-和启动级门禁，并审计了 4 条 Gate-A review episode，但尚无冻结的正式数据 release、overfit、
-正式训练或真实控制闭环证据。review 样本只证明 schema/时序可审计性，不代替正式规模与覆盖
-门禁。
-远端实时状态必须在任何操作前重新核验，本文档索引中的历史 GPU 状态不得用于资源判断。
+更新：2026-09-05。当前分支 `Manipulation_Navi_v1` 已完成 ABot-M0 Joint-Trajectory 5 Hz
+正式训练与全量 validation/test 开环。裁剪事件率未通过 ≤0.5% 门槛，迁移闭环仍在运行。
+历史文档中的“尚未训练”、Mani 0.04s 或不同动作头语义仅适用于其注明版本。
 
-## 权威性顺序
+## 当前开发与实验入口
 
-出现冲突时按以下顺序判断：
+- [开发指南](joint_trajectory_development_guide.md)：模块地图、输入/动作/时钟、安装、训练、测试、外部工件与修改边界。
+- [正式训练与评估实验卡](experiments/formal_5hz_20260905.md)：固定模型、完整开环 95% 区间和带时间戳的闭环快照。
+- [正式评估操作](formal_joint_trajectory_evaluation.md)：验证集冻结、test 门禁、服务、任务准备、辅助物理与失败归因。
+- [架构分析](joint_trajectory_architecture_analysis_20260905.md)：源码和轨迹证据、待验证原因、下一轮对照实验。
+- [贡献与提交规则](../CONTRIBUTING.md)：测试、工件排除、不可变实验、分支与提交边界。
+- [SPCGVLA 设计草案](SPCGVLA/README.md)：独立未来模型合同；感知探针不等于点云已经接入正式模型。
+- [停止与保存设计草案](joint_trajectory_stop_and_save_pending_design.md)：pending design，不能当现有能力调用。
+- [2026-09-04 数据/训练准备记录](manipulation_navi_liangzhunew500_readiness_20260904.md)：此次 5 Hz 适配来源，后续完成状态以实验卡为准。
 
-1. [Waypoint Policy v1](conveyorvla_waypoint_policy_contract_v1.md) 与
-   [Waypoint Policy v2](conveyorvla_waypoint_policy_contract_v2.md) 分别决定其冻结数据、
-   checkpoint 和 runtime 的复现语义；新方案不得原地改写它们。
-2. [Joint-Trajectory 训练改进方案](conveyorvla_joint_trajectory_training_improvement_plan.md)
-   决定 `Manipulation_Navi_v1` successor 的目标模型、训练和 runtime 语义。
-3. [Joint-Trajectory 数据采集规范](conveyorvla_joint_trajectory_fresh_data_collection_spec.md)
-   决定 successor 的 raw/derived 数据、采集速度、随机化和质量门禁。
-4. 当前 Git 代码和 resolved config 只证明已经实现的行为；目标方案在代码、测试和 manifest
-   完成前不得宣称已落地。
-5. [当前状态](status.md) 只记录已有证据和未通过门禁，不修改合同。
-6. 本索引中标为“历史”的页面只用于解释来源和失败，不得作为现行启动命令或接口规范。
+- [开发快照发布记录](repository_release_20260905.md)：变更范围、兼容边界、验证、工件及仓库维护缺口。
 
-合同中实施前写下的“尚未实现”等状态句应按第 5 项读取；冻结合同的动作、
-输入和执行决议本身没有被更改。
+## 合同和证据冲突时
 
-## 已批准的 successor 目标
+当前生效实现由 [5 Hz 配置](../configs/manipulation_navi_v1.json)、对应 schema、实际模型构建路径
+和 checkpoint/dataset/source manifest 共同确定。开发指南解释其落点，实验卡只报告已有证据。
+旧 Waypoint v1/v2、早期 0.04s direct-joint 计划和 SPCGVLA 草案各自保留其语义，不能混用。
+任何新设计在代码、测试和绑定证据齐备前均不宣称已实现；改合同需新配置/schema/协议和迁移说明。
+状态页不修改冻结合同，历史 GPU 占用不用于判断当前资源。
+
+以下保留旧索引以便追溯。各页面标题中的“当前”“正式”应结合该页版本和日期阅读。
+
+## 历史：2026-08-28 successor 目标
 
 - [Joint-Trajectory 训练改进方案](conveyorvla_joint_trajectory_training_improvement_plan.md)：
   四 route、无 DONE、NAV `[10,3]@0.20s`、Mani direct-joint `[10,7]@0.04s`、Mani-only
@@ -41,7 +42,7 @@
   NAV→PCT/DWA、direct-joint/continuous-gripper、raw recorder、远端旧 run 停止和真实
   stage/reset smoke；明确 Vulkan/RTX 与真实 control loop 尚未通过。
 
-## 现行文档
+## 历史与其他合同文档
 
 - [Waypoint v2 阶段切换执行与长训计划](waypoint_v2_stage_transition_execution_plan.md)：
   已批准执行；冻结 v1 基线，从全新 v2 schema 开始，依次验证 train/inference suffix

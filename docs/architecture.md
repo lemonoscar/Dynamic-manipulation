@@ -1,5 +1,9 @@
 # 架构说明
 
+本文为 Waypoint v1 的历史架构说明。当前 ABot-M0 Joint-Trajectory 5 Hz 架构见
+[开发指南](joint_trajectory_development_guide.md)和[现有问题分析](joint_trajectory_architecture_analysis_20260905.md)。
+下文最后 16 层特征、DONE 和动作形状属于历史合同。
+
 版本范围：Waypoint Policy v1，runtime/eval 代码基线
 `cfed498eff780d390426962f309a3002173e9ed3`；当前 step 2000 checkpoint 的模型实现绑定
 `a8d57a22c515e46a9ad20be6f6892a067e02b3c3`。批准语义以

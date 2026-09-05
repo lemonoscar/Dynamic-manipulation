@@ -1,0 +1,468 @@
+{
+  "schema": "conveyorvla-public-evaluation-summary-v1",
+  "captured_at_utc": "2026-09-05T13:05:43+00:00",
+  "run_id": "conveyorvla-abot-m0-liangzhunew500-5hz-formal-20260905-r1",
+  "checkpoint_id": "step_002414",
+  "training": {
+    "status": "complete",
+    "optimizer_steps": 2414,
+    "stage_a_steps": 302,
+    "stage_b_steps": 2112,
+    "global_batch": 64,
+    "parameters": 4765863691,
+    "training_git_head": "134cf61fc13b0eca5c9c985812dece556c2ac1ca"
+  },
+  "sources": {
+    "TRAINING_REPORT.md": {
+      "sha256": "62f8805af2a140894a783ed6c37a8ecf7221aaf79f60714e786ad4e93293439e"
+    },
+    "TRAINING_LOG.md": {
+      "sha256": "1ef3e0f5e11802f14ef81a4f8c0af654ecd9d92d2e91ee207594fa587f10db55"
+    },
+    "evaluation/validation_full_v1/report_frozen.json": {
+      "sha256": "0365e3c79602ff4db968480aa2deed0d981f4320a658f696db5d3e5d273adf31"
+    },
+    "evaluation/test_full_v1/report.json": {
+      "sha256": "3996b1653904cf35ef1a5afaeab8fc3b34e1dd41bb1c9cde9b1919026ad4cda6"
+    },
+    "evaluation/closed_test_full_v1/report.json": {
+      "sha256": "1d4e362cbc3fb465646f7b6de8045c17819a5723fc669c5b966f7ffc1809c94c",
+      "mutable_report_snapshot": true
+    }
+  },
+  "open_loop": {
+    "validation": {
+      "status": "complete",
+      "full_split": true,
+      "episodes": 50,
+      "rows": 9587,
+      "protocol_sha256": "563c2054346535a841a1f72988d92a1f84a21338a2140d401ae7cc4341e435d0",
+      "source_sha256": "6acd6c43a7564a8218a56a46b7f956203b6adfee2069bc3979373d605b9d593f",
+      "seeds": [
+        17
+      ],
+      "batch_size": 16,
+      "route_accuracy": {
+        "ci95": [
+          0.982485646733836,
+          0.9887794213808515
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.9858689433481445,
+        "episodes": 50,
+        "sample_mean": 0.9861270470428706,
+        "samples": 9587
+      },
+      "action_coverage": {
+        "ci95": [
+          0.9843464753586109,
+          0.9891553385393728
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.9868420282342728,
+        "episodes": 50,
+        "sample_mean": 0.9869615103786378,
+        "samples": 9587
+      },
+      "xy_ade_m": {
+        "ci95": [
+          0.03920117476210066,
+          0.04650036589049469
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.04274701667074612,
+        "episodes": 50,
+        "sample_mean": 0.04379226732199132,
+        "samples": 6059
+      },
+      "joint_mae_rad": {
+        "ci95": [
+          0.04513773337471645,
+          0.04865745454977356
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.04680755936287333,
+        "episodes": 50,
+        "sample_mean": 0.04678616476506444,
+        "samples": 3403
+      },
+      "gripper_mae": {
+        "ci95": [
+          0.05752883529137277,
+          0.06509859441932091
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.06103916925494625,
+        "episodes": 50,
+        "sample_mean": 0.06102592944748923,
+        "samples": 3403
+      },
+      "saturation_rate": {
+        "ci95": [
+          0.10706365838390003,
+          0.11267051813053047
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.10984330208380783,
+        "episodes": 50,
+        "sample_mean": 0.10990722471768608,
+        "samples": 3403
+      },
+      "saturation_gate": {
+        "oracle": {
+          "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+          "limit": 0.005,
+          "passed": false,
+          "rate": 0.11074708873216337
+        },
+        "predicted": {
+          "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+          "limit": 0.005,
+          "passed": false,
+          "rate": 0.10990722471768608
+        }
+      },
+      "failure_counts": {
+        "cross_domain_route_error_no_comparable_action": 125
+      }
+    },
+    "test": {
+      "status": "complete",
+      "full_split": true,
+      "episodes": 50,
+      "rows": 10056,
+      "protocol_sha256": "563c2054346535a841a1f72988d92a1f84a21338a2140d401ae7cc4341e435d0",
+      "source_sha256": "6acd6c43a7564a8218a56a46b7f956203b6adfee2069bc3979373d605b9d593f",
+      "seeds": [
+        17
+      ],
+      "batch_size": 16,
+      "route_accuracy": {
+        "ci95": [
+          0.977431292985611,
+          0.988155388469683
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.9833457882671265,
+        "episodes": 50,
+        "sample_mean": 0.983392999204455,
+        "samples": 10056
+      },
+      "action_coverage": {
+        "ci95": [
+          0.9816424771166543,
+          0.9890464924759237
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.9855377301152872,
+        "episodes": 50,
+        "sample_mean": 0.9857796340493238,
+        "samples": 10056
+      },
+      "xy_ade_m": {
+        "ci95": [
+          0.038292006381870664,
+          0.045930462667186735
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.041901894453494126,
+        "episodes": 50,
+        "sample_mean": 0.0431165646045191,
+        "samples": 6511
+      },
+      "joint_mae_rad": {
+        "ci95": [
+          0.044159330924787354,
+          0.049565282591754176
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.046606458744188985,
+        "episodes": 50,
+        "sample_mean": 0.046532687918562216,
+        "samples": 3402
+      },
+      "gripper_mae": {
+        "ci95": [
+          0.06011852050028792,
+          0.07189425078485337
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.06506403401291326,
+        "episodes": 50,
+        "sample_mean": 0.06497598705358851,
+        "samples": 3402
+      },
+      "saturation_rate": {
+        "ci95": [
+          0.10547484020995643,
+          0.11201641114032398
+        ],
+        "ci_method": "episode_cluster_percentile_bootstrap",
+        "episode_mean": 0.1089122646518844,
+        "episodes": 50,
+        "sample_mean": 0.10896531452087008,
+        "samples": 3402
+      },
+      "saturation_gate": {
+        "oracle": {
+          "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+          "limit": 0.005,
+          "passed": false,
+          "rate": 0.10865104444535642
+        },
+        "predicted": {
+          "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+          "limit": 0.005,
+          "passed": false,
+          "rate": 0.10896531452087008
+        }
+      },
+      "failure_counts": {
+        "cross_domain_route_error_no_comparable_action": 141,
+        "invalid_route_or_subtask": 2
+      }
+    }
+  },
+  "identity": {
+    "checkpoint_id": "step_002414",
+    "dataset_manifest_sha256": "aa5f0f3dbef18985e3f25c6d98d8ea573f48f398ac2d153bd7857e27b862789d",
+    "dataset_schema_version": "conveyorvla-joint-trajectory-5hz-v1",
+    "global_step": 2414,
+    "max_steps": 2414,
+    "model_contract_id": "conveyorvla-joint-trajectory-policy-5hz-v1",
+    "normalization_sha256": "a8805b21718f7d8bbff6df17b361e1fd2cdf8f15ec9f70294add188500d22725",
+    "normalizer_id": "joint-trajectory-normalizer:44ee9d21bfd916587c23161e",
+    "policy_config_sha256": "2a14e44d9644f25b397314a2066d212a9f19b86e1f5a8eabe240f04d2d050503",
+    "resolved_run_sha256": "5865d0d78862406a9ea25923b6feca910c48819b4385dc1c11608027ea5145ae",
+    "run_kind": "formal",
+    "schema_version": "conveyorvla-joint-trajectory-checkpoint-v1",
+    "stage_a_steps": 302,
+    "weights_sha256": "d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9"
+  },
+  "closed_loop": {
+    "allocated_attempts": 300,
+    "completed_attempts": 36,
+    "environment": "IsaacSim5.1_migration_from_Sim6",
+    "manifest_sha256": "d554dc2518b31829ea193c4c3ba37f8817253bcc7d3b06cc35512024dddf38dc",
+    "profiles": {
+      "no_grasp_assist": {
+        "attempts_with_model_queries": 18,
+        "attempts_without_model_queries": 0,
+        "carry_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "contract_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "contract_success_on_queried_attempts": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "drop_rate": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "failure_counts": {
+          "dwa_control_failed:ValueError:zero-size array to reduction operation minimum which has no identity": 2,
+          "pct_planning_failed:ValueError:PCT endpoint snap exceeds the joint-trajectory limit": 16
+        },
+        "failure_route_counts": {
+          "NAV_TO_SOURCE": 17,
+          "NAV_TO_TARGET": 1
+        },
+        "inference_freezes_simulation": true,
+        "inference_latency_s_p50_p95_p99": [
+          0.6406810684129596,
+          0.7269513891078532,
+          0.7578827921301127
+        ],
+        "interpretation": "Allocated-attempt rates include startup failures. No model capability conclusion when no model queries ran.",
+        "pick_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "predicted_chunk_saturation_rate": 0.07326343381389253,
+        "pure_physics": false,
+        "release_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "saturation_gate": {
+          "denominator": 7630,
+          "events": 559,
+          "passed": false,
+          "threshold": 0.005
+        },
+        "transfer_chain_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        }
+      },
+      "source_assisted": {
+        "attempts_with_model_queries": 18,
+        "attempts_without_model_queries": 0,
+        "carry_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "contract_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "contract_success_on_queried_attempts": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "drop_rate": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "failure_counts": {
+          "pct_planning_failed:ValueError:PCT endpoint snap exceeds the joint-trajectory limit": 17,
+          "query_limit_exhausted": 1
+        },
+        "failure_route_counts": {
+          "NAV_TO_SOURCE": 17,
+          "PICK": 1
+        },
+        "inference_freezes_simulation": true,
+        "inference_latency_s_p50_p95_p99": [
+          0.6502594873309135,
+          0.7559600451029838,
+          0.8509010494686664
+        ],
+        "interpretation": "Allocated-attempt rates include startup failures. No model capability conclusion when no model queries ran.",
+        "pick_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "predicted_chunk_saturation_rate": 0.06532258064516129,
+        "pure_physics": false,
+        "release_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        },
+        "saturation_gate": {
+          "denominator": 8680,
+          "events": 567,
+          "passed": false,
+          "threshold": 0.005
+        },
+        "transfer_chain_success": {
+          "ci95": [
+            2.7755575615628914e-17,
+            0.3903342879021653
+          ],
+          "ci_method": "Wilson_boundary_envelope_using_episode_count",
+          "episode_mean": 0.0,
+          "episodes": 6,
+          "sample_mean": 0.0,
+          "samples": 18
+        }
+      }
+    },
+    "schema": "formal-closed-loop-report-v1",
+    "smoke": false,
+    "status": "running",
+    "unique_episodes_started_in_completed_subset": 6,
+    "terminal_failure_counts": {
+      "pct_planning_failed:ValueError:PCT endpoint snap exceeds the joint-trajectory limit": 33,
+      "query_limit_exhausted": 1,
+      "dwa_control_failed:ValueError:zero-size array to reduction operation minimum which has no identity": 2
+    },
+    "success_count": 0
+  }
+}

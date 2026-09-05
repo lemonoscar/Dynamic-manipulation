@@ -1,8 +1,15 @@
 # Go2-X5 PCT DogOnly policy provenance
 
-This directory contains the self-contained TorchScript locomotion actor used
-by ConveyorBench. Runtime code must resolve only the files in this directory;
-the source repositories listed below are provenance records, not dependencies.
+This directory versions the contract and provenance of ConveyorBench's
+TorchScript locomotion actor. The weight file is an external artifact and is
+not distributed in the current Git tree. Obtain an authorized copy separately,
+verify its identity below, and place it at `policy.pt` in this directory when
+using the legacy default loader. The file is ignored by Git.
+
+The contract/observation tests run without weights. The installed-artifact hash
+test is explicitly skipped when the file is absent and fails if a present file
+has the wrong identity. Runtime loading continues to require the real file and
+its correct SHA-256; no placeholder actor is substituted.
 
 ## Artifact
 

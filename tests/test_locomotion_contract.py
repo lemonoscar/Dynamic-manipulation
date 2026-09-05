@@ -67,13 +67,11 @@ def _fake_robot(batch_shape=()):
     )
 
 
-def test_contract_and_vendored_policy_are_frozen():
+def test_locomotion_contract_metadata_is_frozen():
     contract = load_contract(CONTRACT_PATH)
 
     assert contract["policy"]["sha256"] == POLICY_SHA256
-    assert contract["policy"]["size_bytes"] == POLICY_PATH.stat().st_size
-    assert verify_policy_hash(POLICY_PATH) == POLICY_SHA256
-    assert hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest() == POLICY_SHA256
+    assert contract["policy"]["size_bytes"] == 1209746
     assert tuple(contract["joints"]["state_order"]) == STATE_JOINT_ORDER
     assert tuple(contract["joints"]["action_order"]) == ACTION_JOINT_ORDER
     assert tuple(contract["default_pose"]["leg"]) == DEFAULT_LEG_POSE
@@ -99,6 +97,17 @@ def test_contract_and_vendored_policy_are_frozen():
     assert height_scan["flat_benchmark_mode"] == (
         "constant_direct_flat_approximation"
     )
+
+
+@pytest.mark.skipif(
+    not POLICY_PATH.is_file(),
+    reason="external locomotion weights not installed; see assets/policies/go2_x5_pct_dog_only/PROVENANCE.md",
+)
+def test_installed_locomotion_policy_matches_frozen_identity():
+    contract = load_contract(CONTRACT_PATH)
+    assert contract["policy"]["size_bytes"] == POLICY_PATH.stat().st_size
+    assert verify_policy_hash(POLICY_PATH) == POLICY_SHA256
+    assert hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest() == POLICY_SHA256
 
 
 def test_observation_slices_are_contiguous_and_cover_260_values():

@@ -3,9 +3,8 @@
   "generated_for": "conveyor-bench-v1",
   "files": {
     "objects/registry.json": "10d116980657d2fa75d8563ad11ae665322f848cc1d9f8f3a64e8552d186cefc",
-    "policies/go2_x5_pct_dog_only/PROVENANCE.md": "200bfc2283a9e562f222ea2290ec1371ac1299e451b06f73be66a3741318c2a5",
+    "policies/go2_x5_pct_dog_only/PROVENANCE.md": "781b0fb0a5403b8aacc0f825ceea45cadfa3389837614370948f0e76fbcf16a6",
     "policies/go2_x5_pct_dog_only/contract.json": "3d4104d838626e53acaf1048e4f5bfe9653b7e430e9985cac8741fb98a9f3f3b",
-    "policies/go2_x5_pct_dog_only/policy.pt": "f02e6467472e90671a28d97cd6dc02ed7fdeb59d2ece18e082f254314558d383",
     "receptacles/ASSET_MANIFEST.json": "636a7e6c5ec9f75c753e8760b695e7d4fca793c533ee6cf3f733de5f360e04dd",
     "robots/go2_x5/ASSET_PROVENANCE.md": "9c615d7ebdbd05cab3d5b3e718e8fbe0721d3b66ba8a6d0f04f2dee0eaa97dba",
     "robots/go2_x5/configuration/go2_x5_base.usd": "68400cedea2c9548b556a238c386e2bf9f1b6729f7eb956cf0a04102cd9cdacc",

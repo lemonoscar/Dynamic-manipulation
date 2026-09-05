@@ -47,9 +47,29 @@ isaac_cache/
 kit/cache/
 kit/logs/
 
-# Generated benchmark datasets, recordings, exports, and reports
+# Canonical local artifact tree.  Keep code/config/docs in Git and keep
+# datasets, checkpoints, runs, environments, dependencies, and bundles here.
 outputs/
 /artifacts/
+*.bundle
+
+# Prevent the legacy scattered workspace layout from reappearing inside the
+# repository.  The compatibility aliases live outside this Git worktree.
+/audits/
+/bundles/
+/caches/
+/datasets/
+/dynamic-isaaclab-*/
+/env-overlays/
+/incoming/
+/models/
+/results/
+/runs/
+/sources/
+/workspace/
+/workspace-manifest/
+/worktrees/
+/.conda-envs/
 # Legacy local outputs left by the pre-flattening layout
 conveyor_bench/outputs/
 
@@ -64,3 +84,55 @@ conveyor_bench/assets_sidecar/
 
 # Strictly local agent/server handoff material; never publish.
 /handoff_private/
+
+# Model weights / exported engines are external artifacts, wherever written.
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.tflite
+*.engine
+*.plan
+*.bin
+*.safetensors.index.json
+*.bin.index.json
+checkpoints/
+weights/
+
+# Training data, run outputs, sensor recordings and downloaded archives.
+/training_runs/
+/data_releases/
+/data/
+wandb/
+tensorboard/
+lightning_logs/
+events.out.tfevents.*
+*.jsonl
+*.ndjson
+*.parquet
+*.arrow
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.bag
+*.mcap
+*.mp4
+*.webm
+*.avi
+*.mov
+*.tar
+*.tar.*
+*.tgz
+*.zip
+*.7z
+
+# Private credentials and local experiment supervisors.
+*.pem
+*.key
+*.p12
+/.agents/
+/.codex/
