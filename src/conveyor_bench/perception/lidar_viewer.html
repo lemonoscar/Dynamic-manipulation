@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Liangzhu LiDAR Viewer</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0e12;color:#e8edf2;font:14px system-ui,sans-serif}
+    canvas{display:block;width:100%;height:100%;cursor:grab} canvas:active{cursor:grabbing}
+    #panel{position:fixed;left:16px;top:16px;width:310px;padding:14px;background:#111820e8;border:1px solid #30404e;border-radius:8px;box-shadow:0 8px 30px #0008}
+    h1{font-size:16px;margin:0 0 10px} .row{display:flex;gap:8px;align-items:center;margin:8px 0}.row label{width:72px;color:#aebdca}
+    input[type=range]{flex:1} select,button{background:#1b2833;color:#eef4f8;border:1px solid #405566;border-radius:4px;padding:5px 8px}
+    button{cursor:pointer}.value{min-width:58px;text-align:right;font-variant-numeric:tabular-nums}.hint{color:#8ea0af;font-size:12px;line-height:1.45;margin-top:10px}
+    #status{color:#8fe0b0;white-space:pre-line}.error{color:#ff8f87!important}
+  </style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+  <h1>Liangzhu LiDAR · 单帧交互查看</h1>
+  <div class="row"><label>扫描帧</label><button id="prev">◀</button><input id="scan" type="range" min="0" value="0"><button id="next">▶</button><span id="scanValue" class="value">0</span></div>
+  <div class="row"><label>着色</label><select id="color"><option value="range">Raw 距离</option><option value="audit">校验标签</option><option id="samOption" value="sam">SAM 3D 分割</option></select></div>
+  <div class="row"><label>点大小</label><input id="size" type="range" min="1" max="8" step="0.5" value="2.5"><span id="sizeValue" class="value">2.5 px</span></div>
+  <div class="row"><button id="reset">重置视角</button></div>
+  <div id="status">正在连接服务器…</div>
+  <div class="hint">左键拖动：旋转　右键/Shift+左键：平移　滚轮：缩放　双击：重置<br>X 前 / Y 左 / Z 上。SAM 色：选中点洋红、其余点灰；校验色：箱1红、箱2绿、可乐蓝、背景灰。二者均不写入 raw。</div>
+</div>
+<script>
+const canvas=document.getElementById('view'), gl=canvas.getContext('webgl',{antialias:true,alpha:false});
+if(!gl) throw new Error('浏览器不支持 WebGL');
+const vs=`attribute vec3 aPosition;attribute vec4 aColor;uniform mat4 uMvp;uniform float uSize;varying vec4 vColor;void main(){gl_Position=uMvp*vec4(aPosition,1.0);gl_PointSize=uSize;vColor=aColor;}`;
+const fs=`precision mediump float;varying vec4 vColor;void main(){vec2 p=gl_PointCoord-vec2(.5);if(dot(p,p)>.25)discard;gl_FragColor=vColor;}`;
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}
+const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vs));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(program);gl.useProgram(program);
+const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+const aPos=gl.getAttribLocation(program,'aPosition'),aColor=gl.getAttribLocation(program,'aColor');
+gl.enableVertexAttribArray(aPos);gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,16,0);gl.enableVertexAttribArray(aColor);gl.vertexAttribPointer(aColor,4,gl.UNSIGNED_BYTE,true,16,12);
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.clearColor(.043,.055,.071,1);
+let pointCount=0,center=[0,0,0],baseRadius=3,yaw=-.8,pitch=.45,distance=7,target=[0,0,0],drag=null,meta=null,loadId=0;
+const $=id=>document.getElementById(id), status=$('status');
+function perspective(fovy,aspect,near,far){const f=1/Math.tan(fovy/2),nf=1/(near-far);return new Float32Array([f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,2*far*near*nf,0])}
+function lookAt(e,c,u){let z=[e[0]-c[0],e[1]-c[1],e[2]-c[2]],zl=Math.hypot(...z);z=z.map(v=>v/zl);let x=[u[1]*z[2]-u[2]*z[1],u[2]*z[0]-u[0]*z[2],u[0]*z[1]-u[1]*z[0]],xl=Math.hypot(...x);x=x.map(v=>v/xl);const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-x[0]*e[0]-x[1]*e[1]-x[2]*e[2],-y[0]*e[0]-y[1]*e[1]-y[2]*e[2],-z[0]*e[0]-z[1]*e[1]-z[2]*e[2],1])}
+function multiply(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o}
+function resetCamera(){yaw=-.8;pitch=.45;distance=Math.max(1,baseRadius*2.3);target=[...center]}
+function resize(){const d=devicePixelRatio||1,w=Math.round(canvas.clientWidth*d),h=Math.round(canvas.clientHeight*d);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}gl.viewport(0,0,w,h)}
+function draw(){resize();gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);const cp=Math.cos(pitch),eye=[target[0]+distance*cp*Math.cos(yaw),target[1]+distance*cp*Math.sin(yaw),target[2]+distance*Math.sin(pitch)];const mvp=multiply(perspective(Math.PI/4,canvas.width/canvas.height,.01,Math.max(100,distance*20)),lookAt(eye,target,[0,0,1]));gl.uniformMatrix4fv(gl.getUniformLocation(program,'uMvp'),false,mvp);gl.uniform1f(gl.getUniformLocation(program,'uSize'),Number($('size').value)*(devicePixelRatio||1));gl.drawArrays(gl.POINTS,0,pointCount);requestAnimationFrame(draw)}
+async function loadScan(){const id=++loadId,pos=Number($('scan').value),color=$('color').value;status.className='';status.textContent='加载当前帧…';try{const response=await fetch(`/api/scan?position=${pos}&color=${color}`,{cache:'no-store'});if(!response.ok)throw new Error((await response.json()).error);const data=await response.arrayBuffer();if(id!==loadId)return;pointCount=Number(response.headers.get('X-Point-Count'));gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);const view=new DataView(data);let lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];for(let i=0;i<pointCount;i++){for(let k=0;k<3;k++){const v=view.getFloat32(i*16+k*4,true);lo[k]=Math.min(lo[k],v);hi[k]=Math.max(hi[k],v)}}center=lo.map((v,k)=>(v+hi[k])/2);baseRadius=Math.max(.2,Math.hypot(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])/2);resetCamera();$('scanValue').textContent=`${pos}/${meta.scan_count-1}`;const counts=JSON.parse(response.headers.get('X-Object-Counts')||'{}');const audit=color==='audit'?`\n背景 ${counts[1]||0} · 箱1 ${counts[2]||0} · 箱2 ${counts[3]||0} · 可乐 ${counts[4]||0}`:'';const sam=color==='sam'?`\nSAM 选中 ${response.headers.get('X-SAM-Selected-Count')||0} 点`:'';status.textContent=`scan #${response.headers.get('X-Scan-Index')} · t=${Number(response.headers.get('X-Sim-Time-S')).toFixed(2)}s\n${pointCount.toLocaleString()} 点 · ${(data.byteLength/1024).toFixed(1)} KiB${audit}${sam}`;}catch(e){status.className='error';status.textContent=String(e)}}
+canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,pan:e.button===2||e.shiftKey};canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointerup',()=>drag=null);canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;if(drag.pan){const s=distance*.0015,right=[-Math.sin(yaw),Math.cos(yaw),0],up=[-Math.sin(pitch)*Math.cos(yaw),-Math.sin(pitch)*Math.sin(yaw),Math.cos(pitch)];for(let k=0;k<3;k++)target[k]+=(-dx*right[k]+dy*up[k])*s}else{yaw-=dx*.006;pitch=Math.max(-1.45,Math.min(1.45,pitch+dy*.006))}});canvas.addEventListener('wheel',e=>{e.preventDefault();distance=Math.max(.05,distance*Math.exp(e.deltaY*.001))},{passive:false});canvas.addEventListener('dblclick',resetCamera);
+$('scan').addEventListener('input',()=>$('scanValue').textContent=$('scan').value);$('scan').addEventListener('change',loadScan);$('color').addEventListener('change',loadScan);$('size').addEventListener('input',()=> $('sizeValue').textContent=`${$('size').value} px`);$('reset').addEventListener('click',resetCamera);$('prev').addEventListener('click',()=>{$('scan').value=Math.max(0,Number($('scan').value)-1);loadScan()});$('next').addEventListener('click',()=>{$('scan').value=Math.min(meta.scan_count-1,Number($('scan').value)+1);loadScan()});
+(async()=>{const r=await fetch('/api/meta');meta=await r.json();$('scan').max=meta.scan_count-1;if(meta.sam_positions.length){$('scan').value=meta.sam_positions[0];$('color').value='sam'}else{$('samOption').remove();$('scan').value=Math.floor((meta.scan_count-1)/2)}await loadScan();draw()})().catch(e=>{status.className='error';status.textContent=String(e)});
+</script>
+</body>
+</html>
