@@ -208,6 +208,18 @@ class PCTDWAJointNavigationExecutor:
                 reason="local_goal_reached" if reached else "two_second_window_complete",
                 trace=trace,
             )
+        if all(math.dist(a, b) <= 1.e-9 for a, b in zip(
+                plan.pct_plan.path_world, plan.pct_plan.path_world[1:])):
+            from .continuous_endpoint import classify_degenerate_path
+            reason = classify_degenerate_path(pose, (goal[0], goal[1], goal[3]),
+                position_tolerance=self.config.goal_tolerance_m,
+                yaw_tolerance=self.config.yaw_tolerance_rad)
+            # A turn needs a sweep/control certificate; a disconnected goal
+            # needs a fresh measured-start connection. Neither is success.
+            return JointNavigationControl(
+                base_velocity=(0., 0., 0.), requires_requery=True,
+                reached_local_goal=False, elapsed_s=max(0., elapsed),
+                reason=reason, trace={**trace, 'dwa_projection_skipped':True})
         raw = self.dwa_controller.command(
             plan.pct_plan.path_world,
             pose,

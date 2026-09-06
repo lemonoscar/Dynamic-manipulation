@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
@@ -187,6 +188,23 @@ def _runtime_step(*, route, navigation=None, manipulation=None, hold=None):
         normalization_sha256="normalizer",
         elapsed_ms=1.0,
     )
+
+
+@pytest.mark.parametrize('current,reason,reached',[
+    ((0.,0.,0.,1.,0.,0.,0.),'local_goal_reached',True),
+    ((0.,0.,0.,math.cos(.5),0.,0.,math.sin(.5)),'validated_in_place_turn_required',False),
+    ((.2,0.,0.,1.,0.,0.,0.),'reconnect_from_measured_pose_required',False),
+])
+def test_collapsed_path_never_reaches_empty_segment_projection(current,reason,reached):
+    class Collapsed:
+        def plan(self,start,goal):
+            return PCTPlan(((0.,0.),(0.,0.)),(0.,0.,0.,0.),0.)
+    dwa=_DWA(); executor=PCTDWAJointNavigationExecutor(Collapsed(),dwa)
+    executor.begin(navigation_reference([[0.,0.,0.]]*10),(0.,0.,0.,1.,0.,0.,0.),timestamp_s=0.)
+    command=executor.command(current,(0.,0.,0.),None,timestamp_s=.02)
+    assert command.requires_requery and command.reached_local_goal is reached
+    assert command.reason==reason and command.base_velocity==(0.,0.,0.)
+    assert not dwa.calls
 
 
 def test_nav_preserves_ten_points_uses_point_ten_and_runs_exact_two_seconds():

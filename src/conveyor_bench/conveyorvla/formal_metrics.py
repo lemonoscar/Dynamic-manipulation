@@ -13,6 +13,13 @@ LIMITS = JointSafetyLimits((-2.618, 0., 0., -1.5708, -1.5708, -1.5708),
                           (3.14, 3.14, 3.14, 1.5708, 1.5708, 1.5708), (3.,) * 6)
 
 
+def saturation_gate(metric):
+    value = metric.get('sample_mean')
+    return {'rate':value, 'limit':.005,
+            'passed':None if value is None else value <= .005,
+            'definition':'(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap'}
+
+
 def trajectory_metrics(route, predicted, target, state, real_points=10):
     nav = action_domain(route) is JointTrajectoryDomain.NAVIGATION
     width = 3 if nav else 7
@@ -179,8 +186,5 @@ def summarize(rows):
     result["saturation_gate"] = {}
     for mode in ("predicted", "oracle"):
         metric = result["actions"][mode]["MANIPULATION"].get("saturation_rate", {})
-        value = metric.get("sample_mean")
-        result["saturation_gate"][mode] = {"rate": value, "limit": .005,
-            "passed": None if value is None else value <= .005,
-            "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap"}
+        result["saturation_gate"][mode] = saturation_gate(metric)
     return result

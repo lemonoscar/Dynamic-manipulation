@@ -7,6 +7,13 @@ from conveyor_bench.conveyorvla.execution_consistency import (
 )
 
 
+def test_frozen_saturation_gate_uses_samples_even_when_episode_mean_crosses_threshold():
+    from conveyor_bench.conveyorvla.formal_metrics import saturation_gate
+    assert saturation_gate({'sample_mean':.006, 'episode_mean':.004})['passed'] is False
+    assert saturation_gate({'sample_mean':.005, 'episode_mean':.006})['passed'] is True
+    assert saturation_gate({})['passed'] is None
+
+
 def test_time_offset_advances_commands_but_keeps_same_state_duration_and_phase():
     phase = [({"timestamp": i*.2, "frame_index": i,
                "action": [0,0,0,i*.1,0,0,0,0,0,.04*(i != 1),.04*(i != 1)]}, {}, {}) for i in range(3)]

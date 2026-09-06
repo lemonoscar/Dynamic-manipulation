@@ -316,6 +316,21 @@ def test_sampled_5hz_derivation_uses_exact_observation_and_next_saved_control():
     assert dropped == 4
 
 
+def test_source_absolute_roundtrip_uses_live_anchor_then_actual_deployment_limits():
+    from conveyor_bench.conveyorvla.execution_consistency import deploy_source_chunk
+    from conveyor_bench.conveyorvla.formal_metrics import LIMITS
+    records = [_record(JointTrajectoryRoute.NAV_TO_SOURCE), _record(JointTrajectoryRoute.PICK)]
+    normalizer = JointTrajectoryNormalizer.fit(records)
+    items = [{'absolute_joint_target':[0.,2.,.2,0.,0.,0.], 'gripper_fraction':.75}]
+    chunk, trace = deploy_source_chunk(items, [0.]*6, normalizer, LIMITS)
+    assert trace['normalizer_roundtrip_max_abs_error'] < 1.e-10
+    assert trace['original_points']==1 and trace['padded_points']==9
+    assert chunk.commands[0].joint_position[1] == pytest.approx(.6)
+    assert chunk.commands[0].gripper_open_fraction == pytest.approx(.75)
+    anchored, _ = deploy_source_chunk(items, [0.,1.8,.2,0.,0.,0.], normalizer, LIMITS)
+    assert anchored.commands[0].joint_position[1] == pytest.approx(2.)
+
+
 def test_train_only_normalizer_roundtrip_and_lazy_batch_state_boundary(tmp_path: Path):
     records = [
         _record(JointTrajectoryRoute.NAV_TO_SOURCE, 0),

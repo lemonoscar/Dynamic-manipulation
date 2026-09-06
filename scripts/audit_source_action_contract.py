@@ -10,7 +10,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 from conveyor_bench.conveyorvla.formal_checkpoint import sha256, write_json, source_identity
-from conveyor_bench.conveyorvla.formal_metrics import LIMITS, cluster_mean
+from conveyor_bench.conveyorvla.formal_metrics import LIMITS, cluster_mean, saturation_gate
 from conveyor_bench.conveyorvla.joint_trajectory_runtime import DirectJointTrajectoryExecutor
 
 
@@ -51,7 +51,10 @@ def main():
               'changed_elements_by_axis_0based': dict(axes), 'changed_elements_by_horizon_1based': dict(horizons),
               'max_joint_change_rad': max(r['max_joint_change_rad'] for r in rows),
               'interpretation': 'Perfect sampled future labels through deployed limits; overlapping chunks are not independent physical trials.'}
-    report['gate_passed'] = report['saturation_rate']['episode_mean'] <= .005
+    report['gate_estimator'] = 'sample_mean (frozen formal gate)'
+    gate = saturation_gate(report['saturation_rate'])
+    report['gate_rate'] = gate['rate']
+    report['gate_passed'] = gate['passed']
     write_json(args.output_dir/'report.json', report)
     print(json.dumps({k:v for k,v in report.items() if k!='source_identity'}, indent=2))
 

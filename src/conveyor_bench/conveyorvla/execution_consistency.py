@@ -17,7 +17,8 @@ from .waypoint_planner_adapters import validate_dwa_inputs
 
 def sampled_phase(samples, frames, phase="exec_pick"):
     aligned = _align_sampled_5hz_rows(samples, frames)
-    indices = [i for i, (sample, _, _) in enumerate(aligned) if sample["pipeline_state"] == phase]
+    phases = {"plan_pick", "exec_pick"} if phase == "pick_with_planning" else {phase}
+    indices = [i for i, (sample, _, _) in enumerate(aligned) if sample["pipeline_state"] in phases]
     if not indices or indices != list(range(indices[0], indices[-1] + 1)):
         raise ValueError("replay phase must be present and contiguous")
     return [aligned[i] for i in indices]
@@ -55,6 +56,31 @@ def planar_pose(value: Sequence[float]):
     if len(result) != 3 or not all(math.isfinite(x) for x in result):
         raise ValueError("pose must be finite (x, y, yaw), not a mixed-unit distance")
     return result
+
+
+def deploy_source_chunk(items, query_joint_position, normalizer, limits):
+    """Encode perfect absolute goals at the live query anchor, roundtrip, limit.
+
+    A short phase tail is padded only to satisfy the ten-point decoder contract;
+    callers execute only the original number of items.
+    """
+    from .joint_trajectory_runtime import DirectJointTrajectoryExecutor
+    if not 1 <= len(items) <= 10:
+        raise ValueError('source chunk must contain 1..10 targets')
+    q = np.asarray(query_joint_position, dtype=float)
+    absolute = np.array([[*v['absolute_joint_target'], v['gripper_fraction']] for v in items])
+    absolute = np.concatenate([absolute, np.repeat(absolute[-1:],10-len(items),axis=0)])
+    relative = absolute.copy(); relative[:,:6] -= q
+    normalized = normalizer.normalize_action('PICK', relative)
+    recovered = normalizer.denormalize_action('PICK', normalized)
+    decoded = DirectJointTrajectoryExecutor(limits).prepare(q, recovered)
+    return decoded, {'contract':'query-relative-normalizer-decoder-limits-v2',
+                     'query_joint_position':q.tolist(), 'raw_absolute_targets':absolute.tolist(),
+                     'normalizer_roundtrip_max_abs_error':float(np.max(np.abs(np.array(recovered)-relative))),
+                     'original_points':len(items), 'padded_points':10-len(items),
+                     'position_events':decoded.position_saturation_count,
+                     'rate_events':decoded.rate_saturation_count,
+                     'gripper_events':decoded.gripper_saturation_count}
 
 
 def navigation_decomposition(*, nominal, requested, planned, measured=None, reached=False):
