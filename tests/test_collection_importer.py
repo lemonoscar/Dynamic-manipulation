@@ -38,3 +38,15 @@ def test_measured_state_does_not_use_command_gate():
     assert obs.gripper==1.0001
     np.testing.assert_allclose(pose_matrix([1,2,3,1,0,0,0])[:3,3],[1,2,3])
     assert action_route('exec_nav_to_place')=='NAV_TO_TARGET'
+
+
+def test_causal_application_tail_is_checked_separately_from_label_tail(tmp_path):
+    import pytest
+    root=fixture(tmp_path/'tail')
+    # Query .2 has its final 5 Hz label at 2.0, but application continues until 2.2.
+    mutate(root/'control_effective_50hz.jsonl',lambda rows:rows.__delitem__(slice(106,None)))
+    ep=RawEpisode(root)
+    with pytest.raises(ValueError,match='actual application tail'):
+        ep.action_view('o10',profile='causal_command_5hz')
+    assert action_route('verify_pick_reachable')=='NAV_TO_SOURCE'
+    assert action_route('verify_place_reachable')=='NAV_TO_TARGET'

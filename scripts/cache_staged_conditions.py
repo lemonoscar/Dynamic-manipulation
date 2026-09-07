@@ -18,7 +18,7 @@ def main(argv=None):
     p.add_argument('--max-rows',type=int,default=0)
     a=p.parse_args(argv)
     if a.output.exists():raise ValueError('condition cache output must be new')
-    manifest=json.loads((a.release/'manifest.json').read_text())
+    manifest=json.loads((a.release/'manifest.json').read_text(encoding='utf-8'))
     if manifest['schema']!='staged-release-v2':raise ValueError('unsupported release')
     for name,expected in manifest['files'].items():
         if digest(a.release/name)!=expected:raise ValueError('release checksum mismatch')
@@ -30,7 +30,7 @@ def main(argv=None):
     with torch.inference_mode():
         for index,row in enumerate(rows):
             started=time.perf_counter()
-            episode=Path(row['episode_root']);task=json.loads((episode/'task.json').read_text())
+            episode=Path(row['episode_root']);task=json.loads((episode/'task.json').read_text(encoding='utf-8'))
             instruction=task.get('original_instruction',task.get('base_instruction',task.get('instruction')));primitive=row['route']
             if not instruction:raise ValueError('missing source instruction')
             # New data does not supervise nonexistent PLACE retreat.

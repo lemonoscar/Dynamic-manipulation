@@ -35,6 +35,8 @@ def base_xyyaw(pose):
 
 
 def action_route(phase):
+    if phase=='verify_pick_reachable':return 'NAV_TO_SOURCE'
+    if phase=='verify_place_reachable':return 'NAV_TO_TARGET'
     return ('NAV_TO_SOURCE' if 'nav_to_pick' in phase else 'NAV_TO_TARGET' if 'nav_to_place' in phase
         else 'PICK' if 'pick' in phase else 'PLACE' if 'place' in phase else 'VERIFY')
 

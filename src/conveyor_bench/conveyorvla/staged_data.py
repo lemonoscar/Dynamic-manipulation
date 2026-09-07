@@ -150,7 +150,10 @@ class RawEpisode:
             raise ValueError('missing task/epoch action label identity')
         targets, sources = [], []
         # Quarantine the entire real interval, not just decimated label points.
-        end_time = p.target_times(obs.time_s)[-1]
+        apply_end = obs.time_s + p.horizon*p.sample_period_s
+        if self.times[-1]+p.control_period_s < apply_end-1e-7:
+            raise ValueError('missing actual application tail; no invented terminal hold')
+        end_time = max(p.target_times(obs.time_s)[-1],apply_end-p.control_period_s)
         channels = ('arm_target', 'gripper_target') if raw['primitive'] in {'PICK', 'PLACE'} else ('base_twist',)
         for control in self.controls:
             if obs.time_s-1e-8 <= control['clock']['sim_time_s'] <= end_time+1e-8:
