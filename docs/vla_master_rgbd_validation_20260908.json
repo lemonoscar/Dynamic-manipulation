@@ -513,5 +513,195 @@
     "causal planner query labeling and model semantic adaptation",
     "depth benefit training and evaluation",
     "strict contact/full transfer/realtime capability"
-  ]
+  ],
+  "failed_B_real_import": {
+    "schema": "collection-import-validation-v1",
+    "episode": "/diff/wallx_workspace/dzb/data_releases/master_rgbd_B_failure_20260908/episode",
+    "source_commit": "43c996935143768fb1508f8be544abf63c3c7d59",
+    "import_audit": {
+      "version": "collection-to-staged-v1",
+      "source_depth_metadata_conflicts": 0,
+      "measured_gripper_out_of_range": 154,
+      "command_gripper_out_of_range": 5,
+      "command_gripper_out_of_range_ticks": [
+        {
+          "tick": 458,
+          "master_m": 0.04028264060616493,
+          "fraction": 1.0070660151541233
+        },
+        {
+          "tick": 459,
+          "master_m": 0.040279321372509,
+          "fraction": 1.006983034312725
+        },
+        {
+          "tick": 460,
+          "master_m": 0.04025689885020256,
+          "fraction": 1.006422471255064
+        },
+        {
+          "tick": 461,
+          "master_m": 0.04019847512245178,
+          "fraction": 1.0049618780612946
+        },
+        {
+          "tick": 462,
+          "master_m": 0.04008946195244789,
+          "fraction": 1.0022365488111973
+        }
+      ],
+      "task_status": "unresolved_not_used_for_training",
+      "intervention_kinds": [
+        "command_inhibition",
+        "runtime_assistance_state"
+      ],
+      "unknown_intervention_ticks": [],
+      "declared_physical_assistance_events": [
+        {
+          "control_tick": 0,
+          "reset_generation": 1,
+          "sim_time_s": 0.0,
+          "kind": "runtime_assistance_state",
+          "before": null,
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 7,
+          "reset_generation": 1,
+          "sim_time_s": 0.14,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 20,
+          "reset_generation": 1,
+          "sim_time_s": 0.4,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 256,
+          "reset_generation": 1,
+          "sim_time_s": 5.12,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 412,
+          "reset_generation": 1,
+          "sim_time_s": 8.24,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        }
+      ],
+      "controls": 704,
+      "camera_samples": 704,
+      "observation_rows": 1408,
+      "source_file_hashes": {
+        "manifest.json": "315c844f60c55f208a8352edf67feef229a324ae86bb9e426efeaafaba4f9922",
+        "task.json": "8544a1ac1426598b22c6dd5c738def48f61bc3b20389d762a9016279217a9f19",
+        "observations.jsonl": "bfcca8b385adc397229d8bb33fecf0ebe9e4c908aa2bd72c1d68165e42fdcfb8",
+        "control_effective_50hz.jsonl": "a22efc8a54d079ce1303faf8935346a1138f6cc2b4415ea0d0d18209d0fdb6c7",
+        "samples.jsonl": "4545f9f34edb49126c5cfbe013f1165d940f56276c6a246b2043119288573e73",
+        "interventions.jsonl": "8fb83b37a49cb38461f8d0ecf7ee885841708cb0517b44ed1a57ca7bcf33547a",
+        "task_events.jsonl": "138720006e0db32201db18da495ccccc08ca3e92a11f3916856db128cd751308"
+      }
+    },
+    "action_rows": 253,
+    "route_counts": {
+      "NAV_TO_SOURCE": 99,
+      "PICK": 154
+    },
+    "quarantine_counts": {
+      "future interval crosses task identity/epoch boundary": 99,
+      "intervened control interval is not action-only": 109,
+      "effective_gripper_outside_calibrated_range inside real interval": 85,
+      "missing actual application tail; no invented terminal hold": 99
+    },
+    "decoded_assets": 2816,
+    "depth_records": 1408,
+    "planner_rows": 0,
+    "golden_sha256": "ee21769eb7948e9f5c1aa8dcd9fdcf6f4c69697f25b7cadfb28003a8db27fad9",
+    "asset_hashes_sha256": "3a9499633cf5acc50477d6b840427c8e78a986113c1344f7b1b6f427cb01a968",
+    "cross_machine_golden_compared": false,
+    "physical_capability_evidence": false
+  },
+  "sim6_physical_preparation": {
+    "status": "implemented_cpu_tested_not_physically_run",
+    "review": "C reviewed clock/state/queue/identity/limits boundaries",
+    "cpu_focused_tests": 25,
+    "cpu_focused_failures": 0,
+    "source_reference_sha": "f7e25ca68f3b59334adabaf9dbdfa23fca4cf644",
+    "source_task_sha256": "56120ac61aa4b39b7db96a62c2c5936fc7ce36550d41d3b4a46e274a44f343ba",
+    "entry_sha256": "a791c1fc07dcf834ddb4f2cec449c3357a8c871f43eff99929c7857e93690409",
+    "physical_trajectories": 0,
+    "cross_machine_rtt_measured": false
+  }
 }

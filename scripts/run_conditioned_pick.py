@@ -36,6 +36,18 @@ class PolicyCameraGrid(runner.TemporalJPEGBuffer):
 
 def pipeline_type(options):
     class ConditionedPickPipeline(runner.JointTrajectoryRolloutPipeline):
+        def _source_initialization(self):
+            source=json.loads((options.source_episode/'summary.json').read_text())
+            phase=sampled_phase([json.loads(x) for x in (options.source_episode/'samples.jsonl').open()],
+                                [json.loads(x) for x in (options.source_episode/'frames.jsonl').open()])
+            return source['seed'], phase[0][2]
+
+        def _initialize_state(self, simulation, observation):
+            return initialize_source_state(simulation, observation)
+
+        def _initial_gripper_fraction(self):
+            return measured_named_joint_state(self.simulation.read()).gripper_open_fraction
+
         def _measured_hold(self, source):
             if self.physics is None or not self.physics.armed:
                 return super()._measured_hold(source)
@@ -84,11 +96,7 @@ def pipeline_type(options):
                 if health.get('protocol_version')!=PROTOCOL or health.get('weights_sha256')!=WEIGHTS_SHA or not health.get('strict_load'):
                     raise ValueError('diagnostic service checkpoint/protocol mismatch')
                 summary['model_identity']=health
-                source=json.loads((options.source_episode/'summary.json').read_text())
-                phase=sampled_phase([json.loads(x) for x in (options.source_episode/'samples.jsonl').open()],
-                                    [json.loads(x) for x in (options.source_episode/'frames.jsonl').open()])
-                observation=phase[0][2]
-                self.episode_seed=source['seed']
+                self.episode_seed, observation = self._source_initialization()
                 self.config=replace(self.config,video=replace(self.config.video,fps=float(options.video_fps)))
                 summary['recording_fps']=options.video_fps
                 summary['policy_camera_sample_hz']=5
@@ -97,7 +105,7 @@ def pipeline_type(options):
                 if options.record_contacts:
                     probe=IsaacGraspContactProbe(base_simulation,self._record)
                     base_simulation.read_grasp_contacts=probe.read
-                summary['initialization']=initialize_source_state(base_simulation,observation)
+                summary['initialization']=self._initialize_state(base_simulation,observation)
                 base_simulation._runtime.sim.forward()
                 summary['source_state_render_sync']=base_simulation._render_without_physics(
                     valid_state_step=int(base_simulation.read().step_index),
@@ -108,7 +116,7 @@ def pipeline_type(options):
                     'max_velocity':robot.root_physx_view.get_dof_max_velocities()[0].tolist()}
                 self.physics=FormalPhysics(base_simulation,'no_grasp_assist',self._record)
                 self.simulation=self.physics;self.physics.arm()
-                self.physics.previous_fraction=self.physics.command_fraction=measured_named_joint_state(self.simulation.read()).gripper_open_fraction
+                self.physics.previous_fraction=self.physics.command_fraction=self._initial_gripper_fraction()
                 self.frames=PolicyCameraGrid(separation_steps=10,jpeg_quality=self.jpeg_quality)
                 self._camera_states.clear();self._last_query_camera_step=None
                 # Build a real t-.2,t history after initialization; no old navigation image is reused.
