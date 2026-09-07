@@ -703,5 +703,460 @@
     "entry_sha256": "a791c1fc07dcf834ddb4f2cec449c3357a8c871f43eff99929c7857e93690409",
     "physical_trajectories": 0,
     "cross_machine_rtt_measured": false
+  },
+  "R_success_real_import": {
+    "schema": "collection-import-validation-v1",
+    "episode": "/diff/wallx_workspace/dzb/data_releases/master_rgbd_R_success_20260908/episode",
+    "source_commit": "f7e25ca68f3b59334adabaf9dbdfa23fca4cf644",
+    "import_audit": {
+      "version": "collection-to-staged-v1",
+      "source_depth_metadata_conflicts": 0,
+      "measured_gripper_out_of_range": 513,
+      "command_gripper_out_of_range": 34,
+      "command_gripper_out_of_range_ticks": [
+        {
+          "tick": 519,
+          "master_m": 0.040001317858695984,
+          "fraction": 1.0000329464673996
+        },
+        {
+          "tick": 520,
+          "master_m": 0.040001317858695984,
+          "fraction": 1.0000329464673996
+        },
+        {
+          "tick": 521,
+          "master_m": 0.040001314133405685,
+          "fraction": 1.0000328533351421
+        },
+        {
+          "tick": 522,
+          "master_m": 0.04000131040811539,
+          "fraction": 1.0000327602028847
+        },
+        {
+          "tick": 523,
+          "master_m": 0.04000129923224449,
+          "fraction": 1.0000324808061123
+        },
+        {
+          "tick": 524,
+          "master_m": 0.0400012843310833,
+          "fraction": 1.0000321082770824
+        },
+        {
+          "tick": 525,
+          "master_m": 0.04000126197934151,
+          "fraction": 1.0000315494835377
+        },
+        {
+          "tick": 526,
+          "master_m": 0.04000123590230942,
+          "fraction": 1.0000308975577354
+        },
+        {
+          "tick": 527,
+          "master_m": 0.04000120237469673,
+          "fraction": 1.0000300593674183
+        },
+        {
+          "tick": 528,
+          "master_m": 0.04000116139650345,
+          "fraction": 1.0000290349125862
+        },
+        {
+          "tick": 529,
+          "master_m": 0.04000111296772957,
+          "fraction": 1.0000278241932392
+        },
+        {
+          "tick": 530,
+          "master_m": 0.04000106081366539,
+          "fraction": 1.0000265203416348
+        },
+        {
+          "tick": 531,
+          "master_m": 0.040001001209020615,
+          "fraction": 1.0000250302255154
+        },
+        {
+          "tick": 532,
+          "master_m": 0.04000093787908554,
+          "fraction": 1.0000234469771385
+        },
+        {
+          "tick": 533,
+          "master_m": 0.04000087082386017,
+          "fraction": 1.0000217705965042
+        },
+        {
+          "tick": 534,
+          "master_m": 0.040000803768634796,
+          "fraction": 1.00002009421587
+        },
+        {
+          "tick": 535,
+          "master_m": 0.040000732988119125,
+          "fraction": 1.0000183247029781
+        },
+        {
+          "tick": 536,
+          "master_m": 0.040000658482313156,
+          "fraction": 1.000016462057829
+        },
+        {
+          "tick": 537,
+          "master_m": 0.040000587701797485,
+          "fraction": 1.0000146925449371
+        },
+        {
+          "tick": 538,
+          "master_m": 0.040000513195991516,
+          "fraction": 1.000012829899788
+        },
+        {
+          "tick": 539,
+          "master_m": 0.040000446140766144,
+          "fraction": 1.0000111535191536
+        },
+        {
+          "tick": 540,
+          "master_m": 0.04000037908554077,
+          "fraction": 1.0000094771385193
+        },
+        {
+          "tick": 541,
+          "master_m": 0.0400003157556057,
+          "fraction": 1.0000078938901424
+        },
+        {
+          "tick": 542,
+          "master_m": 0.04000025615096092,
+          "fraction": 1.000006403774023
+        },
+        {
+          "tick": 543,
+          "master_m": 0.040000203996896744,
+          "fraction": 1.0000050999224186
+        },
+        {
+          "tick": 544,
+          "master_m": 0.04000015929341316,
+          "fraction": 1.000003982335329
+        },
+        {
+          "tick": 545,
+          "master_m": 0.04000011831521988,
+          "fraction": 1.000002957880497
+        },
+        {
+          "tick": 546,
+          "master_m": 0.040000081062316895,
+          "fraction": 1.0000020265579224
+        },
+        {
+          "tick": 547,
+          "master_m": 0.040000054985284805,
+          "fraction": 1.0000013746321201
+        },
+        {
+          "tick": 548,
+          "master_m": 0.040000032633543015,
+          "fraction": 1.0000008158385754
+        },
+        {
+          "tick": 549,
+          "master_m": 0.04000001773238182,
+          "fraction": 1.0000004433095455
+        },
+        {
+          "tick": 550,
+          "master_m": 0.040000006556510925,
+          "fraction": 1.0000001639127731
+        },
+        {
+          "tick": 551,
+          "master_m": 0.04000000283122063,
+          "fraction": 1.0000000707805157
+        },
+        {
+          "tick": 653,
+          "master_m": 0.040001414716243744,
+          "fraction": 1.0000353679060936
+        }
+      ],
+      "task_status": "unresolved_not_used_for_training",
+      "intervention_kinds": [
+        "command_inhibition",
+        "runtime_assistance_state"
+      ],
+      "unknown_intervention_ticks": [],
+      "declared_physical_assistance_events": [
+        {
+          "control_tick": 0,
+          "reset_generation": 1,
+          "sim_time_s": 0.0,
+          "kind": "runtime_assistance_state",
+          "before": null,
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 7,
+          "reset_generation": 1,
+          "sim_time_s": 0.14,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 20,
+          "reset_generation": 1,
+          "sim_time_s": 0.4,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 335,
+          "reset_generation": 1,
+          "sim_time_s": 6.7,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 607,
+          "reset_generation": 1,
+          "sim_time_s": 12.14,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 863,
+          "reset_generation": 1,
+          "sim_time_s": 17.26,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 864,
+          "reset_generation": 1,
+          "sim_time_s": 17.28,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 1815,
+          "reset_generation": 1,
+          "sim_time_s": 36.300000000000004,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 2066,
+          "reset_generation": 1,
+          "sim_time_s": 41.32,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        }
+      ],
+      "controls": 2176,
+      "camera_samples": 2176,
+      "observation_rows": 4352,
+      "source_file_hashes": {
+        "manifest.json": "7f18a0ec1fae4434bf49d3db1cfdfd57b8de955b1de1c2fa357db6e6cead422e",
+        "task.json": "1bac5966849938b298a48ea844266f9ce62a0c66d39c2e6888ba1668e26bf123",
+        "observations.jsonl": "0da54de59871bcbd7d80faec76df7bf5d694c2e39422b82d36f27e4813d34472",
+        "control_effective_50hz.jsonl": "7b1356954bd25f29a3b10cbf6f5bbbc595ef744fc5824f5f7f4ead6d94da48db",
+        "samples.jsonl": "9f56c31076bb311e481f1409daf1af343599008cfdda674f6938e8dd874c145e",
+        "interventions.jsonl": "f71eac5797b0b959b2496e41bc1f1ac7e1ec343adac0c7edba83b866845243c8",
+        "task_events.jsonl": "522010565f2036e343936c41d42ec3b7b3e6d93a729f1e75c9d10e23f1b5f191"
+      }
+    },
+    "action_rows": 1417,
+    "route_counts": {
+      "NAV_TO_SOURCE": 178,
+      "PICK": 125,
+      "NAV_TO_TARGET": 853,
+      "PLACE": 261
+    },
+    "quarantine_counts": {
+      "future interval crosses task identity/epoch boundary": 297,
+      "intervened control interval is not action-only": 109,
+      "effective_gripper_outside_calibrated_range inside real interval": 195,
+      "missing actual application tail; no invented terminal hold": 99
+    },
+    "decoded_assets": 8704,
+    "depth_records": 4352,
+    "planner_rows": 0,
+    "golden_sha256": "151989df1db19c9c6149f6bf5bea5fdab5dc35d935f8a157c1c6b26cdfc6cb41",
+    "asset_hashes_sha256": "94a6a424479a4f20c689e2146cc55fd003093341a3bc3cd269888d7b23f1cc73",
+    "cross_machine_golden_compared": false,
+    "physical_capability_evidence": false
+  },
+  "R_retry_boundary": [
+    {
+      "tick": 456,
+      "epoch": 2,
+      "attempt": "initial",
+      "action_view": "intervened control interval is not action-only"
+    },
+    {
+      "tick": 457,
+      "epoch": 3,
+      "attempt": "pick_retry_1",
+      "action_view": "effective_gripper_outside_calibrated_range inside real interval"
+    },
+    {
+      "tick": 458,
+      "epoch": 3,
+      "attempt": "pick_retry_1",
+      "action_view": "effective_gripper_outside_calibrated_range inside real interval"
+    }
+  ],
+  "sim6_gpu_bridge": {
+    "status": "cpu_actual_source_helper_dispatch_pass",
+    "vla_commit": "fcb514fb231f081624b9a2156bded79c2a1423ef",
+    "source_commit": "f7e25ca68f3b59334adabaf9dbdfa23fca4cf644",
+    "source_cli_sha256": "b7053fcdd62cf25b344433d05c5a6f859b284bc490572f9daa1918fe7f220743",
+    "report": {
+      "applied": true,
+      "cuda_visible_devices": "4",
+      "requested_device": "cuda:0",
+      "reason": "isaac_sim_6_cuda_vulkan_numbering_bridge",
+      "logical_physics_gpu": 0,
+      "physical_render_gpu": 4
+    },
+    "resolved_args": {
+      "device": "cuda:0",
+      "physics_gpu": 0,
+      "active_gpu": 4
+    },
+    "gpu_used": false,
+    "actual_kit_launch": false
   }
 }

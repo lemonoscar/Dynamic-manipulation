@@ -161,7 +161,7 @@ def initialize_sim6(simulation,obs,sample,previous):
         'object_quaternion':quaternion_error(actual.object_pose[3:],obj[3:7]),
         'object_velocity':max(abs(a-b) for a,b in zip(actual.object_velocity,obj[7:]))}
     if not all(math.isfinite(v) for v in errors.values()) or max(errors.values())>1e-5:raise ValueError(f'initialization readback failed: {errors}')
-    actual_target=robot.data.joint_pos_target[0].tolist()
+    actual_target=base.first_array_row(robot.data.joint_pos_target)
     for n in [f'arm_joint{i}' for i in range(1,8)]:
         if abs(actual_target[names.index(n)]-targets[names.index(n)])>1e-7:raise ValueError('trusted target install failed')
     return {'initialization_only':True,'new_condition_not_solver_state_restore':True,'errors':errors,
@@ -250,7 +250,7 @@ def pipeline_type(options):
                 self._record('plan_point',{'origin':origin,'owner_sequence_id':owner_sequence,'owner_action_id':owner_action_id,'command':command,'actual_apply_start_s':self.simulation.read().timestamp,'duration_s':.2})
                 for _ in range(10):self._physical_step(action,route=JointTrajectoryRoute.PICK,command_index=c.index)
                 # Read back the effective actuator targets, not measured finger opening.
-                robot=self.simulation.simulation._adapter.robot;names=list(robot.joint_names);target=robot.data.joint_pos_target[0].tolist()
+                robot=self.simulation.simulation._adapter.robot;names=list(robot.joint_names);target=base.first_array_row(robot.data.joint_pos_target)
                 grip=target[names.index('arm_joint7')]/.04
                 if not 0<=grip<=1:raise ValueError('effective joint7 target outside calibrated range')
                 self.trusted_sequence=owner_sequence;self.trusted_parent=owner_action_id
@@ -279,6 +279,16 @@ def pipeline_type(options):
             summary['duration_after_fork_s']=self.simulation.read().timestamp-start
             summary['window_physics_evidence']=self.physics.evidence()
     return Sim6RTC
+
+
+def run_and_check_summary(run,output):
+    try:
+        result=run()
+    except SystemExit as exit_status:
+        result=exit_status.code if isinstance(exit_status.code,int) else (0 if exit_status.code is None else 1)
+    summaries=list(output.glob('episode_*/summary.json'))
+    complete=len(summaries)==1 and json.loads(summaries[0].read_text()).get('status')=='complete'
+    return result or (0 if complete else 1)
 
 
 def main():
@@ -311,10 +321,16 @@ def main():
     source_reference(reference,options.source_sha);obs,sample,previous,grip=source_query(options.source_episode,options.query_tick)
     if runtime[runtime.index('--num-episodes')+1]!='1':raise ValueError('one fresh process per branch required')
     if '--expected-identity' in runtime:raise ValueError('diagnostic cannot claim autonomous formal identity')
+    sys.path.insert(0,str(reference))
+    source_main=base.runner.waypoint_runner._load_reference_main(reference)
+    downstream=runtime[runtime.index('--')+1:]
+    from urllib.parse import urlparse
+    endpoint_port=urlparse(runtime[runtime.index('--model-endpoint')+1]).port
+    parsed_source=source_main._parse_args([*downstream,'--remote-vla-eval','--vla-endpoint',f'ws://127.0.0.1:{endpoint_port}'])
     if options.preflight_only:
         report={'status':'cpu_contract_preflight_only','source_sha':options.source_sha,'query_tick':options.query_tick,
                 'trusted_parent_command':previous['command_id'],'joint7_initial_target_m':grip*.04,
-                'physics_run':False,'vla_code_sha':options.code_sha,'actual_task_sha256':sha256(task_path),'task_assets':asset_hashes,'missing_runtime_checks':['Sim6 root readback','effective motor target readback','shared first RGB/state match','source HTTP roundtrip'],
+                'source_cli_parse':{'mode':parsed_source.mode,'device':parsed_source.device,'actual_downstream_argc':len(downstream)+3},'physics_run':False,'vla_code_sha':options.code_sha,'actual_task_sha256':sha256(task_path),'task_assets':asset_hashes,'missing_runtime_checks':['Sim6 root readback','effective motor target readback','shared first RGB/state match','source HTTP roundtrip'],
                 'source_hashes':{n:sha256(options.source_episode/n) for n in ('manifest.json','observations.jsonl','samples.jsonl','control_effective_50hz.jsonl','task.json')}}
         if options.preflight_output:write_json(options.preflight_output,report)
         print(json.dumps(report));return 0
@@ -331,8 +347,8 @@ def main():
         return original(*args,**kwargs)
     simulation.IsaacLabNavigationRuntimeConfig=config
     base.runner.JointTrajectoryRolloutPipeline=pipeline_type(options)
-    result=base.runner.main(runtime)
-    output=Path(runtime[runtime.index('--output-dir')+1]);summaries=list(output.glob('episode_*/summary.json'))
-    return result or (0 if len(summaries)==1 and json.loads(summaries[0].read_text()).get('status')=='complete' else 1)
+    output=Path(runtime[runtime.index('--output-dir')+1])
+    return run_and_check_summary(lambda:base.runner.main(runtime),output)
+
 
 if __name__=='__main__':raise SystemExit(main())

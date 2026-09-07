@@ -26,6 +26,16 @@ PROTOCOL='conveyorvla-conditioned-pick-diagnostic/v1'
 WEIGHTS_SHA='d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9'
 
 
+def first_array_row(values):
+    """Read the whole PhysX/Warp array before slicing a row."""
+    if type(values).__module__.startswith('warp'):
+        import warp as wp
+        values=wp.to_torch(values)
+    if hasattr(values,'detach'):
+        values=values.detach().cpu()
+    return values[0].tolist()
+
+
 class PolicyCameraGrid(runner.TemporalJPEGBuffer):
     """Keep policy observations on the original 5 Hz grid during 50 FPS recording."""
     def add(self, step_index, camera_images):
@@ -112,8 +122,8 @@ def pipeline_type(options):
                     reason='conditioned_pick_source_state_sync', force=True)
                 robot=base_simulation._adapter.robot
                 summary['articulation_limits']={'joint_names':list(robot.joint_names),
-                    'position':robot.root_physx_view.get_dof_limits()[0].tolist(),
-                    'max_velocity':robot.root_physx_view.get_dof_max_velocities()[0].tolist()}
+                    'position':first_array_row(robot.root_physx_view.get_dof_limits()),
+                    'max_velocity':first_array_row(robot.root_physx_view.get_dof_max_velocities())}
                 self.physics=FormalPhysics(base_simulation,'no_grasp_assist',self._record)
                 self.simulation=self.physics;self.physics.arm()
                 self.physics.previous_fraction=self.physics.command_fraction=self._initial_gripper_fraction()

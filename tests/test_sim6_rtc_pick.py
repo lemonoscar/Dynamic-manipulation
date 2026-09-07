@@ -71,3 +71,14 @@ def test_vla_scripts_package_wins_over_source_regular_package(tmp_path):
     root=Path(__file__).resolve().parents[1]
     code="import sys;sys.path[:0]=[sys.argv[1],sys.argv[1]+'/src',sys.argv[2]];from scripts import run_conditioned_pick;assert run_conditioned_pick.__file__.startswith(sys.argv[1])"
     subprocess.run([sys.executable,'-B','-c',code,str(root),str(source)],check=True,cwd=source)
+
+
+def test_source_systemexit_zero_does_not_hide_failed_or_missing_episode(tmp_path):
+    from scripts.run_sim6_rtc_pick import run_and_check_summary
+    def source_exit_zero():raise SystemExit(0)
+    assert run_and_check_summary(source_exit_zero,tmp_path)==1
+    episode=tmp_path/'episode_000000';episode.mkdir()
+    summary=episode/'summary.json';summary.write_text('{"status":"failed"}')
+    assert run_and_check_summary(source_exit_zero,tmp_path)==1
+    summary.write_text('{"status":"complete"}')
+    assert run_and_check_summary(source_exit_zero,tmp_path)==0
