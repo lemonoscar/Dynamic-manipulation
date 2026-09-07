@@ -955,11 +955,12 @@ def main(argv: list[str] | None = None) -> int:
     reference_simulation.IsaacLabNavigationRuntimeConfig = _device_bound_runtime_config
     approved_app_launcher = isaac_app.AppLauncher
 
-    class _DeviceBoundAppLauncher:
-        def __new__(cls, launcher_args: Mapping[str, Any]) -> Any:
+    class _DeviceBoundAppLauncher(approved_app_launcher):
+        def __init__(self, launcher_args: Mapping[str, Any]) -> None:
             resolved = dict(launcher_args)
             resolved["device"] = args.isaac_device
-            return approved_app_launcher(resolved)
+            # Preserve source Sim6 subclass dispatch for CUDA/Vulkan numbering.
+            super().__init__(resolved)
 
     isaac_app.AppLauncher = _DeviceBoundAppLauncher
 
