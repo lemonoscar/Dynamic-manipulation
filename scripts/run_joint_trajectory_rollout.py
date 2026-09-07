@@ -959,6 +959,8 @@ def main(argv: list[str] | None = None) -> int:
         def __init__(self, launcher_args: Mapping[str, Any]) -> None:
             resolved = dict(launcher_args)
             resolved["device"] = args.isaac_device
+            resolved["enable_cameras"] = True
+            print(json.dumps({"event": "joint_trajectory_app_camera_override", "enable_cameras": True, "device": args.isaac_device}), flush=True)
             # Preserve source Sim6 subclass dispatch for CUDA/Vulkan numbering.
             super().__init__(resolved)
 

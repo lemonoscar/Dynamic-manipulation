@@ -344,6 +344,7 @@ def main():
     original=simulation.IsaacLabNavigationRuntimeConfig
     def config(*args,**kwargs):
         kwargs['camera_render_interval_control_steps']=10;kwargs['enable_verified_grasp_fixed_joint']=False
+        kwargs['enable_front_camera']=True;kwargs['enable_wrist_camera']=True
         return original(*args,**kwargs)
     simulation.IsaacLabNavigationRuntimeConfig=config
     base.runner.JointTrajectoryRolloutPipeline=pipeline_type(options)
