@@ -1,0 +1,30 @@
+{
+  "schema": "vla-staged-experiment-v2",
+  "candidate": {
+    "name": "fk_loss",
+    "time_profile": "causal_command_5hz",
+    "nav_output": "trajectory",
+    "coupling": "C0",
+    "depth": false,
+    "training_rtc": false,
+    "bounded_gripper": false,
+    "fk_loss_weight": 0.1,
+    "update_period_s": 0.4,
+    "depth_tokens": 16
+  },
+  "status": "waiting_data_and_training",
+  "training": {
+    "encoder": "frozen_identity_bound_condition_cache",
+    "steps": 1000,
+    "effective_batch": 64,
+    "learning_rate": 2e-05,
+    "seed": 20260907,
+    "progress_loss_weight": 0.0,
+    "initialization": "explicit_strict_candidate_checkpoint_or_declared_random_smoke"
+  },
+  "evaluation": {
+    "geometry_transfer_success": null,
+    "strict_full_success": null,
+    "deployment_gate_passed": false
+  }
+}

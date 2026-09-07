@@ -140,9 +140,12 @@ class _ActionEncoder(nn.Module):
 
     def forward(self, actions: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         batch_size, horizon, _ = actions.shape
-        if timesteps.shape != (batch_size,):
-            raise ValueError("timesteps must have shape [batch]")
-        expanded_time = timesteps.unsqueeze(1).expand(-1, horizon)
+        if timesteps.shape == (batch_size,):
+            expanded_time = timesteps.unsqueeze(1).expand(-1, horizon)
+        elif timesteps.shape == (batch_size, horizon):
+            expanded_time = timesteps
+        else:
+            raise ValueError("timesteps must have shape [batch] or [batch, horizon]")
         action_embedding = self.layer1(actions)
         time_embedding = self.pos_encoding(expanded_time).to(action_embedding.dtype)
         hidden = F.silu(self.layer2(torch.cat((action_embedding, time_embedding), dim=-1)))
@@ -169,7 +172,7 @@ class _TimestepProjection(nn.Module):
         exponent = -math.log(10000.0) * torch.arange(
             half_dim, dtype=torch.float32, device=timesteps.device
         ) / (half_dim - 1)
-        embedding = timesteps.float().unsqueeze(1) * exponent.exp().unsqueeze(0)
+        embedding = timesteps.float().unsqueeze(-1) * exponent.exp()
         return torch.cat((embedding.cos(), embedding.sin()), dim=-1)
 
 
@@ -201,8 +204,10 @@ class _AdaLayerNorm(nn.Module):
         self.norm = nn.LayerNorm(embedding_dim, elementwise_affine=False, eps=1.0e-5)
 
     def forward(self, hidden: torch.Tensor, time_embedding: torch.Tensor) -> torch.Tensor:
-        scale, shift = self.linear(self.silu(time_embedding)).chunk(2, dim=1)
-        return self.norm(hidden) * (1.0 + scale[:, None]) + shift[:, None]
+        scale, shift = self.linear(self.silu(time_embedding)).chunk(2, dim=-1)
+        if time_embedding.ndim == 2:
+            scale, shift = scale[:, None], shift[:, None]
+        return self.norm(hidden) * (1.0 + scale) + shift
 
 
 class _Attention(nn.Module):
@@ -333,18 +338,25 @@ class _DiT(nn.Module):
         encoder_hidden_states: torch.Tensor,
         timestep: torch.Tensor,
         encoder_attention_mask: torch.Tensor | None = None,
+        condition_banks=None,
     ) -> torch.Tensor:
         time_embedding = self.timestep_encoder(timestep).to(hidden_states.dtype)
         for index, block in enumerate(self.transformer_blocks):
             self_attention = self.interleave_self_attention and index % 2 == 1
+            bank, bank_mask = encoder_hidden_states, encoder_attention_mask
+            if condition_banks is not None and not self_attention:
+                cross_index = index // 2 if self.interleave_self_attention else index
+                bank, bank_mask = condition_banks[cross_index % len(condition_banks)]
             hidden_states = block(
                 hidden_states,
-                None if self_attention else encoder_hidden_states,
-                None if self_attention else encoder_attention_mask,
+                None if self_attention else bank,
+                None if self_attention else bank_mask,
                 time_embedding,
             )
-        shift, scale = self.proj_out_1(F.silu(time_embedding)).chunk(2, dim=1)
-        hidden_states = self.norm_out(hidden_states) * (1.0 + scale[:, None]) + shift[:, None]
+        shift, scale = self.proj_out_1(F.silu(time_embedding)).chunk(2, dim=-1)
+        if time_embedding.ndim == 2:
+            scale, shift = scale[:, None], shift[:, None]
+        hidden_states = self.norm_out(hidden_states) * (1.0 + scale) + shift
         return self.proj_out_2(hidden_states)
 
 
@@ -543,6 +555,7 @@ class M0DiTActionHead(nn.Module):
         noisy_actions: torch.Tensor,
         time: torch.Tensor,
         encoder_attention_mask: torch.Tensor | None,
+        *, condition_banks=None,
     ) -> torch.Tensor:
         discrete_time = (time * self.config.num_timestep_buckets).long()
         action_features = self.action_encoder(noisy_actions, discrete_time)
@@ -558,11 +571,18 @@ class M0DiTActionHead(nn.Module):
             hidden_parts.append(self.state_encoder(state))
         hidden_parts.extend((future, action_features))
         hidden = torch.cat(hidden_parts, dim=1)
+        model_time = discrete_time
+        if discrete_time.ndim == 2:
+            # Context tokens carry the suffix noise time; action tokens retain
+            # their own clean-prefix/noisy-suffix times throughout every block.
+            context_count = hidden.shape[1] - self.config.action_horizon
+            model_time = torch.cat((discrete_time[:, -1:].expand(-1, context_count), discrete_time), dim=1)
         output = self.model(
             hidden,
             vl_embeddings,
-            discrete_time,
+            model_time,
             encoder_attention_mask,
+            condition_banks=condition_banks,
         )
         return self.action_decoder(output)[:, -self.config.action_horizon :]
 

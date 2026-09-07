@@ -139,3 +139,6 @@ events.out.tfevents.*
 
 # Also ignore a worktree-local symlink to shared external artifacts.
 /artifacts
+
+# Local staged validation artifacts; never commit model/data/log outputs.
+.validation/

@@ -1,0 +1,24 @@
+{
+  "reference_commit": "bf5d5ab1130cc4a91f9cf4396b275d3b52e1da31",
+  "reference_branch": "fix/grasp-evaluation-execution-v2",
+  "working_branch": "feat/vla-rolling-rtc-20260907",
+  "inherited_uncommitted_files": {
+    "docs/new_plan/01_collection_reconstruction_plan.md": "392ce0b21828c181d495515bc0bee8bfedfbbc41b9fab46c71555cf7b03b552e",
+    "docs/new_plan/02_vla_staged_revision_validation.md": "85788f3a439e46fde7aef7495c342f9b35c26a9f1d803edb55fcd7c9b1d968ba",
+    "docs/new_plan/03_developer_system_acceptance_theory.md": "9e7d757ea699cd39f0716d166eb9de9a0d1ed7bf00dc92a731f1c35adf416b47",
+    "docs/plan_provenance_fork_results_20260906.json": "53146a55326acd716b7f0ed32c6b35ebb18ae4fedb0939686bcc916ca893eb79",
+    "docs/plan_provenance_fork_results_20260906.md": "1a1f5d51c4a0e8ad741ca865af73333faeb65a6205058a55281cfbed79de865b",
+    "scripts/audit_train_command_sources.py": "37ed1c5e3922aabe69c572c0a4046fd801341259f087ce831665838058d20da1",
+    "scripts/probe_source_nav_geometry.py": "1ce15ea0bd5628bd6630ccd30401b5c9594e31eb25874af889a40c16b2a31c1a",
+    "scripts/run_shared_prefix_fork.py": "5c6b1ba85102c35d923da25dae9b8d2be3cb5784d07ed105f1bf2c6dd68ebb6e",
+    "scripts/source_nav_motion.py": "f73fcc2bbf1809c5b1c9902bc54aa27a44ac00257c49376599079041c96479bc",
+    "scripts/summarize_shared_prefix_forks.py": "563f8b058f3cd9eba3226fc4269b4c550adaa6fb781552b1e2b60709100e3a2c",
+    "scripts/summarize_train_command_sources.py": "189e1cfd59480f2aea74babc5fe307f71fe67f16c166946a703eac8bb7d8e0a7",
+    "src/conveyor_bench/conveyorvla/nav_geometry_audit.py": "dea9351b84528f4ee462adafd26788043f045e9119f8333051287c58d43b9fa5",
+    "tests/test_plan_provenance_diagnostics.py": "b65f5c297be086f61c5c4de602f2ef625a3b980400e566d8ade1990d662d324e",
+    "README.md": "fd9f9ea144bc54923206f0f8101f469ac7a7dd71b7ec7e78238de6b7c737fe80",
+    "scripts/run_conditioned_pick.py": "c94d1f1ac463fadacee997a083542a0aae3d798e7d5b18185ffe5aadec7d8953",
+    "tests/test_conditioned_pick_diagnostic.py": "82ec069826e82666b65c33226280b60ffa0ae937fc068cf1d05116d22986f18f"
+  },
+  "original_worktree_modified_by_this_task": false
+}

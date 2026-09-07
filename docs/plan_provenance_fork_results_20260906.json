@@ -1,0 +1,1403 @@
+{
+  "schema": "plan-provenance-fork-public-v1",
+  "train": {
+    "audit_report_sha256": "27362308f37f9eae3b08dbf925c4dfd9e40ede0c2afac7e988a51c4f6ed807e1",
+    "chunks_sha256": "de33379e3d74cd6f590c399971e25e2db91b7d70d6fcb5db26aa12c3d6bc63c3",
+    "conservative_retained_chunks": 16052,
+    "distinct_source_points_referenced_by_mani_horizons": {
+      "arm": 27871,
+      "gripper": 27871
+    },
+    "interpretation": "Unknown means insufficient provenance, not confirmed invalid. The conservative retained subset is a biased audit selection, not a released dataset; zero clipping does not show task coverage or successful replay. No new normalizer or training.",
+    "isolated_chunks_by_channel_nonexclusive": {
+      "arm": 2747,
+      "gripper": 11819
+    },
+    "mani_chunks": 27871,
+    "points_sha256": "a20b681db4555bdda2e5a1b600b46708f3697ad9ecb526e68f0696620c150bbc",
+    "referenced_distinct_source_point_classes": {
+      "arm": {
+        "invalid_cache": 2022,
+        "unknown": 86,
+        "valid_new": 25763
+      },
+      "gripper": {
+        "invalid_cache": 2022,
+        "unknown": 3855,
+        "valid_new": 21994
+      }
+    },
+    "referenced_distinct_source_reasons": {
+      "arm": {
+        "explicit_dispatch_poststep": 25763,
+        "no_proven_effective_current_cycle_target": 86,
+        "pre_reset_value_without_current_cycle_command": 2022
+      },
+      "gripper": {
+        "explicit_dispatch_poststep": 21994,
+        "no_proven_effective_current_cycle_target": 3855,
+        "pre_reset_value_without_current_cycle_command": 2022
+      }
+    },
+    "retained_subset_saturation": {
+      "counts": {
+        "gripper_events": 0,
+        "position_events": 0,
+        "rate_events": 0
+      },
+      "denominator": 1123640,
+      "rate": 0.0,
+      "threshold": 0.005
+    },
+    "schema": "train-source-reference-summary-v1"
+  },
+  "forks": {
+    "first-fork-report.json": {
+      "fork_matching": {
+        "liangzhunew500-000006": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.07518229166666666,
+                  0.1371365017361111,
+                  0.07005859375,
+                  0.14307400173611112
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.0649978298611111,
+                  0.14805447048611112,
+                  0.05867078993055556,
+                  0.14094075520833332
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        },
+        "liangzhunew500-000024": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.09263129340277777,
+                  0.15311848958333332,
+                  0.09871202256944445,
+                  0.15292426215277777
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.10045789930555556,
+                  0.12422309027777778,
+                  0.09630967881944444,
+                  0.1583615451388889
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        },
+        "liangzhunew500-000030": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.06442816840277778,
+                  0.12654405381944445,
+                  0.06777452256944444,
+                  0.11473741319444444
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.07201063368055556,
+                  0.13429253472222222,
+                  0.07069661458333333,
+                  0.1130881076388889
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        }
+      },
+      "runs": [
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "A",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.0006009936332702637,
+          "peak_lift_m": 0.0022810399532318115,
+          "final_tcp_distance_m": 0.027730703692922614,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.24285714285714285,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              5,
+              9
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              1,
+              1,
+              8
+            ],
+            "window_executed_rate": 0.17857142857142858
+          },
+          "summary_sha256": "35659334d4a5d6b92b12833baab702740e02398de667c3d7fa77056ce5b4d959",
+          "trace_sha256": "4946812eae8a02f1333ec8d0667fc3e411d50f73d4ed5c42f643aca6182dee8f"
+        },
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "B",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.0006009936332702637,
+          "peak_lift_m": 0.0022810399532318115,
+          "final_tcp_distance_m": 0.027730703692922614,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.13714285714285715,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              7,
+              38
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              1,
+              1,
+              8
+            ],
+            "window_executed_rate": 0.17857142857142858
+          },
+          "summary_sha256": "b391fa6950749b83d2c41e84c862925c215607a6d7cb2635ee46d7a7118d12cb",
+          "trace_sha256": "bcb6af5772c2e5b7dbeb5557f38a13d0b80a47277377190aff774b4b247a61f4"
+        },
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "C",
+          "closed_executed_points": 0,
+          "final_lift_m": -1.5020370483398438e-05,
+          "peak_lift_m": 4.6446919441223145e-05,
+          "final_tcp_distance_m": 0.06829035132940041,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.13428571428571429,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              6,
+              38
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              7
+            ],
+            "window_executed_rate": 0.125
+          },
+          "summary_sha256": "860096b5663a8d5e8368d90b8565453caef5632547c44b6769cc285f6f7ccdea",
+          "trace_sha256": "b4a9832c0bb5d238fb5be34b03e51a7bb88143c3a694ea796a358a28e3596819"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "A",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.00286903977394104,
+          "peak_lift_m": 0.003988057374954224,
+          "final_tcp_distance_m": 0.07926353344185978,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.18571428571428572,
+            "full_shared_plus_generated_prediction_events": [
+              4,
+              4,
+              5
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              2,
+              1,
+              4
+            ],
+            "window_executed_rate": 0.125
+          },
+          "summary_sha256": "7aa146e2a0560924a0a91675be83757bd8ba3eda4086ce9d7ec8c75681f20057",
+          "trace_sha256": "f571871d3c48af01b30ff0e2867e2da5e4d750c445246632d4b06e070cefa12a"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "B",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.00286903977394104,
+          "peak_lift_m": 0.003988057374954224,
+          "final_tcp_distance_m": 0.07926353344185978,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.13428571428571429,
+            "full_shared_plus_generated_prediction_events": [
+              4,
+              8,
+              35
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              2,
+              1,
+              4
+            ],
+            "window_executed_rate": 0.125
+          },
+          "summary_sha256": "dd55c6aed44e62f5332979fca5c963ec81995a5c9889e7101ab4777746c9e56e",
+          "trace_sha256": "275f7cd540bed3db1fdabca9540435529a290a75774b8cd203af5c5f07ef0841"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "C",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.0,
+          "peak_lift_m": 0.0,
+          "final_tcp_distance_m": 0.14238585153995176,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.13142857142857142,
+            "full_shared_plus_generated_prediction_events": [
+              4,
+              7,
+              35
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              7
+            ],
+            "window_executed_rate": 0.125
+          },
+          "summary_sha256": "89bd252afbbb20914ab2ad8753410d4b2b165c49be7e09260e2efeeb6bf3016a",
+          "trace_sha256": "9814c3c638d1c13692b04e400699817927bcfbf0aa939766835036276cdee907"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "A",
+          "closed_executed_points": 0,
+          "final_lift_m": -7.541477680206299e-05,
+          "peak_lift_m": 0.0,
+          "final_tcp_distance_m": 0.024019688699841567,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.22857142857142856,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              4,
+              9
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              1,
+              1,
+              7
+            ],
+            "window_executed_rate": 0.16071428571428573
+          },
+          "summary_sha256": "29a9582c78828b6e2bdb72b1613c74b1d32777f9fd614b4bda215fba6de380ad",
+          "trace_sha256": "a67d51793b485cf58073fb64417359e1aac6f852a214a090d9e1c6b8fbc17334"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "B",
+          "closed_executed_points": 0,
+          "final_lift_m": -7.541477680206299e-05,
+          "peak_lift_m": 0.0,
+          "final_tcp_distance_m": 0.024019688699841567,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.14285714285714285,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              7,
+              40
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              1,
+              1,
+              7
+            ],
+            "window_executed_rate": 0.16071428571428573
+          },
+          "summary_sha256": "3beed6ebfcf13856c4eec2413b8ca2debf372eb2a485112f2b7db3b70a671e09",
+          "trace_sha256": "2d1a7f2fd0fb7e3a0ab62c271f9116bc82efd1a8cf2401be5616b80b65b9f7f8"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "C",
+          "closed_executed_points": 0,
+          "final_lift_m": 0.0023854821920394897,
+          "peak_lift_m": 0.0023854821920394897,
+          "final_tcp_distance_m": 0.04231740534573666,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.14,
+            "full_shared_plus_generated_prediction_events": [
+              3,
+              6,
+              40
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              8
+            ],
+            "window_executed_rate": 0.14285714285714285
+          },
+          "summary_sha256": "920eac92c565577ad55148358ec948062cb7533358d7f72383596994e2a39fe8",
+          "trace_sha256": "fa244b545a3659a74e7903e7f01853895fbb11dfe05d60100cb644f90bbfb45c"
+        }
+      ]
+    },
+    "closure-fork-report.json": {
+      "fork_matching": {
+        "liangzhunew500-000006": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": false,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": false,
+                "pixel_mean_absolute_differences": [
+                  0.14623589409722224,
+                  0.217197265625,
+                  0.12994032118055557,
+                  0.25317599826388887
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.1472439236111111,
+                  0.17192057291666665,
+                  0.13743055555555556,
+                  0.20304253472222222
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        },
+        "liangzhunew500-000024": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.16192925347222223,
+                  0.22368815104166667,
+                  0.15885416666666666,
+                  0.22140625
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.17082682291666668,
+                  0.21071614583333334,
+                  0.15460069444444444,
+                  0.2414138454861111
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        },
+        "liangzhunew500-000030": {
+          "available_branches": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairs": {
+            "A-B": {
+              "all_observed_fields_match": false,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": false,
+                "pixel_mean_absolute_differences": [
+                  0.13807183159722222,
+                  0.20041124131944443,
+                  0.15650390625,
+                  0.2654720052083333
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            },
+            "B-C": {
+              "all_observed_fields_match": true,
+              "articulation_position_target": {
+                "matched": true,
+                "max_abs_difference": 0.0
+              },
+              "camera_history": {
+                "matched": true,
+                "pixel_mean_absolute_differences": [
+                  0.14953667534722223,
+                  0.21267578125,
+                  0.16738823784722223,
+                  0.19441297743055555
+                ],
+                "step_indices_match": true
+              },
+              "hidden_controller_contact_equivalence": "not_proven",
+              "joint_positions": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "joint_velocities": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "last_action": {
+                "matched": true
+              },
+              "object_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "object_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "robot_root_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              },
+              "robot_root_velocity": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 0.0001
+              },
+              "tcp_pose": {
+                "matched": true,
+                "max_abs_difference": 0.0,
+                "tolerance": 1e-05
+              }
+            }
+          }
+        }
+      },
+      "runs": [
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "A",
+          "closed_executed_points": 8,
+          "final_lift_m": 0.11308495700359344,
+          "peak_lift_m": 0.11308495700359344,
+          "final_tcp_distance_m": 0.035126875280287566,
+          "geometry_window_outcome": "geometry_appeared_observation_insufficient",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.08571428571428572,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              6
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              6
+            ],
+            "window_executed_rate": 0.10714285714285714
+          },
+          "summary_sha256": "f2a93f240ad6ff44cc5291904ae7f7f62e3ec9f10bb183a58308c8eaed14842a",
+          "trace_sha256": "6c78ad368e12570872fc906bd11d667245f5ec0d37e54f6e5ff669ffdede816c"
+        },
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "B",
+          "closed_executed_points": 8,
+          "final_lift_m": 0.11308495700359344,
+          "peak_lift_m": 0.11308495700359344,
+          "final_tcp_distance_m": 0.035126875280287566,
+          "geometry_window_outcome": "geometry_appeared_observation_insufficient",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.06285714285714286,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              22
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              6
+            ],
+            "window_executed_rate": 0.10714285714285714
+          },
+          "summary_sha256": "802edaf9ac406bda1f54194d114ada4f2055d8220d3872fa891bce7d706d8d47",
+          "trace_sha256": "cae6a54e078a80e13c50fdb612dd30ee8332dd1819feef9bac7e839773b8caa0"
+        },
+        {
+          "episode": "liangzhunew500-000006",
+          "branch": "C",
+          "closed_executed_points": 2,
+          "final_lift_m": -0.02283492684364319,
+          "peak_lift_m": 0.006198063492774963,
+          "final_tcp_distance_m": 0.0674215608890994,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.06857142857142857,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              24
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              2
+            ],
+            "window_executed_rate": 0.03571428571428571
+          },
+          "summary_sha256": "7d1648dae054e21871a01e296ceb28abc8d1e731d65049013696fab284573051",
+          "trace_sha256": "7ab795b88070aa170018015e53e650aad2d4ce4f5d9d279d590a5770cc34c24b"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "A",
+          "closed_executed_points": 5,
+          "final_lift_m": -0.024031460285186768,
+          "peak_lift_m": -0.023509159684181213,
+          "final_tcp_distance_m": 0.11655492382638473,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.1,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              7
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              5
+            ],
+            "window_executed_rate": 0.08928571428571429
+          },
+          "summary_sha256": "903563b1338481a6cb7f27ccbe7f6eda689ce50ee5ea2a52c66782e019ab3374",
+          "trace_sha256": "4e784c6a31a821f91c961529f660cc57b12b9245957750eb2b6fe4fd3cfb202e"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "B",
+          "closed_executed_points": 5,
+          "final_lift_m": -0.024031460285186768,
+          "peak_lift_m": -0.023509159684181213,
+          "final_tcp_distance_m": 0.11655492382638473,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.07714285714285714,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              27
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              5
+            ],
+            "window_executed_rate": 0.08928571428571429
+          },
+          "summary_sha256": "956a9d94348f20cc528d8887415b3e05c54e2993dfb1fc6b096ea61e681e76df",
+          "trace_sha256": "33e269526ce41907fffe09309877077a28705be9b8330060e3594eb62a2c5e93"
+        },
+        {
+          "episode": "liangzhunew500-000024",
+          "branch": "C",
+          "closed_executed_points": 0,
+          "final_lift_m": -0.024031460285186768,
+          "peak_lift_m": -0.023509159684181213,
+          "final_tcp_distance_m": 0.1382076955201979,
+          "geometry_window_outcome": "no_lift_proximity_close_evidence_in_window",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.07142857142857142,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              25
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              1
+            ],
+            "window_executed_rate": 0.017857142857142856
+          },
+          "summary_sha256": "ee06d4b43caa9361ee3f3ecbd7dd3278e4fb36bb5e1133b3823cb4011429a122",
+          "trace_sha256": "9eed26f4cf39f25ded8d9735978833b631fe5ee88148d2aa1e7575b41557a99a"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "A",
+          "closed_executed_points": 6,
+          "final_lift_m": 0.11234644055366516,
+          "peak_lift_m": 0.11234644055366516,
+          "final_tcp_distance_m": 0.04346853672396781,
+          "geometry_window_outcome": "geometry_appeared_observation_insufficient",
+          "clipping": {
+            "full_prediction_denominator": 70,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.08571428571428572,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              6
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              5
+            ],
+            "window_executed_rate": 0.08928571428571429
+          },
+          "summary_sha256": "b771d83c9f7c24b4ec1f07af571178079a0a7b387887dcd14e438f42feec01ed",
+          "trace_sha256": "c2d7e0d20b9deec0165c9e447abbf1df0fe0e208d75defdbfdae7d092edc97d9"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "B",
+          "closed_executed_points": 6,
+          "final_lift_m": 0.11234644055366516,
+          "peak_lift_m": 0.11234644055366516,
+          "final_tcp_distance_m": 0.04346853672396781,
+          "geometry_window_outcome": "geometry_appeared_observation_insufficient",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.05714285714285714,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              20
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              5
+            ],
+            "window_executed_rate": 0.08928571428571429
+          },
+          "summary_sha256": "d874a0c833cad207228f0af362694555dac2c50aaebe06bf8755ebe68e7bece8",
+          "trace_sha256": "81058af385d7931451f2db413d79be9bc62cac9a367b88b31ae496cf0001b713"
+        },
+        {
+          "episode": "liangzhunew500-000030",
+          "branch": "C",
+          "closed_executed_points": 7,
+          "final_lift_m": 0.10745382308959961,
+          "peak_lift_m": 0.10745382308959961,
+          "final_tcp_distance_m": 0.02430390905380089,
+          "geometry_window_outcome": "geometry_appeared_observation_insufficient",
+          "clipping": {
+            "full_prediction_denominator": 350,
+            "full_prediction_gate_passed": false,
+            "full_prediction_rate": 0.04857142857142857,
+            "full_shared_plus_generated_prediction_events": [
+              0,
+              0,
+              17
+            ],
+            "shadow_predictions_counted_as_predictions_not_execution": true,
+            "window_executed_denominator": 56,
+            "window_executed_events": [
+              0,
+              0,
+              3
+            ],
+            "window_executed_rate": 0.05357142857142857
+          },
+          "summary_sha256": "e810566178d4adc8048107a988808b3ed62d4fffb525c017075a8a3404b51478",
+          "trace_sha256": "8f3a319080376e69b369d2b0857d273daf910e9a289bf07ea5f2bd91a0ccc526"
+        }
+      ]
+    }
+  },
+  "nav_stop_contract": {
+    "schema": "nav-arrival-contract-audit-v1",
+    "inner_DWA_goal_tolerance_m": 0.15,
+    "outer_arrival_tolerance_m": 0.12,
+    "ticks_in_mismatched_stop_band": 262,
+    "zero_commands_in_stop_band": 262,
+    "stop_band_examples": [
+      {
+        "tick": 12,
+        "before_distance_m": 0.14767787310594857,
+        "in_mismatched_stop_band": true,
+        "zero_command": true,
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "tick": 13,
+        "before_distance_m": 0.14422877335672726,
+        "in_mismatched_stop_band": true,
+        "zero_command": true,
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "tick": 14,
+        "before_distance_m": 0.14133467482770415,
+        "in_mismatched_stop_band": true,
+        "zero_command": true,
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "tick": 15,
+        "before_distance_m": 0.1390689613792871,
+        "in_mismatched_stop_band": true,
+        "zero_command": true,
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "tick": 16,
+        "before_distance_m": 0.1370895915612022,
+        "in_mismatched_stop_band": true,
+        "zero_command": true,
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "interpretation": "Reference constructor passes navigation.goal_tolerance to DWA; DWA returns zero before candidate search when endpoint distance <= this tolerance. Outer source-NAV acceptance remains 0.12m. This explains a premature-stop mechanism, not all subsequent drift/yaw behavior.",
+    "evidence_files": [
+      "source/pipeline/navigation_smoke.py:1035",
+      "source/navigation/navlib/dwa.py:209",
+      "/diff/wallx_workspace/dzb/training_runs/plan-provenance-navigation-20260906-r1/nav-motion-03/runtime/episode_000000/nav_preflight.json"
+    ],
+    "raw_trial_unmodified": true
+  },
+  "tests": {
+    "passed": 605,
+    "skipped": 1
+  },
+  "artifacts_sha256": {
+    "protocol.json": "f525973c4fe6f74080b25d19b378caf1af52e765c82d741c574936a985888284",
+    "closure-window-protocol.json": "6edf4b87225ef173809bf3b73d344b4c398a0b5f43b558c215f72068f34969dc",
+    "nav-motion-protocol.json": "462706933fd347d3383630a847c36c611dd36504673e8b74d921b53e2ad3bb6c",
+    "nav-held-arm-protocol.json": "1c0759b1d738280e8818b6ef651215e2b05e47bdc6135ba97412eacc667a83c4",
+    "first-fork-report.json": "1f2926b2c40d6d1040cffcf26322d02f6c806aea8ee6a813348c98f7da848bbe",
+    "closure-fork-report.json": "310c50cae0357256355d0b8f59b84c55e143618093518094068730365a29b96a",
+    "train-audit-02/report.json": "27362308f37f9eae3b08dbf925c4dfd9e40ede0c2afac7e988a51c4f6ed807e1",
+    "nav-motion-03/runtime/episode_000000/summary.json": "b9caa13b655b84c45481067e03977ab1f8d2d39b680dc06d08ba730ff9900685",
+    "nav-actual-sweep-audit.json": "68675f31fbd74d629fd40352db84ca3c076d5a50c49f96a6ec7036821d443300",
+    "pytest-final.log": "a30effd6448ffb7fee562f0c402f9e7f7eac90ed8813f95ae06486156b8874ad"
+  }
+}

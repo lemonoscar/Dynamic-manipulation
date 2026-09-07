@@ -20,6 +20,16 @@ def test_diagnostic_service_rejects_truth_and_autonomous_route_injection():
             service.infer({'protocol_version':module.PROTOCOL,key:[]})
 
 
+def test_50fps_recording_preserves_policy_camera_grid():
+    import numpy as np
+    module=load_script('run_conditioned_pick')
+    frames=module.PolicyCameraGrid(separation_steps=10)
+    images={key:np.zeros((8,8,3),dtype=np.uint8) for key in ('front','wrist')}
+    accepted=[step for step in range(81,101) if frames.add(step,images)]
+    assert accepted==[90,100]
+    assert tuple(frame.step_index for frame in frames.pair_after(None))==(90,100)
+
+
 def test_conditioned_history_hold_uses_pick_locks_without_changing_base_method_signature(monkeypatch):
     module=load_script('run_conditioned_pick')
     cls=module.pipeline_type(SimpleNamespace(execute_points=2))

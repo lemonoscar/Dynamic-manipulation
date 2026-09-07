@@ -131,6 +131,12 @@ class ArmVLADWAControllerAdapter:
         self._controller = None
         self.last_trace = {}
 
+    def bind_reach_config(self, reach):
+        """Own a replaced config; never mutate the source runtime's shared config."""
+        from dataclasses import replace
+        self.config = replace(self.config, goal_tolerance=reach.position_tolerance_m)
+        self.reset()
+
     def command(
         self,
         path_world: Sequence[Sequence[float]],

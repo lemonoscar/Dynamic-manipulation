@@ -900,6 +900,8 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
         self,
         examples: Sequence[Mapping[str, Any]],
         decisions: Sequence[JointTrajectoryRouteDecision],
+        *,
+        rtc_contexts: Sequence[Mapping[str, Any] | None] | None = None,
     ) -> tuple[tuple[tuple[float, ...], ...] | None, ...]:
         """Run Pass 2 for already committed model-produced prefixes."""
 
@@ -907,6 +909,8 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
             raise ValueError("Pass 2 examples and decisions must be non-empty and aligned")
         if any(not decision.valid or decision.route is None for decision in decisions):
             raise ValueError("Pass 2 requires valid model-produced route decisions")
+        if rtc_contexts is not None and len(rtc_contexts) != len(examples):
+            raise ValueError("RTC contexts must align with examples")
         actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
         inputs = dict(
             self.qwen.build_joint_trajectory_inputs(
@@ -956,11 +960,31 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
                     dtype=dtype,
                 )
             with _action_autocast(device, dtype):
-                sampled = expert.sample(
-                    selected_hidden,
-                    state=state,
-                    encoder_attention_mask=selected_attention,
-                )
+                if rtc_contexts is None or all(rtc_contexts[i] is None for i in indices):
+                    sampled = expert.sample(
+                        selected_hidden, state=state,
+                        encoder_attention_mask=selected_attention,
+                    )
+                else:
+                    from .rtc_sampling import sample_rtc
+                    if domain is not JointTrajectoryDomain.MANIPULATION:
+                        raise ValueError("continuous-action RTC is only defined for Mani")
+                    samples = []
+                    for local, index in enumerate(indices):
+                        context = rtc_contexts[index]
+                        if context is None:
+                            result = expert.sample(selected_hidden[local:local+1],
+                                state=state[local:local+1],
+                                encoder_attention_mask=selected_attention[local:local+1])
+                        else:
+                            result = sample_rtc(expert, selected_hidden[local:local+1],
+                                state[local:local+1],
+                                previous=torch.as_tensor(context["previous"], device=device, dtype=dtype)[None],
+                                weights=torch.as_tensor(context["weights"], device=device, dtype=dtype)[None, :, None],
+                                encoder_attention_mask=selected_attention[local:local+1],
+                                max_guidance_weight=context.get("max_guidance_weight", 5.))
+                        samples.append(result)
+                    sampled = torch.cat(samples)
             for index, value in zip(indices, sampled.float().cpu().tolist(), strict=True):
                 actions[index] = tuple(
                     tuple(float(component) for component in row) for row in value
@@ -975,6 +999,8 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
     ) -> tuple[JointTrajectoryPrediction, ...]:
         decisions = self.predict_routes(examples)
         valid_indices = [index for index, decision in enumerate(decisions) if decision.valid]
+        if rtc_contexts is not None and len(rtc_contexts) != len(examples):
+            raise ValueError("RTC contexts must align with examples")
         actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
         if valid_indices:
             selected = [examples[index] for index in valid_indices]

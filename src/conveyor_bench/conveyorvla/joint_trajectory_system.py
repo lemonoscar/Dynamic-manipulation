@@ -111,10 +111,26 @@ class PCTDWAJointNavigationExecutor:
         pct_planner: Any,
         dwa_controller: Any,
         config: JointNavigationConfig = JointNavigationConfig(),
+        *,
+        reach_config=None,
+        online_safety=None,
+        require_online_safety: bool = False,
     ) -> None:
         self.pct_planner = pct_planner
         self.dwa_controller = dwa_controller
         self.config = config
+        from .navigation_safety import ReachConfig, ReachMonitor
+        self.reach_config = reach_config or ReachConfig(
+            position_tolerance_m=config.goal_tolerance_m, yaw_tolerance_rad=config.yaw_tolerance_rad)
+        if (self.reach_config.position_tolerance_m != config.goal_tolerance_m or
+                self.reach_config.yaw_tolerance_rad != config.yaw_tolerance_rad):
+            raise ValueError("DWA and outer reach tolerances must match")
+        self.reach_monitor = ReachMonitor(self.reach_config) if reach_config is not None else None
+        self.online_safety = online_safety
+        self.require_online_safety = require_online_safety
+        bind = getattr(dwa_controller, "bind_reach_config", None)
+        if bind is not None:
+            bind(self.reach_config)
         self._active: JointNavigationPlan | None = None
 
     def begin(
@@ -124,6 +140,9 @@ class PCTDWAJointNavigationExecutor:
         *,
         timestamp_s: float,
     ) -> JointNavigationPlan:
+        self._active = None  # A rejected replan must not leave an old path executable.
+        if self.reach_monitor is not None:
+            self.reach_monitor.stable_since = None
         query = _finite_vector(query_base_world, 7, "query_base_world")
         timestamp = _finite_nonnegative(timestamp_s, "navigation timestamp")
         if len(reference.points_query_body) != ACTION_HORIZON:
@@ -192,6 +211,10 @@ class PCTDWAJointNavigationExecutor:
             distance <= self.config.goal_tolerance_m
             and yaw_error <= self.config.yaw_tolerance_rad
         )
+        reach_state = None
+        if self.reach_monitor is not None:
+            reach_state = self.reach_monitor.update(distance, yaw_error, velocity, timestamp)
+            reached = reach_state == "REACHED"
         timed_out = elapsed >= self.config.execution_window_s - 1.0e-9
         trace = {
             "elapsed_s": max(0.0, elapsed),
@@ -199,6 +222,14 @@ class PCTDWAJointNavigationExecutor:
             "yaw_error_to_snapped_goal_rad": yaw_error,
             "measured_pose_C_xyyaw": list(pose),
         }
+        if self.require_online_safety and self.online_safety is None:
+            return JointNavigationControl((0., 0., 0.), True, False, elapsed,
+                "safety_stop_missing_online_certificate", trace)
+        if self.online_safety is not None:
+            protection = self.online_safety.check(pose, velocity, (0., 0., 0.), timestamp)
+            if not protection["valid"]:
+                return JointNavigationControl((0., 0., 0.), True, False, elapsed,
+                    "safety_stop_"+protection["reason"], {**trace, "online_safety": protection})
         if reached or timed_out:
             return JointNavigationControl(
                 base_velocity=(0.0, 0.0, 0.0),
@@ -208,6 +239,11 @@ class PCTDWAJointNavigationExecutor:
                 reason="local_goal_reached" if reached else "two_second_window_complete",
                 trace=trace,
             )
+        if reach_state == "SETTLE":
+            return JointNavigationControl((0., 0., 0.), False, False, elapsed, "reach_stability_pending", trace)
+        if distance <= self.config.goal_tolerance_m and yaw_error > self.config.yaw_tolerance_rad:
+            return JointNavigationControl((0., 0., 0.), True, False, elapsed,
+                "validated_in_place_turn_required", trace)
         if all(math.dist(a, b) <= 1.e-9 for a, b in zip(
                 plan.pct_plan.path_world, plan.pct_plan.path_world[1:])):
             from .continuous_endpoint import classify_degenerate_path
@@ -227,6 +263,14 @@ class PCTDWAJointNavigationExecutor:
             local_map,
         )
         guarded = guard_longitudinal_command(raw)
+        if self.online_safety is not None:
+            protection = self.online_safety.check(pose, velocity, guarded, timestamp)
+            if not protection["valid"]:
+                return JointNavigationControl((0., 0., 0.), True, False, elapsed,
+                    "safety_stop_"+protection["reason"], {**trace, "online_safety": protection})
+        if all(abs(v) < 1e-12 for v in guarded):
+            return JointNavigationControl(guarded, True, False, elapsed,
+                "dwa_zero_control_before_reach", trace)
         return JointNavigationControl(
             base_velocity=guarded,
             requires_requery=False,

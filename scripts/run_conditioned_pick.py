@@ -26,6 +26,14 @@ PROTOCOL='conveyorvla-conditioned-pick-diagnostic/v1'
 WEIGHTS_SHA='d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9'
 
 
+class PolicyCameraGrid(runner.TemporalJPEGBuffer):
+    """Keep policy observations on the original 5 Hz grid during 50 FPS recording."""
+    def add(self, step_index, camera_images):
+        if step_index % 10:
+            return False
+        return super().add(step_index, camera_images)
+
+
 def pipeline_type(options):
     class ConditionedPickPipeline(runner.JointTrajectoryRolloutPipeline):
         def _measured_hold(self, source):
@@ -36,6 +44,27 @@ def pipeline_type(options):
                                                gripper_open_fraction=joints.gripper_open_fraction)
             return self.action_adapter.hold(command, route=JointTrajectoryRoute.PICK,
                                             sequence_id=self._query_count, source=source)
+
+        def _execute_policy(self, options, summary, health, payload, state):
+            period=options.execute_points
+            control_start=self._control_steps
+            while self._control_steps-control_start < round(options.simulation_seconds/.02):
+                if self._query_count:
+                    payload,state=self._next_request()
+                payload['protocol_version']=PROTOCOL
+                self._record('query_camera_evidence', state.metadata.get('camera_capture_report', {}))
+                self._record('model_request',payload)
+                result=self.client.infer(payload)
+                if result.get('checkpoint_id')!=health['checkpoint_id']:
+                    raise ValueError('model response checkpoint changed')
+                self._record('conditioned_model_response',result)
+                commands=[runner._command(c) for c in result['chunk']['commands']]
+                self._query_count+=1
+                for command in commands[:period]:
+                    action=self.action_adapter.manipulation(command,route=JointTrajectoryRoute.PICK,sequence_id=self._query_count)
+                    for _ in range(10):
+                        if self._control_steps-control_start >= round(options.simulation_seconds/.02):break
+                        self._physical_step(action,route=JointTrajectoryRoute.PICK,command_index=command.index)
 
         def run_episode(self):
             period=options.execute_points
@@ -60,7 +89,9 @@ def pipeline_type(options):
                                     [json.loads(x) for x in (options.source_episode/'frames.jsonl').open()])
                 observation=phase[0][2]
                 self.episode_seed=source['seed']
-                self.config=replace(self.config,video=replace(self.config.video,fps=5.))
+                self.config=replace(self.config,video=replace(self.config.video,fps=float(options.video_fps)))
+                summary['recording_fps']=options.video_fps
+                summary['policy_camera_sample_hz']=5
                 write_json(self.episode_dir/'resolved_config.json',runner.waypoint_runner._jsonable(asdict(self.config)))
                 self._start_video();self._prepare_episode()
                 if options.record_contacts:
@@ -78,7 +109,7 @@ def pipeline_type(options):
                 self.physics=FormalPhysics(base_simulation,'no_grasp_assist',self._record)
                 self.simulation=self.physics;self.physics.arm()
                 self.physics.previous_fraction=self.physics.command_fraction=measured_named_joint_state(self.simulation.read()).gripper_open_fraction
-                self.frames=runner.TemporalJPEGBuffer(separation_steps=10,jpeg_quality=self.jpeg_quality)
+                self.frames=PolicyCameraGrid(separation_steps=10,jpeg_quality=self.jpeg_quality)
                 self._camera_states.clear();self._last_query_camera_step=None
                 # Build a real t-.2,t history after initialization; no old navigation image is reused.
                 history_start=float(self.simulation.read().timestamp)
@@ -86,24 +117,7 @@ def pipeline_type(options):
                 summary['first_query_state']=runner.waypoint_runner._state_snapshot(state)
                 summary['first_query_camera_report']=state.metadata.get('camera_capture_report')
                 summary['initial_history_hold_s']=float(state.timestamp)-history_start
-                control_start=self._control_steps
-                while self._control_steps-control_start < round(options.simulation_seconds/.02):
-                    if self._query_count:
-                        payload,state=self._next_request()
-                    payload['protocol_version']=PROTOCOL
-                    self._record('query_camera_evidence', state.metadata.get('camera_capture_report', {}))
-                    self._record('model_request',payload)
-                    result=self.client.infer(payload)
-                    if result.get('checkpoint_id')!=health['checkpoint_id']:
-                        raise ValueError('model response checkpoint changed')
-                    self._record('conditioned_model_response',result)
-                    commands=[runner._command(c) for c in result['chunk']['commands']]
-                    self._query_count+=1
-                    for command in commands[:period]:
-                        action=self.action_adapter.manipulation(command,route=JointTrajectoryRoute.PICK,sequence_id=self._query_count)
-                        for _ in range(10):
-                            if self._control_steps-control_start >= round(options.simulation_seconds/.02):break
-                            self._physical_step(action,route=JointTrajectoryRoute.PICK,command_index=command.index)
+                self._execute_policy(options,summary,health,payload,state)
                 summary.update(status='complete',success=True,failure_reason=None)
             except Exception as error:
                 summary.update(status='failed',failure_reason=f'{type(error).__name__}:{error}',traceback=traceback.format_exc())
@@ -131,6 +145,7 @@ def main():
                         help='one fresh Isaac process per feedback condition; stage reuse is not a validated pair')
     parser.add_argument('--simulation-seconds',type=float,default=12.)
     parser.add_argument('--record-contacts',action='store_true')
+    parser.add_argument('--video-fps',type=int,choices=(5,50),default=5)
     options,runtime=parser.parse_known_args()
     if not 0 < options.simulation_seconds <= 60:raise ValueError('diagnostic budget must be 0..60s')
     manifest=json.loads(options.validation_manifest.read_text())
@@ -147,7 +162,7 @@ def main():
     import source.simulation as simulation
     original=simulation.IsaacLabNavigationRuntimeConfig
     def config(*args,**kwargs):
-        kwargs['camera_render_interval_control_steps']=10
+        kwargs['camera_render_interval_control_steps']=50//options.video_fps
         kwargs['enable_verified_grasp_fixed_joint']=False
         return original(*args,**kwargs)
     simulation.IsaacLabNavigationRuntimeConfig=config

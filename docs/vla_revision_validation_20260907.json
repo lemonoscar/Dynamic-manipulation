@@ -1,0 +1,490 @@
+{
+  "schema": "vla-revision-delivery-summary-v2",
+  "date": "2026-09-07",
+  "status": "awaiting_user_review",
+  "baseline_commit": "bf5d5ab1130cc4a91f9cf4396b275d3b52e1da31",
+  "branch": "feat/vla-rolling-rtc-20260907",
+  "formal_training_started": false,
+  "new_real_data_ingested": false,
+  "new_physical_rollouts": 0,
+  "pytest": {
+    "passed": 650,
+    "skipped": 2,
+    "failures": 0,
+    "wall_s": 15.34,
+    "new_contract_tests": 46,
+    "skip_reason": [
+      "external locomotion weights not installed",
+      "CUDA explicitly disabled for final CPU regression"
+    ],
+    "xml_sha256": "ee8577655211c518a715b797527e6fb8297d0c7deb35eee1a284ac12433738ae"
+  },
+  "open_loop": {
+    "selection": {
+      "episode_count": 3,
+      "full_split": false,
+      "indices": [
+        4588,
+        4784,
+        4866,
+        5130
+      ],
+      "route_counts": {
+        "NAV_TO_SOURCE": 1,
+        "NAV_TO_TARGET": 1,
+        "PICK": 1,
+        "PLACE": 1
+      },
+      "sample_count": 4,
+      "split": "val"
+    },
+    "wall_s": 527.7446378637105,
+    "route_accuracy": {
+      "ci95": [
+        0.4385029682449546,
+        1.0
+      ],
+      "ci_method": "Wilson_boundary_envelope_using_episode_count",
+      "episode_mean": 1.0,
+      "episodes": 3,
+      "sample_mean": 1.0,
+      "samples": 4
+    },
+    "saturation_gate": {
+      "oracle": {
+        "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+        "limit": 0.005,
+        "passed": false,
+        "rate": 0.19285714285714287
+      },
+      "predicted": {
+        "definition": "(position + rate + gripper clipping events) / (samples * 10 * 7); events may overlap",
+        "limit": 0.005,
+        "passed": false,
+        "rate": 0.19285714285714287
+      }
+    },
+    "nav_xy_ade_m": 0.043098557169213375,
+    "mani_joint_mae_rad": 0.05485798869492703,
+    "report_sha256": "deb4d6948a3b7508de3a37d7fc954b0f536b2aca7899e37d86ce7178c298a5f0"
+  },
+  "checkpoint_numerics": {
+    "weights_sha256": "d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9",
+    "normalizer_id": "joint-trajectory-normalizer:44ee9d21bfd916587c23161e",
+    "strict_load": true,
+    "old_sampler_bitwise_equal": true,
+    "rtc_zero_gain_bitwise_equal": true,
+    "real_data_codec_rows": 8,
+    "max_codec_roundtrip_error": 2.220446049250313e-16,
+    "rtc": [
+      {
+        "steps": 4,
+        "wall_s": 0.9734418280422688,
+        "finite": true,
+        "mean_abs_delta_from_4step_independent": 0.0010975655168294907,
+        "parameter_grad_accumulated": false
+      },
+      {
+        "steps": 8,
+        "wall_s": 1.9798479415476322,
+        "finite": true,
+        "mean_abs_delta_from_4step_independent": 0.025997737422585487,
+        "parameter_grad_accumulated": false
+      }
+    ],
+    "vlm_condition": "synthetic_8_token_numerical_probe",
+    "physical_capability_evidence": false
+  },
+  "synthetic_mechanism_matrix": [
+    {
+      "mode": "H0",
+      "rtc": false,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 1,
+      "events": 0,
+      "wall_s": 0.02091534435749054,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    },
+    {
+      "mode": "H0",
+      "rtc": true,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 1,
+      "events": 0,
+      "wall_s": 0.5474679283797741,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    },
+    {
+      "mode": "H1",
+      "rtc": false,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 0,
+      "events": 0,
+      "wall_s": 0.020789308473467827,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    },
+    {
+      "mode": "H1",
+      "rtc": true,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 0,
+      "events": 0,
+      "wall_s": 0.03865865617990494,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    },
+    {
+      "mode": "H2",
+      "rtc": false,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 1,
+      "events": 1,
+      "wall_s": 0.021279316395521164,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    },
+    {
+      "mode": "H2",
+      "rtc": true,
+      "control_ticks": 100,
+      "applied": 100,
+      "requests": 5,
+      "epoch": 1,
+      "events": 1,
+      "wall_s": 0.03295056335628033,
+      "synthetic": true,
+      "plant": "first_order_joint_test_only",
+      "geometry_transfer_success": null,
+      "strict_full_success": null,
+      "deployment_gate_passed": false
+    }
+  ],
+  "candidate_smokes": [
+    {
+      "candidate": {
+        "name": "b0_learned",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 5.282111644744873
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "bounded_gripper",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": true,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 5.2247090339660645
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "fk_loss",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.1,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 5.549123287200928
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "mani_25hz",
+        "time_profile": "causal_command_25hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 14.41786003112793
+      },
+      "sample_shape": [
+        1,
+        50,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "nav_endpoint",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "endpoint",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 1.418778896331787,
+        "MANIPULATION": 7.7652177810668945
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "rgb_c0",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 5.282111644744873
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "rgb_c1",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C1",
+        "depth": false,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8795505166053772,
+        "MANIPULATION": 5.237194538116455
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "rgbd_c0",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": true,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 25.823766708374023,
+        "MANIPULATION": 2.5691938400268555
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 15018,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "rgbd_c1",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C1",
+        "depth": true,
+        "training_rtc": false,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 25.57557487487793,
+        "MANIPULATION": 2.62583065032959
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 15018,
+      "physical_capability_evidence": false
+    },
+    {
+      "candidate": {
+        "name": "training_rtc",
+        "time_profile": "causal_command_5hz",
+        "nav_output": "trajectory",
+        "coupling": "C0",
+        "depth": false,
+        "training_rtc": true,
+        "bounded_gripper": false,
+        "fk_loss_weight": 0.0,
+        "update_period_s": 0.4,
+        "depth_tokens": 16
+      },
+      "synthetic": true,
+      "random_initialization": true,
+      "losses": {
+        "NAVIGATION": 0.8739565014839172,
+        "MANIPULATION": 5.647109031677246
+      },
+      "sample_shape": [
+        1,
+        10,
+        7
+      ],
+      "finite_sample": true,
+      "parameters": 14914,
+      "physical_capability_evidence": false
+    }
+  ],
+  "results": {
+    "geometry_transfer_success": null,
+    "strict_full_success": null,
+    "deployment_gate_passed": false
+  },
+  "remaining": [
+    "review GPU/simulator allocation",
+    "new raw-control-v2 pilot and causal supervision",
+    "planner adaptation and new candidate training",
+    "calibrated sensor feedback and real differentiable FK",
+    "implemented Isaac rolling adapter physical verification and stop/envelope certificates",
+    "small physical RTC/plan comparisons; no final acceptance"
+  ],
+  "artifacts": {
+    ".validation/mechanism/report.json": "0877fea9439e3cecdc33093f2a23f7bca167849849b70f68b7c02c610ee664a8",
+    ".validation/candidates/report.json": "d72fee860ee6e919e67b92188860fcc9daba0ae227b40c2a5435b9239e4ab08c",
+    ".validation/checkpoint-numerics/report.json": "3acb5fb8a07738a61ece6c15480ea247d01d733e7fa58522610bcbd11b94c0d2"
+  }
+}
