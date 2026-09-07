@@ -5,7 +5,7 @@ This protocol is deliberately distinct from the autonomous route service. It
 accepts RGB and measurable joints only, never object/base/task truth or targets.
 """
 from __future__ import annotations
-import json
+import json,math
 from dataclasses import asdict
 from http.server import HTTPServer
 from pathlib import Path
@@ -28,7 +28,7 @@ class ConditionedPickService:
         return {**self.service.health(),'protocol_version':PROTOCOL,'diagnostic_only':True,
                 'forced_route':'PICK','prefix':'canonical','seed_semantics':'same diffusion seed at each query'}
 
-    def infer(self,payload):
+    def infer(self,payload,*,rtc_context=None):
         allowed={'protocol_version','request_id','episode_id','sequence_id','instruction',
                  'head_images','wrist_images','joint_position','joint_velocity','gripper_open_fraction'}
         if set(payload)-allowed or payload.get('protocol_version')!=PROTOCOL:
@@ -36,7 +36,7 @@ class ConditionedPickService:
         q=server._vector(payload['joint_position'],6,'joint_position')
         dq=server._vector(payload['joint_velocity'],6,'joint_velocity')
         grip=float(payload['gripper_open_fraction'])
-        if not 0 <= grip <= 1:
+        if not math.isfinite(grip):
             raise ValueError('invalid measured gripper fraction')
         session=self.service.session
         example={'video':(server._decode_pair(payload['head_images'],'head_images'),
@@ -45,7 +45,8 @@ class ConditionedPickService:
                  'mani_state':session.normalizer.normalize_mani_state((*q,*dq,grip))}
         decision=oracle_decision({'route':'PICK'})
         torch.manual_seed(self.service.seed);torch.cuda.manual_seed_all(self.service.seed)
-        normalized=session.policy.predict_actions([example],[decision])[0]
+        normalized=session.policy.predict_actions([example],[decision],
+            rtc_contexts=None if rtc_context is None else [rtc_context])[0]
         if normalized is None:
             raise ValueError('PICK expert returned no action')
         physical=session.normalizer.denormalize_action(JointTrajectoryRoute.PICK,normalized)

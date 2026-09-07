@@ -999,8 +999,6 @@ class ConveyorVLAJointTrajectoryPolicy(nn.Module):
     ) -> tuple[JointTrajectoryPrediction, ...]:
         decisions = self.predict_routes(examples)
         valid_indices = [index for index, decision in enumerate(decisions) if decision.valid]
-        if rtc_contexts is not None and len(rtc_contexts) != len(examples):
-            raise ValueError("RTC contexts must align with examples")
         actions: list[tuple[tuple[float, ...], ...] | None] = [None] * len(examples)
         if valid_indices:
             selected = [examples[index] for index in valid_indices]
