@@ -61,3 +61,13 @@ def test_response_cannot_change_epoch_duration_or_hide_saturation():
     bad=copy.deepcopy(response);bad['chunk']['commands'][0]['duration_s']=.04
     with pytest.raises(ValueError,match='interval'):
         validate_response(request,bad,health)
+
+
+def test_vla_scripts_package_wins_over_source_regular_package(tmp_path):
+    import subprocess,sys
+    from pathlib import Path
+    source=tmp_path/'source_reference';(source/'scripts').mkdir(parents=True)
+    (source/'scripts/__init__.py').write_text("raise AssertionError('source scripts shadowed VLA entry')\n")
+    root=Path(__file__).resolve().parents[1]
+    code="import sys;sys.path[:0]=[sys.argv[1],sys.argv[1]+'/src',sys.argv[2]];from scripts import run_conditioned_pick;assert run_conditioned_pick.__file__.startswith(sys.argv[1])"
+    subprocess.run([sys.executable,'-B','-c',code,str(root),str(source)],check=True,cwd=source)
