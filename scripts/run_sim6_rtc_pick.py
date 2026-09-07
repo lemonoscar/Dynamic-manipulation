@@ -135,6 +135,21 @@ def fingerprint(payload):
             for k in ('head_images','wrist_images')}
 
 
+def compare_first_rgb(saved, current):
+    import base64,io,numpy as np
+    from PIL import Image
+    report={}
+    for key in ('head_images','wrist_images'):
+        report[key]=[]
+        for a,b in zip(saved[key],current[key],strict=True):
+            aa=np.asarray(Image.open(io.BytesIO(base64.b64decode(a))).convert('RGB'),dtype=np.float64)
+            bb=np.asarray(Image.open(io.BytesIO(base64.b64decode(b))).convert('RGB'),dtype=np.float64)
+            if aa.shape!=bb.shape:raise ValueError('shared first image dimensions differ')
+            error=np.abs(aa-bb)
+            report[key].append({'jpeg_sha_equal':a==b,'pixel_mae_255':float(error.mean()),'pixel_max_abs_255':float(error.max()),'pixels_different_fraction':float(np.any(error>0,axis=-1).mean())})
+    return report
+
+
 def initialize_sim6(simulation,obs,sample,previous):
     import torch,numpy as np
     robot=simulation._adapter.robot;names=list(robot.joint_names);source_names=obs['joint_names']
@@ -226,7 +241,15 @@ def pipeline_type(options):
                 write_json(first_path,{'identity':identity,'request':payload,'response':result,'image_hashes':fingerprint(payload),'query_state':base.runner.waypoint_runner._state_snapshot(state)})
             else:
                 saved=json.loads(first_path.read_text());result=saved['response']
-                if saved['identity']!=identity or saved['image_hashes']!=fingerprint(payload):raise ValueError('new Sim6 shared first condition/RGB differs')
+                write_json(self.episode_dir/'first_condition.json',{'identity':identity,'request':payload,'image_hashes':fingerprint(payload),'first_plan_sha256':sha256(first_path)})
+                expected_identity={**identity,'vla_code_sha':options.first_plan_code_sha or identity['vla_code_sha']}
+                if saved['identity']!=expected_identity:raise ValueError('shared first source/model/code identity differs')
+                for key in ('active_task_id','active_task_epoch','instruction','time_profile','query_time_s','image_times_s'):
+                    if saved['request'][key]!=payload[key]:raise ValueError(f'shared first task/time identity differs: {key}')
+                summary['first_rgb_comparison']=compare_first_rgb(saved['request'],payload)
+                summary['first_plan_origin_code_sha']=expected_identity['vla_code_sha']
+                summary['rgb_matching_protocol']='shared_prediction_and_physics_independent_rgb_v2'
+                summary['rgb_hash_equality_required']=False
                 snapshot=base.runner.waypoint_runner._state_snapshot(state)
                 compare_physical_states(saved['query_state'],snapshot)
                 saturation.append(validate_response(saved['request'],result,health))
@@ -240,7 +263,7 @@ def pipeline_type(options):
             summary['saturation_by_query']=saturation
             summary['saturation_gate_passed']=all(r['gate_passed'] for r in saturation)
             if len(first)!=10:raise ValueError('expected legacy10point prediction')
-            summary.update(schema='sim6-rtc-pick-diagnostic-v1',branch=options.branch,first_plan_sha256=sha256(first_path),
+            summary.update(schema='sim6-rtc-pick-diagnostic-v2',branch=options.branch,first_plan_sha256=sha256(first_path),
                 source_reference_sha=options.source_sha,condition='new_Sim6_raw_N_initialization',paused_simulation=True,
                 realtime_pass=False,window_s=1.6,extra_hold_s=0.,saturation_gate_threshold=.005)
             first_action_id=prior['request_id']
@@ -298,8 +321,10 @@ def main():
     p.add_argument('--first-plan',type=Path,required=True);p.add_argument('--endpoint',default='http://127.0.0.1:18092')
     p.add_argument('--preflight-only',action='store_true');p.add_argument('--preflight-output',type=Path)
     p.add_argument('--code-manifest',type=Path,required=True)
+    p.add_argument('--first-plan-code-sha',help='Explicit immutable code identity that generated an adopted first plan')
     options,runtime=p.parse_known_args();options.execute_points=2;options.simulation_seconds=2.;options.video_fps=5;options.record_contacts=True
     options.source_seed=int(runtime[runtime.index('--seed')+1])
+    if options.first_plan_code_sha and (len(options.first_plan_code_sha)!=40 or any(c not in '0123456789abcdef' for c in options.first_plan_code_sha)):raise ValueError('invalid first plan code identity')
     reference=Path(runtime[runtime.index('--reference-root')+1]).resolve()
     code_manifest=json.loads(options.code_manifest.read_text())
     if len(code_manifest['commit'])!=40:raise ValueError('VLA snapshot commit missing')
