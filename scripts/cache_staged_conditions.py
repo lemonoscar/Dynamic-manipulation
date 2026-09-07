@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Freeze current RGB and task-only Qwen tokens for candidate action training."""
-import argparse,json,sys
+import argparse,json,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'src')]
 import torch
@@ -29,8 +29,10 @@ def main(argv=None):
     if a.max_rows:rows=rows[:a.max_rows]
     with torch.inference_mode():
         for index,row in enumerate(rows):
+            started=time.perf_counter()
             episode=Path(row['episode_root']);task=json.loads((episode/'task.json').read_text())
-            instruction=task['original_instruction'];primitive=row['route']
+            instruction=task.get('original_instruction',task.get('base_instruction',task.get('instruction')));primitive=row['route']
+            if not instruction:raise ValueError('missing source instruction')
             # New data does not supervise nonexistent PLACE retreat.
             subtask='Lower, release, and verify placement.' if primitive=='PLACE' else primitive
             semantic=instruction+'\nCurrent task: '+subtask
@@ -59,18 +61,30 @@ def main(argv=None):
             if row.get('depth') is not None:
                 import numpy as np
                 from conveyor_bench.conveyorvla.geometry_encoder import project_depth
-                d=row['depth']
-                def load(name):
-                    path=(episode/name).resolve()
-                    if not path.is_relative_to(episode.resolve()):raise ValueError('depth path escapes episode')
-                    return np.load(path,allow_pickle=False)
-                z=torch.as_tensor(load(d['path']),dtype=torch.float32)[None]
-                valid=torch.as_tensor(load(d['valid_path']),dtype=torch.bool)[None]
-                points,valid=project_depth(z,valid,torch.tensor(d['intrinsics'],dtype=torch.float32)[None],
-                    torch.tensor(d['camera_to_base'],dtype=torch.float32)[None],definition=d['definition'],unit_scale=d['unit_scale'])
-                cache.update(points=points,depth_valid=valid)
+                points_all=[];valid_all=[]
+                for d in (row['depth'] if isinstance(row['depth'],list) else [row['depth']]):
+                    def load(name):
+                        path=(episode/name).resolve()
+                        if not path.is_relative_to(episode.resolve()):raise ValueError('depth path escapes episode')
+                        if path.suffix.lower()=='.png':
+                            with Image.open(path) as im:
+                                array=np.asarray(im)
+                            if array.dtype!=np.uint16:raise ValueError('depth PNG must be uint16')
+                            return array.copy()
+                        return np.load(path,allow_pickle=False)
+                    raw_depth=load(d['path'])
+                    valid_array=load(d['valid_path']) if d.get('valid_path') else raw_depth>0
+                    z=torch.as_tensor(raw_depth.astype(np.float32),dtype=torch.float32)[None]
+                    valid=torch.as_tensor(valid_array,dtype=torch.bool)[None]
+                    points,valid=project_depth(z,valid,torch.tensor(d['intrinsics'],dtype=torch.float32)[None],
+                        torch.tensor(d['camera_to_base'],dtype=torch.float32)[None],definition=d['definition'],
+                        unit_scale=d['unit_scale'],pixel_offset=d.get('pixel_offset',0.))
+                    points_all.append(points);valid_all.append(valid)
+                cache.update(points=torch.cat(points_all,dim=1),depth_valid=torch.cat(valid_all,dim=1))
             name=f'condition-{index:08d}.pt';torch.save(cache,a.output/name)
             entries[row['episode_uuid']+':'+row['observation_id']]={'file':name,'sha256':digest(a.output/name)}
+            print(json.dumps({'cached_row':index+1,'route':row['route'],'wall_s':time.perf_counter()-started,
+                'live_token_shape':list(cache['live_tokens'].shape),'depth_points':None if 'points' not in cache else list(cache['points'].shape)}),flush=True)
     (a.output/'manifest.json').write_text(json.dumps({'schema':'staged-condition-cache-v2',
         'release_sha256':digest(a.release/'manifest.json'),'encoder_model_id':binding['weights_sha256'],
         'entries':entries},indent=2)+'\n')

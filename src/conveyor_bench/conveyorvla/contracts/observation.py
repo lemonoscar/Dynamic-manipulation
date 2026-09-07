@@ -21,7 +21,8 @@ class CurrentObservation:
             raise ValueError('invalid observation identity/time')
         finite_array(self.q, (6,), 'q'); finite_array(self.dq, (6,), 'dq')
         finite_array(self.base_xyyaw, (3,), 'base_xyyaw')
-        if not math.isfinite(self.gripper) or not 0 <= self.gripper <= 1:
+        # Measured calibrated state may overshoot sensor endpoints; commands have a separate gate.
+        if not math.isfinite(self.gripper):
             raise ValueError('invalid measured gripper')
         if len(self.images) != len(self.image_times_s) or any(
                 not math.isfinite(t) or t > self.time_s or t < 0 for t in self.image_times_s):

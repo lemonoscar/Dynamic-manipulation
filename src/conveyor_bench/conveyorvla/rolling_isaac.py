@@ -14,13 +14,15 @@ from .waypoint import yaw_from_quaternion
 
 class IsaacRollingAdapter:
     def __init__(self,simulation,action_adapter,memory,*,camera_reader,
-                 navigation_executor,local_map,record,render=True):
+                 navigation_executor,local_map,record,render=True,effective_target_reader=None,safety_stop=None):
         self.simulation=simulation;self.action_adapter=action_adapter;self.memory=memory
         self.camera_reader=camera_reader
         self.navigation_executor=navigation_executor;self.local_map=local_map
         self.record=record;self.render=render;self.frames=deque(maxlen=32)
         self._nav_identity=None;self._nav_query_time=None;self._nav_hold=None
         self._last_observation=None
+        self.effective_target_reader=effective_target_reader;self.safety_stop=safety_stop
+        self._trusted_hold=None
 
     def observe(self):
         state=self.simulation.read();joints=measured_named_joint_state(state)
@@ -65,19 +67,34 @@ class IsaacRollingAdapter:
     def apply(self,target,observation):
         if self._route() not in {JointTrajectoryRoute.PICK,JointTrajectoryRoute.PLACE}:
             raise ValueError('Mani queue cannot execute under NAV/VERIFY/FINISH')
+        if self.effective_target_reader is None:
+            raise RuntimeError('effective_target_reader required before rolling physical execution')
         command=DirectJointCommand(index=0,joint_position=tuple(target[:6]),gripper_open_fraction=target[6])
         action=self.action_adapter.manipulation(command,route=self._route(),sequence_id=self.memory.active_task_epoch)
         self._step(action,'rolling_mani')
+        self._trusted_hold=self._effective_hold()
         return tuple(target)
 
+    def _effective_hold(self):
+        # The caller supplies a same-episode controller witness, never measured aperture.
+        if self.effective_target_reader is None:
+            raise RuntimeError('effective_target_reader required before rolling physical execution')
+        witness=self.effective_target_reader()
+        if witness['mission_id']!=self.memory.mission_id or not witness['verified']:
+            raise RuntimeError('no trusted effective target in this episode')
+        return DirectJointCommand(0,tuple(witness['joint_position']),witness['gripper_open_fraction'])
+
     def hold(self,observation,reason):
-        # A measured hold belongs to this episode, never to a previous target cache.
-        state=measured_named_joint_state(self.simulation.read())
-        command=DirectJointCommand(index=0,joint_position=state.joint_position,
-            gripper_open_fraction=state.gripper_open_fraction)
+        command=self._effective_hold()
+        self._trusted_hold=command
         action=self.action_adapter.hold(command,route=self._route(),sequence_id=self.memory.active_task_epoch,
             source='rolling_hold_'+reason)
         self._step(action,reason)
+
+    def stop(self,observation,reason):
+        if self.safety_stop is None:
+            raise RuntimeError('separate physical safety_stop callback required')
+        self.safety_stop(observation,reason)
 
     def navigation(self,proposal,observation):
         identity=proposal['identity']
@@ -97,8 +114,7 @@ class IsaacRollingAdapter:
                 points=tuple(map(tuple,proposal['reference_query_body']))
                 executor.begin(NavigationReference(points,points[-1],.2),root,timestamp_s=observation.time_s)
                 self._nav_identity=identity;self._nav_query_time=proposal['query_time_s']
-                measured=measured_named_joint_state(state)
-                self._nav_hold=DirectJointCommand(0,measured.joint_position,measured.gripper_open_fraction)
+                self._nav_hold=self._effective_hold()
             control=executor.command(state.robot_root_pose,measured_body_velocity(state),self.local_map(self._route()),
                 timestamp_s=observation.time_s)
             self.record({'kind':'navigation_feedback','reason':control.reason,'trace':control.trace,

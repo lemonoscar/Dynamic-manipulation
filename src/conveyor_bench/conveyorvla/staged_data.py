@@ -129,7 +129,7 @@ class RawEpisode:
                 if value is not None:
                     finite_array(value, (size,), channel)
                 if source == 'held_valid':
-                    parent = commands.get((key[0], resolved.get('parent_command_id')))
+                    parent = commands.get((key[0], resolved.get('parent_command_ids', {}).get(channel, resolved.get('parent_command_id'))))
                     valid[channel] = bool(valid[channel] and parent is not None and parent['_valid'][channel]
                         and np.array_equal(value, parent['resolved'][channel]))
             r['_valid'] = valid
@@ -157,6 +157,8 @@ class RawEpisode:
                 craw = self.observations[control['observation_ref']][1]
                 if (craw.get('active_task_id'), craw.get('active_task_epoch')) != (raw['active_task_id'], raw['active_task_epoch']):
                     raise ValueError('future interval crosses task identity/epoch boundary')
+                if 'gripper_target' in channels and control.get('_action_exclusion_reason'):
+                    raise ValueError(control['_action_exclusion_reason']+' inside real interval')
                 if not all(control['_valid'][c] for c in channels):
                     raise ValueError('quarantined stale/unknown effective command inside real interval')
                 if control.get('intervention_refs'):
@@ -188,8 +190,9 @@ class RawEpisode:
                 targets.append([*q, grip])
             else:
                 # NAV labels are local desired states, never inferred from base_twist.
-                goal = craw.get('nav_goal_world_xyyaw')
-                if goal is None or craw.get('nav_goal_source_class') not in {'issued', 'held_valid'}:
+                reference = self.manifest.get('nav_label_semantics') == 'future_measured_reference_not_goal_command'
+                goal = craw.get('nav_reference_world_xyyaw') if reference else craw.get('nav_goal_world_xyyaw')
+                if goal is None or (not reference and craw.get('nav_goal_source_class') not in {'issued', 'held_valid'}):
                     raise ValueError('NAV needs verified desired goal state labels')
                 gx, gy, gyaw = finite_array(goal, (3,), 'world NAV goal')
                 x, y, yaw = obs.base_xyyaw
@@ -209,14 +212,15 @@ class RawEpisode:
         action = encode_mani(targets, obs.q) if mani else np.asarray(targets)
         depth = raw.get('depth')
         if depth is not None:
-            if (depth.get('definition') not in {'z_depth', 'ray_range'} or not depth.get('calibration_id')
-                    or not math.isfinite(depth['capture_time_s']) or depth['capture_time_s'] > obs.time_s
-                    or abs(depth['capture_time_s']-obs.time_s) > 1e-7):
+          for depth_item in (depth if isinstance(depth, list) else [depth]):
+            if (depth_item.get('definition') not in {'z_depth', 'ray_range'} or not depth_item.get('calibration_id')
+                    or not math.isfinite(depth_item['capture_time_s']) or depth_item['capture_time_s'] > obs.time_s
+                    or abs(depth_item['capture_time_s']-obs.time_s) > 1e-7):
                 raise ValueError('depth requires same-time capture and calibrated definition')
-            for key in ('path', 'valid_path', 'intrinsics', 'camera_to_base', 'unit_scale'):
-                if key not in depth: raise ValueError('missing depth contract field: '+key)
+            for key in ('path', 'intrinsics', 'camera_to_base', 'unit_scale'):
+                if key not in depth_item: raise ValueError('missing depth contract field: '+key)
         return {'schema': 'action-view-v2', 'depth': depth,
-            'calibration_id': None if depth is None else depth['calibration_id'], 'episode_uuid': self.manifest['episode_uuid'],
+            'calibration_id': None if depth is None else ([d['calibration_id'] for d in depth] if isinstance(depth, list) else depth['calibration_id']), 'episode_uuid': self.manifest['episode_uuid'],
             'task_family_id': self.manifest['task_family_id'], 'observation_id': observation_id,
             'query_time_s': obs.time_s, 'time_profile': p.name,
             'first_target_offset_s': p.first_target_offset_s, 'target_times_s': p.target_times(obs.time_s).tolist(),
@@ -225,6 +229,7 @@ class RawEpisode:
             'route': raw['primitive'], 'actions': action.tolist(), 'mani_state': list(obs.mani_state),
             'images': list(obs.images), 'image_times_s': list(obs.image_times_s),
             'source_command_ids': sources, 'target_kind': ['real_future']*p.horizon,
+            'nav_label_semantics': self.manifest.get('nav_label_semantics', 'verified_desired_goal'),
             'training_eligible': True, 'synthetic': self.manifest.get('synthetic', False)}
 
     def task_view(self):

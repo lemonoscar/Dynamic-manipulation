@@ -279,9 +279,12 @@ def test_isaac_binding_only_reads_sensors_and_uses_existing_action_adapter():
     m=TaskMemory('m','transfer',(Task('p','a','PICK','cola'),));sim=Sim();records=[]
     adapter=IsaacRollingAdapter(sim,IsaacJointActionAdapter(lambda **kw:SimpleNamespace(**kw)),m,
         camera_reader=lambda s:(s.timestamp,np.zeros((2,2,3),np.uint8),np.zeros((2,2,3),np.uint8)),
-        navigation_executor=None,local_map=lambda r:None,record=records.append)
+        navigation_executor=None,local_map=lambda r:None,record=records.append,
+        effective_target_reader=lambda:{'mission_id':'m','verified':True,'joint_position':(0.,)*6,
+            'gripper_open_fraction':.25})
     for _ in range(10):
         o=adapter.observe();adapter.hold(o,'warmup')
+        assert sim.actions[-1].metadata['gripper_joint_positions']==(.01,.01)
     o=adapter.observe();assert len(o.images)==4
     np.testing.assert_allclose(o.image_times_s,(0.,.2,0.,.2))
     target=(.01,)*6+(.5,);assert adapter.apply(target,o)==target

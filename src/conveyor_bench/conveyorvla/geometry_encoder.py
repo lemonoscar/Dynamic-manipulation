@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 
-def project_depth(depth, valid, intrinsics, camera_to_base, *, definition, unit_scale=1.):
+def project_depth(depth, valid, intrinsics, camera_to_base, *, definition, unit_scale=1., pixel_offset=0.):
     if definition not in {'z_depth', 'ray_range'} or unit_scale <= 0:
         raise ValueError('explicit z_depth/ray_range and positive unit scale required')
     if depth.ndim != 3 or valid.shape != depth.shape or valid.dtype != torch.bool:
@@ -22,7 +22,7 @@ def project_depth(depth, valid, intrinsics, camera_to_base, *, definition, unit_
     if (intrinsics[:,0,0] <= 0).any() or (intrinsics[:,1,1] <= 0).any():
         raise ValueError('nonpositive focal length')
     y,x=torch.meshgrid(torch.arange(height,device=depth.device),torch.arange(width,device=depth.device),indexing='ij')
-    pixels=torch.stack((x,y,torch.ones_like(x)),dim=-1).to(depth).reshape(1,-1,3).expand(batch,-1,-1)
+    pixels=torch.stack((x+pixel_offset,y+pixel_offset,torch.ones_like(x)),dim=-1).to(depth).reshape(1,-1,3).expand(batch,-1,-1)
     rays=pixels @ torch.linalg.inv(intrinsics).transpose(1,2)
     if definition=='ray_range':
         rays=rays/torch.linalg.vector_norm(rays,dim=-1,keepdim=True)
