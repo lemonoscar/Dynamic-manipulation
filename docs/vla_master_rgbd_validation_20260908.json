@@ -1,0 +1,517 @@
+{
+  "schema": "vla-master-integration-evidence-v1",
+  "implementation_commit": "c3b45a7adc064dda2aa01db73076552534a6d3fe",
+  "branch": "feat/master-rgbd-integration-20260908",
+  "artifact_root": "/diff/wallx_workspace/dzb/integration_runs/master_rgbd_20260908_b",
+  "pytest": {
+    "tests": 658,
+    "passed": 656,
+    "skipped": 2,
+    "failures": 0,
+    "wall_s": 16.148
+  },
+  "real_import": {
+    "schema": "collection-import-validation-v1",
+    "episode": "/diff/wallx_workspace/dzb/data_releases/master_rgbd_probe_20260908/episode_000000",
+    "source_commit": "94bc4ef0396ee33fc1651b46c40944e61afceea1",
+    "import_audit": {
+      "version": "collection-to-staged-v1",
+      "source_depth_metadata_conflicts": 1945,
+      "measured_gripper_out_of_range": 227,
+      "command_gripper_out_of_range": 1,
+      "command_gripper_out_of_range_ticks": [
+        {
+          "tick": 393,
+          "master_m": 0.04000132530927658,
+          "fraction": 1.0000331327319145
+        }
+      ],
+      "task_status": "unresolved_not_used_for_training",
+      "intervention_kinds": [
+        "runtime_assistance_state"
+      ],
+      "unknown_intervention_ticks": [],
+      "declared_physical_assistance_events": [
+        {
+          "control_tick": 0,
+          "reset_generation": 1,
+          "sim_time_s": 0.0,
+          "kind": "runtime_assistance_state",
+          "before": null,
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 7,
+          "reset_generation": 1,
+          "sim_time_s": 0.14,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 20,
+          "reset_generation": 1,
+          "sim_time_s": 0.4,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 197,
+          "reset_generation": 1,
+          "sim_time_s": 3.94,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 348,
+          "reset_generation": 1,
+          "sim_time_s": 6.96,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": true,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        },
+        {
+          "control_tick": 605,
+          "reset_generation": 1,
+          "sim_time_s": 12.1,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 606,
+          "reset_generation": 1,
+          "sim_time_s": 12.120000000000001,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 1581,
+          "reset_generation": 1,
+          "sim_time_s": 31.62,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": false,
+            "manipulation_support_joint_lock_active": false,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          }
+        },
+        {
+          "control_tick": 1835,
+          "reset_generation": 1,
+          "sim_time_s": 36.7,
+          "kind": "runtime_assistance_state",
+          "before": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": true
+          },
+          "after": {
+            "object_initialization_pose_freeze_active": false,
+            "navigation_object_follow_active": false,
+            "manipulation_base_lock_active": true,
+            "manipulation_support_joint_lock_active": true,
+            "navigation_joint_pose_lock_active": false,
+            "grasp_fixed_joint_active": false
+          }
+        }
+      ],
+      "controls": 1945,
+      "camera_samples": 1945,
+      "observation_rows": 3890,
+      "source_file_hashes": {
+        "manifest.json": "a453cddadc386f362de6544f04aaf2c9b2a846d1c93672e66c42a6fa4e5eb9dd",
+        "task.json": "33cad9a3a83c9bdfc9e52c67151c785aeb60113fcd8c6e3633cf5409c9ec13e7",
+        "observations.jsonl": "3e882b42270f8b193053e56fb13e5d94c6aa23ae28e01532672d0a895634b9d6",
+        "control_effective_50hz.jsonl": "7561d25082f0e91229e81cc56e00d4abaddb1646ff8258f23382dd2159ec86fe",
+        "samples.jsonl": "ba58213be8f41652bb181a7729685f52a32056f050e0f0fe20a8d3f330bfcf00",
+        "interventions.jsonl": "1cc026eed1f5bcd669fa46c9d25332c7dd798e7a1b48efb6f9a4d99df84e46d9",
+        "task_events.jsonl": "93204af1f065f70f1c429bf545003704e38975b6dee9a04bc385d76cc77432e8"
+      }
+    },
+    "action_rows": 1390,
+    "route_counts": {
+      "NAV_TO_SOURCE": 40,
+      "PICK": 209,
+      "NAV_TO_TARGET": 877,
+      "PLACE": 264
+    },
+    "quarantine_counts": {
+      "future interval crosses task identity/epoch boundary": 297,
+      "effective_gripper_outside_calibrated_range inside real interval": 100,
+      "missing actual application tail; no invented terminal hold": 99
+    },
+    "decoded_assets": 7780,
+    "depth_records": 3890,
+    "planner_rows": 0,
+    "golden_sha256": "078b50e427b689e4edfdab7ccac861acdf66230e9f3d5c10c3c4ec94ad938efb",
+    "asset_hashes_sha256": "9a972c30fdd7ecf67b8674ce656ee223aa40fbaaff44b85a460a04c93a44203d",
+    "cross_machine_golden_compared": false,
+    "physical_capability_evidence": false
+  },
+  "real_smoke": {
+    "schema": "real-rgbd-smoke-validation-v1",
+    "source_commit": "91d72dd77dd8badf7efafa67f5295df216de594a",
+    "input_source_commit": "94bc4ef0396ee33fc1651b46c40944e61afceea1",
+    "real_rgbd_queries": 24,
+    "families": 1,
+    "steps": 30,
+    "steps_consecutive": true,
+    "all_losses_finite": true,
+    "loss_min": 0.05506805423647165,
+    "loss_max": 1.3490291833877563,
+    "loss_first": 0.3357584550976753,
+    "loss_last": 0.07271525077521801,
+    "checkpoint_saved": true,
+    "checkpoint_strict_reloaded": true,
+    "proposal_decoded": true,
+    "run_wall_s": 76.0,
+    "exit_status": 0,
+    "ended_at": "2026-09-08T00:36:32+08:00",
+    "normalizer_id": "1bbd4eae006613f352452f8c1116c3c28c72c486b33b4434c0eb281cd8092c5b",
+    "gpu_physical_index": 2,
+    "gpu_uuid": "GPU-0b4f9aa0-7c5b-0aa1-3652-51b7ec9fc8b7",
+    "cache_observed_gpu_memory_mib": 10416,
+    "training_peak_gpu_memory_mib": null,
+    "physical_capability_evidence": false,
+    "formal_training": false,
+    "planner_training_rows": 0,
+    "hashes": {
+      "run_manifest.json": "9ab8ef6ca25c79990b54399c74ee896b17fc641cfdf3ce5ed87dcceee5a3f4ac",
+      "launch.sh": "a4f2196312a8dd3c15ef5fdaaf05249e3057bf09b0b6cb670c1934ba949a3135",
+      "smoke_config.json": "cf46dcfcb594dbc1c96e23f54bb0e02fd5d4a01f0dfc4e43f87b43c4b8bb06fb",
+      "release/manifest.json": "96803ed798f3c44421ad77348f9efa4c2b84185823d1124e169c68b317fed23b",
+      "release/normalization.json": "9cf0d3de1f23dcc20a7642d16fc5c7a5d8938175a293554832649b4dff6bfd04",
+      "conditions/manifest.json": "480cf9d922932fc2327fec920876ff9cb3e2afbb0b55396e93d6dd228cc8976c",
+      "preflight.json": "df88c1b61a92501e67980641a91df8acf4230337d4afcb1dbf618f4bd1b2f208",
+      "trained/model.pt": "0646d87062272ddbfab3b4f6159dd1554f05c1a5feb1b84039347a699113418d",
+      "trained/resolved.json": "b830e87ea4d7c4391e7e69a9d2af24df5add15655a42168592c938b6eb614d25",
+      "trained/events.jsonl": "c9e156acaf0bdc927462327d3273bc1eba6d8184b802cef592461ee1f7270100",
+      "proposal.json": "16a4feab9f2f3e8274553e9163563fc8d831119d472ae57ca28625cf2f3a9b19",
+      "decoded_proposal.json": "91c756d6e3ccd7be75a9c36e2274493fba0c99b5db7556662a93d6ec21b12344"
+    }
+  },
+  "real_rgb_vjp": {
+    "schema": "real-rgb-vjp-numerics-v1",
+    "source_commit": "91d72dd77dd8badf7efafa67f5295df216de594a",
+    "weights_sha256": "d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9",
+    "normalizer_id": "joint-trajectory-normalizer:44ee9d21bfd916587c23161e",
+    "normalization_sha256": "a8805b21718f7d8bbff6df17b361e1fd2cdf8f15ec9f70294add188500d22725",
+    "protocol": {
+      "query_count": 3,
+      "steps": 4,
+      "finite_difference_eps": [
+        0.001,
+        0.01
+      ],
+      "finite_difference_absolute_tolerance": 0.001,
+      "finite_difference_relative_tolerance": 0.02,
+      "dtype": "float32_action_head_bfloat16_frozen_qwen",
+      "condition_origin": "new_N_not_000006_000024_000030_reproduction",
+      "canonical_prefix": "legacy_PICK",
+      "legacy_profile": "legacy_future_5hz",
+      "physical_trajectories": 0,
+      "shared_prefix_physical_protocol_executed": false,
+      "numerical_requery_period_s": 0.4,
+      "old_tail_points": 8,
+      "old_tail_horizon_s": 1.6,
+      "unavailable_prior_last_two_masked_zero_not_hold": true
+    },
+    "results": [
+      {
+        "previous_observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t220:pre",
+        "previous_query_time_s": 4.4,
+        "observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t240:pre",
+        "query_time_s": 4.8,
+        "images": [
+          "images/front/camera0_00230.jpg",
+          "images/front/camera0_00240.jpg",
+          "images/wrist/wrist_00230.jpg",
+          "images/wrist/wrist_00240.jpg"
+        ],
+        "image_hashes": [
+          "3c1704866865a7275842e29aafe4aaad62e708e708fd3589f746190aa876cbf9",
+          "518408247f289b6b3e1cf7f01f58f754c6c29069642aac95c1ef6aae2d4234d5",
+          "24ae995b98839b7cda2e303c63eef6f7f7cd4eb87f2c6ef816a4405ea6073724",
+          "ac8e7aa83d5aaa44acc3ed9a33df65b355583f9b849c682bd1131d2453560690"
+        ],
+        "off_bitwise_equal_to_legacy": true,
+        "off_max_abs_difference": 0.0,
+        "encoder_s": 0.6288847215473652,
+        "replacement_sampling_s": 0.032048046588897705,
+        "rtc_sampling_s": 0.08370698057115078,
+        "cuda_peak_allocated_bytes": 11073667072,
+        "finite_difference": [
+          {
+            "eps": 0.001,
+            "analytic": -0.07934482395648956,
+            "finite_difference": -0.07924817502498627,
+            "absolute_error": 9.66489315032959e-05,
+            "tolerance": 0.0025868964791297914,
+            "passed": true
+          },
+          {
+            "eps": 0.01,
+            "analytic": -0.07934482395648956,
+            "finite_difference": -0.07920132577419281,
+            "absolute_error": 0.00014349818229675293,
+            "tolerance": 0.0025868964791297914,
+            "passed": true
+          }
+        ],
+        "no_parameter_grad_accumulated": true,
+        "finite_rtc": true,
+        "rtc_minus_replacement_mean_abs": 0.10352377593517303
+      },
+      {
+        "previous_observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t403:pre",
+        "previous_query_time_s": 8.06,
+        "observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t423:pre",
+        "query_time_s": 8.46,
+        "images": [
+          "images/front/camera0_00413.jpg",
+          "images/front/camera0_00423.jpg",
+          "images/wrist/wrist_00413.jpg",
+          "images/wrist/wrist_00423.jpg"
+        ],
+        "image_hashes": [
+          "cd5d9c0e971cc1e4ba7a7830214695425dd1795266ddddf5266e0a41982d5c64",
+          "3dd000bf18fd9d2304b6a0c8e63820be0ec7df36a72a99fad3b274099728b909",
+          "ac910a698db2567efc5b3f914d0dc8361721af2291395fb67b2baae2321c76cb",
+          "005cd6561c39dc8c8613db86b648c1ddbfdb6ab08ab28165d0c50a7d06a0214c"
+        ],
+        "off_bitwise_equal_to_legacy": true,
+        "off_max_abs_difference": 0.0,
+        "encoder_s": 0.27506550773978233,
+        "replacement_sampling_s": 0.03204003721475601,
+        "rtc_sampling_s": 0.06209891475737095,
+        "cuda_peak_allocated_bytes": 11073132032,
+        "finite_difference": [
+          {
+            "eps": 0.001,
+            "analytic": -0.002063808962702751,
+            "finite_difference": -0.002039019949734211,
+            "absolute_error": 2.478901296854019e-05,
+            "tolerance": 0.001041276179254055,
+            "passed": true
+          },
+          {
+            "eps": 0.01,
+            "analytic": -0.002063808962702751,
+            "finite_difference": -0.0020655719563364983,
+            "absolute_error": 1.7629936337471008e-06,
+            "tolerance": 0.00104131143912673,
+            "passed": true
+          }
+        ],
+        "no_parameter_grad_accumulated": true,
+        "finite_rtc": true,
+        "rtc_minus_replacement_mean_abs": 0.008576004765927792
+      },
+      {
+        "previous_observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t486:pre",
+        "previous_query_time_s": 9.72,
+        "observation_id": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t506:pre",
+        "query_time_s": 10.120000000000001,
+        "images": [
+          "images/front/camera0_00496.jpg",
+          "images/front/camera0_00506.jpg",
+          "images/wrist/wrist_00496.jpg",
+          "images/wrist/wrist_00506.jpg"
+        ],
+        "image_hashes": [
+          "f1f7d7a34a8b0bf4f4d665d0e834c2c299b37534ea6e27da97da4e936ca6318e",
+          "bce0352802951f127121d62bb0f3d51e2f9b080fd122b378a4789eca3f8644c4",
+          "58c5f7bd8521c7306ab63189139a08d92b79d8033daf466b6873db933cb7508b",
+          "a4ae5fa9ae828eda7e9629957df7b6e70299c2f11ea60f0d0a3146738bc28de4"
+        ],
+        "off_bitwise_equal_to_legacy": true,
+        "off_max_abs_difference": 0.0,
+        "encoder_s": 0.2612154446542263,
+        "replacement_sampling_s": 0.03199264779686928,
+        "rtc_sampling_s": 0.06249171309173107,
+        "cuda_peak_allocated_bytes": 11073674752,
+        "finite_difference": [
+          {
+            "eps": 0.001,
+            "analytic": -0.014496049843728542,
+            "finite_difference": -0.014527655206620693,
+            "absolute_error": 3.160536289215088e-05,
+            "tolerance": 0.001290553104132414,
+            "passed": true
+          },
+          {
+            "eps": 0.01,
+            "analytic": -0.014496049843728542,
+            "finite_difference": -0.014491384848952293,
+            "absolute_error": 4.664994776248932e-06,
+            "tolerance": 0.001289920996874571,
+            "passed": true
+          }
+        ],
+        "no_parameter_grad_accumulated": true,
+        "finite_rtc": true,
+        "rtc_minus_replacement_mean_abs": 0.004503605421632528
+      }
+    ],
+    "physical_capability_evidence": false,
+    "strict_contact_success": null,
+    "full_transfer_success": null,
+    "experiment_script_sha256": "3706dce887d4b742d535e3eeadfe843b1c4335cedf744bad3854d12ad5ac8cf6"
+  },
+  "rtc_http": {
+    "schema": "real-rtc-http-roundtrip-v1",
+    "first_query": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t220:pre",
+    "rtc_query": "72bf5c03-08d8-47cd-8ac1-11e25b9f8b4b:r1:t240:pre",
+    "same_host_client_rtt_s": [
+      0.8131497465074062,
+      0.23619814589619637
+    ],
+    "local_service_elapsed_s": [
+      0.8102926947176456,
+      0.23316684924066067
+    ],
+    "foreign_identity_rejected": true,
+    "old_tail_from_limited_proposal": true,
+    "previous_commands_physically_executed": false,
+    "physical_trajectories": 0,
+    "cross_machine_rtt_measured": false,
+    "physical_capability_evidence": false,
+    "weights_sha256": "d86360e96d97f45467281ca77a006eba85c085c737e4156170efbf8a58a351b9",
+    "normalization_sha256": "a8805b21718f7d8bbff6df17b361e1fd2cdf8f15ec9f70294add188500d22725",
+    "saturation_rate": [
+      0.17142857142857143,
+      0.11428571428571428
+    ],
+    "original_saturation_gate_passed": false
+  },
+  "artifacts": {
+    "cpu_pytest_c3b45a7.xml": "f300622d91f5e8b6fc64b59dffec8b9974b38035897dc22d97eaca6cd1d17b55",
+    "import_validation_n_v4/report.json": "de10b01bcc8c4dc80175e287b24f9f9fdb19f86de36079df9d0422411f277ed8",
+    "import_validation_n_v4/golden.json": "078b50e427b689e4edfdab7ccac861acdf66230e9f3d5c10c3c4ec94ad938efb",
+    "smoke_v2/validation_report.json": "438c8cd425ceaed752373115409f305a5d78b38f81b70ea0f0dffa266f12cd74",
+    "rtc_rgb_v2/report.json": "44d1bef0906aab883315a5c5fb2829e84f19d10262da2273b6ae7ffcaebdcf9a",
+    "rtc_http_v1/report.json": "f8ee0e6c7eaaee28546ad3c4400be86ac7433260f1443de9c1b2e8a62a2ef5b3",
+    "rtc_http_v1/health.json": "146738c3ee668f200a82c01b7be8b4dd7d2aecb85df2d5230fc2d6bb4cdfad18",
+    "rtc_http_v1/process.json": "8bfe3e98f5caa06fd91fb5a1bcb7712421453ba91907989c5b2e047e56927cfc"
+  },
+  "physical_rollouts_this_agent": 0,
+  "collection_launch_decision": "master_owned_not_decided_here",
+  "policy_deployment_passed": false,
+  "remaining": [
+    "B/R real package ingestion and golden validation",
+    "NBR numerical geometry and source teacher gates",
+    "physical action-frequency/RTC/navigation experiments",
+    "causal planner query labeling and model semantic adaptation",
+    "depth benefit training and evaluation",
+    "strict contact/full transfer/realtime capability"
+  ]
+}
