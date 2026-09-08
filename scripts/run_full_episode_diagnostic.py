@@ -384,6 +384,21 @@ def main():
         raise ValueError('this frozen H20 diagnostic requires physical GPU3 exclusively')
     base = isaac_app.AppLauncher
     class _SingleGPUAppLauncher(base):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # The bundled converter hardcodes /tmp when usd_dir is absent.
+            # Bind only this process's conversion output to its authorized run.
+            from isaaclab.sim.converters.asset_converter_base import AssetConverterBase
+            original_init = AssetConverterBase.__init__
+            cache = Path(os.environ['TMPDIR']).resolve() / 'converted_assets'
+            if not cache.is_relative_to(Path('/diff/wallx_workspace/dzb').resolve()):
+                raise ValueError('asset conversion cache escapes authorized work root')
+            def run_scoped_conversion(instance, cfg):
+                if cfg.usd_dir is None:
+                    cfg.usd_dir = str(cache / hashlib.sha256(str(cfg.asset_path).encode()).hexdigest()[:12])
+                return original_init(instance, cfg)
+            AssetConverterBase.__init__ = run_scoped_conversion
+            print(json.dumps({'event':'run_scoped_asset_conversion','cache':str(cache)}),flush=True)
         def _resolve_device_settings(self, launcher_args):
             super()._resolve_device_settings(launcher_args)
             if self.device_id != 0:
