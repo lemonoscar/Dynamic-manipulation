@@ -1,0 +1,13 @@
+{
+  "pid": 921118,
+  "pgid": 921118,
+  "started_at": "2026-09-08T22:59:01.753362+08:00",
+  "status": "exited",
+  "gpu": 3,
+  "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+  "max_wall_s": 567,
+  "absolute_deadline_unix_s": 1788880169.0,
+  "returncode": 0,
+  "wall_s": 196.86074911616743,
+  "ended_at": "2026-09-08T23:02:18.618151+08:00"
+}

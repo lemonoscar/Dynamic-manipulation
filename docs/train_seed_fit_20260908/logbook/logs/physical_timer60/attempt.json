@@ -1,0 +1,13 @@
+{
+  "pid": 941724,
+  "pgid": 941724,
+  "started_at": "2026-09-08T23:21:25.615657+08:00",
+  "status": "exited",
+  "gpu": 3,
+  "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+  "simulation_clock_limit_s": 60,
+  "wall_clock_termination": false,
+  "returncode": 0,
+  "wall_s": 659.8971798215061,
+  "ended_at": "2026-09-08T23:32:25.516516+08:00"
+}

@@ -1,0 +1,13 @@
+{
+  "pid": 889352,
+  "pgid": 889352,
+  "started_at": "2026-09-08T22:22:38.914533+08:00",
+  "status": "exited",
+  "gpu": 3,
+  "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+  "max_wall_s": 1200,
+  "absolute_deadline_unix_s": 1788878969.321377,
+  "returncode": 0,
+  "wall_s": 175.92250865139067,
+  "ended_at": "2026-09-08T22:25:34.841578+08:00"
+}
