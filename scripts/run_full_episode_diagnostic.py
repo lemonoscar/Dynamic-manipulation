@@ -26,7 +26,8 @@ from conveyor_bench.conveyorvla.formal_checkpoint import sha256, write_json
 from conveyor_bench.conveyorvla.formal_physics import FormalPhysics
 from conveyor_bench.conveyorvla.joint_trajectory import JointTrajectoryRoute
 from conveyor_bench.conveyorvla.joint_trajectory_system import measured_named_joint_state
-from conveyor_bench.conveyorvla.joint_trajectory_runtime import DirectJointCommand
+from conveyor_bench.conveyorvla.joint_trajectory_runtime import DirectJointCommand, NavigationReference
+from conveyor_bench.conveyorvla.joint_trajectory_system import measured_body_velocity
 from conveyor_bench.conveyorvla.formal_metrics import LIMITS
 from conveyor_bench.conveyorvla.rolling_runtime import RollingRuntime
 from conveyor_bench.conveyorvla.staged_training import StagedNormalizer
@@ -135,6 +136,23 @@ def compare_shared_state(saved, current):
             raise ValueError(f'shared first physical {key} differs')
 
 
+def advance_model_claim(memory, context, observation):
+    """Research scheduler decision, never a verified TASK_COMPLETED event/fact."""
+    old = memory.active_task
+    if context['active_task'] != old.primitive or memory.cursor >= len(memory.tasks)-1:
+        raise ValueError('no matching next diagnostic task')
+    memory.events.append({'kind':'MODEL_ADVANCE_CLAIM','task':asdict(old),
+        'time_s':observation.time_s,'observation_id':observation.observation_id,
+        'completion_verified':False})
+    memory.cursor += 1
+    memory.active_task_epoch += 1
+    memory.plan_version += 1
+    return {'completed_tasks':context['completed_tasks']+[old.primitive],
+        'active_task':memory.active_task.primitive,
+        'remaining_tasks':[t.primitive for t in memory.tasks[memory.cursor:]],
+        'current_facts':{}}
+
+
 def pipeline_type(options):
     class FullDiagnostic(old.JointTrajectoryRolloutPipeline):
         def _prepare_episode(self):
@@ -185,11 +203,47 @@ def pipeline_type(options):
                 return False,'nonfinite_online_joint_state_or_target'
             if any(q<lo-1e-5 or q>hi+1e-5 for q,lo,hi in zip(observation.q,LIMITS.lower,LIMITS.upper)):
                 return False,'measured_joint_position_outside_limits'
-            if any(abs(v)>bound for v,bound in zip(observation.dq,LIMITS.max_rate_rad_s)):
+            if any(abs(v)>options.measured_speed_limit for v in observation.dq):
                 return False,'measured_joint_velocity_above_bound'
             if any(q<lo or q>hi for q,lo,hi in zip(target[:6],LIMITS.lower,LIMITS.upper)) or not 0<=target[6]<=1:
                 return False,'queued_joint_or_gripper_target_outside_limits'
             return True,'bounded_joint_diagnostic_only'
+
+        def _navigation_window(self, plan, query_state):
+            from source.navigation.adapters.yaw_align import compute_yaw_align_command, YawAlignConfig
+            from conveyor_bench.conveyorvla.waypoint import wrap_to_pi
+            nav = self.system.navigation_executor
+            points = tuple(tuple(p) for p in plan['reference_query_body'])
+            path = nav.begin(NavigationReference(points,points[-1],.2),
+                query_state.robot_root_pose,timestamp_s=query_state.timestamp)
+            self._record('navigation_plan',dict(path.trace))
+            local_map=self._local_map(self.route)
+            for _ in range(20):
+                live = self.simulation.read(); observation = self._obs(live)
+                target = (*self.trusted.joint_position,self.trusted.gripper_open_fraction)
+                safe, reason = self.safety(target,observation)
+                if not safe:
+                    self.runtime.safety_stop_reason=reason
+                    self.stop(observation,reason);return
+                control = nav.command(live.robot_root_pose,measured_body_velocity(live),
+                    local_map,timestamp_s=live.timestamp)
+                command = control.base_velocity
+                if control.reason == 'validated_in_place_turn_required':
+                    goal=path.pct_plan.snapped_goal_world
+                    yaw=old.yaw_from_quaternion(live.robot_root_pose[3:])
+                    command=compute_yaw_align_command(yaw_error=wrap_to_pi(goal[3]-yaw),
+                        yaw_tolerance=.14,body_goal_x=0.,
+                        config=YawAlignConfig(kp=2.,min_wz=.15,max_wz=.35,activation_vx=0.))
+                    self._record('diagnostic_yaw_turn',{'certificate':'unknown','command':command})
+                elif control.requires_requery and not control.reached_local_goal:
+                    raise ValueError('navigation_rejected:'+str(control.reason))
+                self._record('navigation_control',{'reason':control.reason,'command':command,
+                    'trace':dict(control.trace),'deployment_certificate':'unknown'})
+                action=self.action_adapter.navigation(command,self.trusted,
+                    route=self.route,sequence_id=self._query_count)
+                self._physical_step(action,route=self.route,command_index=None)
+                self._read_trusted()
+            nav.reset()
 
         def run_episode(self):
             self.episode_dir.mkdir(parents=True,exist_ok=True)
@@ -197,14 +251,17 @@ def pipeline_type(options):
             self.raw_sim=self.simulation
             summary={'schema':'full1700-physical-diagnostic-v1','status':'running','success':False,
                 'full_task_success':None,'deployment_gate_passed':False,'strict_full_success':None,
-                'execution_mode':options.mode,'rtc':options.rtc,'time_profile':'causal_command_5hz',
+                'execution_mode':options.mode,'rtc':options.rtc,'pure_physics_success':None,
+                'state_trace':self._state_trace,'history_source':'model_claim_not_verified_completion' if options.mode=='train_seed_full' else 'fixed_context',
+                'planner_FINISH':None,'time_profile':'causal_command_5hz',
                 'replan_period_s':.4,'control_period_s':.02,'inference_pauses_simulation':True,
                 'new_condition':options.condition_label,'source_solver_reproduction':False,
                 'source_query_tick':options.query_tick,'source_episode':str(options.source_episode),
                 'task_context_source':str(options.task_context),'task_context_sha256':sha256(options.task_context),
                 'runner_sha256':sha256(Path(__file__)),'saturation_gate_threshold':.005,
                 'training_weights_modified':False,'depth':False,
-                'online_safety':{'measured_joint_limits_tolerance_rad':1e-5,'measured_joint_speed_limit_rad_s':3.,
+                'online_safety':{'measured_joint_limits_tolerance_rad':1e-5,'measured_joint_speed_limit_rad_s':options.measured_speed_limit,
+                    'old_measured_speed_limit_rad_s':3.,
                     'predicted_target_rate_limit_rad_s':3.,'target_rate_interval_s':.2,
                     'target_rate_is_not_50hz_actual_velocity_guarantee':True,'collision_certificate':False}}
             started=time.perf_counter(); probe=None
@@ -216,7 +273,7 @@ def pipeline_type(options):
                 summary['model_identity']=health
                 context=json.loads(options.task_context.read_text());public_context_text(context)
                 self.route=JointTrajectoryRoute(context['active_task'])
-                if options.mode=='autonomous' and context != {'completed_tasks':[],'active_task':'NAV_TO_SOURCE','remaining_tasks':['NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'],'current_facts':{}}:
+                if options.mode in {'autonomous','train_seed_full'} and context != {'completed_tasks':[],'active_task':'NAV_TO_SOURCE','remaining_tasks':['NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'],'current_facts':{}}:
                     raise ValueError('autonomous attempt must start at complete four-task skeleton')
                 obs,sample,parent=source_query(options.source_episode,options.query_tick)
                 summary['source_hashes']={n:sha256(options.source_episode/n) for n in ('manifest.json','control_effective_50hz.jsonl','observations.jsonl','samples.jsonl')}
@@ -241,7 +298,7 @@ def pipeline_type(options):
                     from conveyor_bench.isaac.grasp_contact_probe import IsaacGraspContactProbe
                     probe=IsaacGraspContactProbe(self.raw_sim,self._record);self.raw_sim.read_grasp_contacts=probe.read
                 mission=f'full1700:{self.episode_seed}:{hashlib.sha256(str(self.episode_dir).encode()).hexdigest()[:12]}'
-                tasks=transfer_skeleton() if options.mode=='autonomous' else (Task('fixed-diagnostic','fixed-attempt',self.route.value,'cola','destination'),)
+                tasks=tuple(Task(f'diagnostic-task-{i}',f'diagnostic-attempt-{i}',name,'cola','destination') for i,name in enumerate(('NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'))) if options.mode=='train_seed_full' else transfer_skeleton() if options.mode=='autonomous' else (Task('fixed-diagnostic','fixed-attempt',self.route.value,'cola','destination'),)
                 self.memory=TaskMemory(mission,str(self.episode_spec.instruction),tasks,mode='H1')
                 runtime=RollingRuntime(self.memory,model_id=health['checkpoint_id'],
                     normalizer=StagedNormalizer(health['normalizer']),safety_context_id='bounded-diagnostic-joint-limits',
@@ -266,7 +323,7 @@ def pipeline_type(options):
                         'instruction':str(self.episode_spec.instruction),
                         'head_images':payload['head_images'],'wrist_images':payload['wrist_images'],
                         'diffusion_seed':(options.diffusion_seed+query*1009)%(2**32),
-                        'predict_transition':options.mode=='autonomous'}
+                        'predict_transition':options.mode=='autonomous' or (options.mode=='train_seed_full' and self.route!=JointTrajectoryRoute.PLACE)}
                     packet=old.waypoint_runner._jsonable(packet)
                     self._record('model_request',packet)
                     before=self.simulation.read().step_index;request_started=time.perf_counter()
@@ -299,13 +356,30 @@ def pipeline_type(options):
                     if response['identity']!=wire['identity'] or response['request_id']!=request.request_id or response['observation_id']!=observation.observation_id or response['query_time_s']!=observation.time_s or response['time_profile']!='causal_command_5hz' or response['weights_sha256']!=options.expected_sha256 or response['rtc_applied']!=(request.rtc_context is not None):
                         raise ValueError('foreign/stale model proposal')
                     self._query_count+=1
+                    self._state_trace.append(self.route.value)
                     transition=response.get('transition')
                     if transition is not None and transition['proposal']['operation']=='ADVANCE':
+                        if options.mode=='train_seed_full':
+                            runtime.pending.pop(request.request_id)
+                            context=advance_model_claim(self.memory,context,observation)
+                            self.route=JointTrajectoryRoute(context['active_task'])
+                            runtime.synchronize_task()
+                            self._record('model_claim_transition',{'context':context,
+                                'active_task_epoch':self.memory.active_task_epoch,
+                                'completion_verified':False,'discarded_old_task_action':True})
+                            continue
                         summary.update(status='blocked',failure_reason='ADVANCE_without_independent_completion_feedback',blocked_proposal=transition)
                         break
                     plan=runtime.complete_request(request.request_id,response['physical_actions'],now_s=observation.time_s)
                     if self.route.value.startswith('NAV_'):
                         self._record('navigation_proposal',old.waypoint_runner._jsonable(plan))
+                        if options.mode=='train_seed_full':
+                            self._navigation_window(plan,state)
+                            if runtime.safety_stop_reason is not None:
+                                summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason);break
+                            if self._control_steps-control_start>=round(options.simulation_seconds/.02):
+                                summary.update(status='complete',failure_reason='bounded_diagnostic_window_complete');break
+                            continue
                         summary.update(status='blocked',failure_reason='navigation_online_geometry_and_stop_certificate_unavailable')
                         break
                     for _ in range(20):
@@ -322,6 +396,9 @@ def pipeline_type(options):
             except Exception as error:
                 summary.update(status='failed',failure_reason=f'{type(error).__name__}:{error}',traceback=traceback.format_exc())
             finally:
+                if hasattr(self,'memory'):
+                    summary['model_claim_events']=self.memory.events
+                    summary['final_active_task']=self.memory.active_task.primitive if self.memory.active_task else None
                 if hasattr(self,'runtime'):
                     summary['runtime_events']=self.runtime.events
                     summary['queue_applied_points']=len(self.runtime.queue.history)
@@ -333,6 +410,10 @@ def pipeline_type(options):
                 summary.update(wall_s=time.perf_counter()-started,model_queries=self._query_count,
                     control_steps=self._control_steps,physics_evidence=None if self.physics is None else self.physics.evidence(),
                     success=False,success_semantics='diagnostic_completion_is_not_task_success')
+                if self.physics is not None:
+                    evidence=summary['physics_evidence']
+                    summary['full_task_success']=bool(evidence['pick_verified'] and evidence['carry_verified'] and evidence['release_observed'] and not evidence['drop_detected'] and self._latest_truth is not None and self._latest_truth.success.success)
+                    summary['full_task_score_source']='independent_evaluator_not_planner_input'
                 try:
                     if hasattr(self,'trusted'):self.simulation.apply(self._measured_hold('full1700_final_hold'))
                     summary['video']=self._close_video(summary['status'])
@@ -353,16 +434,17 @@ def main():
     p.add_argument('--condition-label',required=True)
     p.add_argument('--expected-sha256',required=True)
     p.add_argument('--endpoint',default='http://127.0.0.1:18170')
-    p.add_argument('--mode',choices=['fixed_task','autonomous'],required=True)
+    p.add_argument('--mode',choices=['fixed_task','autonomous','train_seed_full'],required=True)
     p.add_argument('--rtc',action='store_true')
+    p.add_argument('--measured-speed-limit',type=float,default=3.)
     p.add_argument('--record-contacts',action='store_true')
     p.add_argument('--first-plan',type=Path,help='RTC-off creates; paired RTC-on verifies state and adopts exact first prediction')
     p.add_argument('--simulation-seconds',type=float,default=4.)
     p.add_argument('--max-queries',type=int,default=10)
     p.add_argument('--diffusion-seed',type=int,default=17)
     options,runtime=p.parse_known_args()
-    if not 0<options.simulation_seconds<=60 or not 0<options.max_queries<=150:
-        raise ValueError('bounded diagnostic only: <=60 physics seconds and <=150 queries')
+    if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30:
+        raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s')
     if options.rtc and options.mode=='fixed_task' and (options.first_plan is None or not options.first_plan.is_file()):
         raise ValueError('paired RTC-on requires prior frozen RTC-off first plan')
     if not options.rtc and options.first_plan is not None and options.first_plan.exists():
