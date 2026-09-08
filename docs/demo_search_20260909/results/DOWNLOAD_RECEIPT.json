@@ -1,0 +1,31 @@
+{
+  "package": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/delivery.tar.gz",
+  "sha256": "436b88a7a6055839ef88e9e525a750b88bfdc003d894042dbe349026a1bdd2bb",
+  "bytes": 30095503,
+  "selected_run": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100021",
+  "qualified_candidate": false,
+  "downloaded_at": "2026-09-09T05:21:29.034936+08:00",
+  "local_results": "/home/lemon/research/Issac/doc/train_seed_fit_20260908/demo_search_20260909/results",
+  "videos": [
+    {
+      "path": "/home/lemon/research/Issac/doc/train_seed_fit_20260908/demo_search_20260909/results/seed_16100021/runtime/episode_000000/overview_videos/episode_000022_composite.mp4",
+      "sha256": "e8dcf55be4db47176b8070f0314752e7eedacd45ee614fd32e134764a704b41e",
+      "ffprobe": {
+        "programs": [],
+        "streams": [
+          {
+            "codec_name": "mpeg4",
+            "width": 1280,
+            "height": 720,
+            "r_frame_rate": "5/1",
+            "nb_read_frames": "300"
+          }
+        ],
+        "format": {
+          "duration": "60.000000"
+        }
+      }
+    }
+  ],
+  "video_review_pending": false
+}

@@ -1,0 +1,215 @@
+{
+  "schema": "train-demo-candidate-audit-v1",
+  "run": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100078",
+  "seed": 16100078,
+  "candidate_pending_video_review": false,
+  "gates": {
+    "closed_normally_at_60s": true,
+    "continuous_3000_physics_ticks": true,
+    "live_object_tensor_every_tick": true,
+    "model_response_identity_bound": true,
+    "scoring_valid": true,
+    "model_switched_into_pick": true,
+    "legacy_pick_observed": false,
+    "stable_relative_grasp_geometry_1s": false,
+    "independent_lift_close_measured_finger_1s": false,
+    "no_object_attachment_or_reset": true,
+    "video_closed_300_frames": true
+  },
+  "clock_s": 60.0,
+  "counts": {
+    "stage_prepared": 1,
+    "simulation_clock_started": 1,
+    "control_step": 3000,
+    "object_live_tensor": 3000,
+    "model_request": 151,
+    "model_response": 151,
+    "navigation_proposal": 43,
+    "navigation_plan": 43,
+    "navigation_control": 860,
+    "model_claim_transition": 3,
+    "diagnostic_yaw_turn": 75,
+    "navigation_control_rejected": 13
+  },
+  "routes": {
+    "null": 47,
+    "NAV_TO_SOURCE": 100,
+    "PICK": 621,
+    "NAV_TO_TARGET": 761,
+    "PLACE": 1471
+  },
+  "errors": {},
+  "model_claims": [
+    {
+      "time_s": 2.4,
+      "active_task": "PICK"
+    },
+    {
+      "time_s": 15.0,
+      "active_task": "NAV_TO_TARGET"
+    },
+    {
+      "time_s": 30.400000000000002,
+      "active_task": "PLACE"
+    }
+  ],
+  "peak_lift_m": 0.00016361474990844727,
+  "pick_closest_tcp_m": 0.5491634209404426,
+  "independent_stable_sample_count": 0,
+  "independent_stable_duration_s": 0.0,
+  "full_task_success": false,
+  "strict_full_success": null,
+  "strict_contact": null,
+  "declared_base_support_locks": true,
+  "video": {
+    "camera_control": "auto_headless",
+    "camera_discovery": {},
+    "camera_schedule_path": null,
+    "camera_switch_settle_skip_count": 0,
+    "camera_switches": [],
+    "capture_backend": "synchronized_camera_images_overview_fallback",
+    "capture_error": "observation_overview_missing",
+    "composite_layout": {
+      "aspect_policy": "letterbox_no_distortion",
+      "front_panel": "right_top",
+      "labels": true,
+      "labels_drawn_after_panel_composition": true,
+      "overview_panel": "left_two_thirds",
+      "synchronization": "same_simulation_step",
+      "version": "overview_left_front_wrist_right_v2",
+      "view_keys": [
+        "overview",
+        "front",
+        "wrist"
+      ],
+      "wrist_panel": "right_bottom"
+    },
+    "dropped_frame_count": 9,
+    "enabled": true,
+    "fps": 5.0,
+    "frame_count": 300,
+    "mode": "composite",
+    "overview_camera_mode": "fixed",
+    "overview_capture_backend": "viewport",
+    "overview_exposure": 0.0,
+    "overview_frame_rejection_counts": {
+      "observation_overview_missing": 9
+    },
+    "overview_gamma": 2.2,
+    "overview_images": {
+      "directory": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100078/runtime/episode_000000/images/overview",
+      "enabled": false,
+      "fps": 5.0,
+      "frame_count": 0,
+      "jpeg_quality": 90
+    },
+    "overview_initial_hold_frames": 160,
+    "preferred_camera_found": false,
+    "preferred_camera_prim_path": "/World/overview",
+    "recording_gate": {
+      "preroll_skipped_frame_count": 0,
+      "preroll_states": [
+        "build_stage",
+        "reset_episode"
+      ],
+      "start_state": "pending",
+      "start_step": 1,
+      "started": true
+    },
+    "resolution": [
+      1280,
+      720
+    ],
+    "status": "complete",
+    "streams": [
+      "composite"
+    ],
+    "success": true,
+    "video_path": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100078/runtime/episode_000000/overview_videos/episode_000019_composite.mp4",
+    "video_paths": {
+      "composite": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100078/runtime/episode_000000/overview_videos/episode_000019_composite.mp4"
+    },
+    "videos": {
+      "composite": {
+        "dropped_frame_count": 9,
+        "frame_count": 300,
+        "size": [
+          1280,
+          720
+        ],
+        "success": true,
+        "video_path": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100078/runtime/episode_000000/overview_videos/episode_000019_composite.mp4"
+      }
+    },
+    "writer_backends": {
+      "composite": "opencv_mp4v"
+    }
+  },
+  "key_events": [
+    {
+      "event": "simulation_clock_started",
+      "timestamp_unix_s": 1788889560.950816,
+      "start_s": 0.0,
+      "deadline_s": 60.0
+    },
+    {
+      "event": "model_claim_transition",
+      "timestamp_unix_s": 1788889584.0857844,
+      "context": {
+        "completed_tasks": [
+          "NAV_TO_SOURCE"
+        ],
+        "active_task": "PICK",
+        "remaining_tasks": [
+          "PICK",
+          "NAV_TO_TARGET",
+          "PLACE"
+        ],
+        "current_facts": {}
+      },
+      "active_task_epoch": 1,
+      "completion_verified": false,
+      "discarded_old_task_action": true
+    },
+    {
+      "event": "model_claim_transition",
+      "timestamp_unix_s": 1788889693.9592576,
+      "context": {
+        "completed_tasks": [
+          "NAV_TO_SOURCE",
+          "PICK"
+        ],
+        "active_task": "NAV_TO_TARGET",
+        "remaining_tasks": [
+          "NAV_TO_TARGET",
+          "PLACE"
+        ],
+        "current_facts": {}
+      },
+      "active_task_epoch": 2,
+      "completion_verified": false,
+      "discarded_old_task_action": true
+    },
+    {
+      "event": "model_claim_transition",
+      "timestamp_unix_s": 1788889824.6094666,
+      "context": {
+        "completed_tasks": [
+          "NAV_TO_SOURCE",
+          "PICK",
+          "NAV_TO_TARGET"
+        ],
+        "active_task": "PLACE",
+        "remaining_tasks": [
+          "PLACE"
+        ],
+        "current_facts": {}
+      },
+      "active_task_epoch": 3,
+      "completion_verified": false,
+      "discarded_old_task_action": true
+    }
+  ],
+  "trace_sha256": "04a668c4cf5e235b8b047ba39663ea242b527df3a11ec0a3ae98acdaa22e58b5",
+  "summary_sha256": "0b57c6426bbd2eed7f9ee555fd5f2e22c2c14058085a9bc5db173296bd7cf447"
+}

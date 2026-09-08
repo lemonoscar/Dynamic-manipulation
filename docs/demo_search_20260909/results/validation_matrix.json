@@ -1,0 +1,1315 @@
+{
+  "schema": "train-demo-search-result-v1",
+  "source_head": "3af61fa800d09dbfee126dc1ea7b3abaa54bf8fb",
+  "attempted": 24,
+  "closed": 24,
+  "qualified_demo": 0,
+  "selection": "ranked training-family best-of search, not held-out generalization",
+  "rows": [
+    {
+      "seed": 16100010,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 36.0,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 49.800000000000004,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 9.791553020477295e-05,
+      "pick_closest_tcp_m": 0.13708495017149758,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 114,
+        "navigation_plan": 114,
+        "navigation_control": 2280,
+        "diagnostic_yaw_turn": 413,
+        "navigation_control_rejected": 68,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 3
+      },
+      "errors": {
+        "transition_prediction_rejected": 3
+      },
+      "trace_sha256": "de12c45df2c9995e357dec548f1bc723e3fc85725f51e6fc067e0f8044853eb2",
+      "summary_sha256": "9a2d0b7f612ceb8a10d8bb9f16f5e4cd5fe01e630098da5239263d7d6bcab8e5",
+      "saturation_rate": 0.12857142857142856,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 652.4847436007112,
+      "audit_sha256": "74fa69da231907acb9d458982df1b5a986bc45ea612e2f657960f01bc952b9fb"
+    },
+    {
+      "seed": 16100015,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 8.8,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 0.00018867850303649902,
+      "pick_closest_tcp_m": 0.1203414112850241,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 21,
+        "navigation_plan": 21,
+        "navigation_control": 420,
+        "navigation_control_rejected": 37,
+        "diagnostic_yaw_turn": 21,
+        "model_claim_transition": 1
+      },
+      "errors": {},
+      "trace_sha256": "a29e041282ec0b8987835c3d97405011923eb6f3587deb87f7c7fef86fe3ec8c",
+      "summary_sha256": "8dcb76998c2972ecc9c47186476b3b19817b4fefd1c5793398fd9f0ea7c6b4b1",
+      "saturation_rate": 0.17433035714285713,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 639.6775003243238,
+      "audit_sha256": "4ebf14aadbd815a08b90bc6abadf7748b25e3c609cad5a7ea432d5512b908c8d"
+    },
+    {
+      "seed": 16100020,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 10.4,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 17.400000000000002,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.004533782601356506,
+      "pick_closest_tcp_m": 0.329964020733391,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 131,
+        "navigation_plan": 131,
+        "navigation_control": 2620,
+        "diagnostic_yaw_turn": 440,
+        "navigation_control_rejected": 53,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 2
+      },
+      "errors": {
+        "transition_prediction_rejected": 2
+      },
+      "trace_sha256": "ffc1059462d63cff5fdb260225c4a2045f7722ebb4f56abff90b86f96cbcc492",
+      "summary_sha256": "7d7b65b83dd1a45580a8223381b714713177d0db288df8df7dda4a08e4da0a07",
+      "saturation_rate": 0.13949579831932774,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 626.7989359609783,
+      "audit_sha256": "ad05bf5ce33eb1fb0ee809d29e865dd1f711dd5f539850af24afb6e938e0a104"
+    },
+    {
+      "seed": 16100021,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 9.200000000000001,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 21.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.006154477596282959,
+      "pick_closest_tcp_m": 0.08068831856020535,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 119,
+        "navigation_plan": 119,
+        "navigation_control": 2380,
+        "diagnostic_yaw_turn": 691,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 1,
+        "navigation_control_rejected": 35
+      },
+      "errors": {
+        "transition_prediction_rejected": 1
+      },
+      "trace_sha256": "eb90f96e461c95fa28e98f54ed0f24afc3a838989f9da5f85675b2784cf416ca",
+      "summary_sha256": "d5f4d1a4fc84938564750e76dd09a189e48f75ec37276e947b0788e7ca63c93c",
+      "saturation_rate": 0.12807881773399016,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 657.5768762268126,
+      "audit_sha256": "a6b851ea1a2a67aef8de12b052eae32e571c0904cefc1a3d04cca0bc9f5fc6e0"
+    },
+    {
+      "seed": 16100022,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 0.4,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 0.00036622583866119385,
+      "pick_closest_tcp_m": 1.1039495694443986,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "model_claim_transition": 1,
+        "diagnostic_advisory": 33
+      },
+      "errors": {
+        "transition_prediction_rejected": 33
+      },
+      "trace_sha256": "171b9fc8eaf19821ca37170c584c52719de27ac8ec967a52e8e345abf6163a49",
+      "summary_sha256": "d5fa3be5a58e5b7cf32dabe7b57d3aa490b76838ddcdf68099ea93837cd3049d",
+      "saturation_rate": 0.2009587727708533,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 640.9839872084558,
+      "audit_sha256": "272707a630a79b2ed87288d83a8d66a9275c9f3beb3fc7cb6da765d32fbd15a7"
+    },
+    {
+      "seed": 16100026,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 11.6,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 22.6,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.005492016673088074,
+      "pick_closest_tcp_m": 0.07085068295953158,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 121,
+        "navigation_plan": 121,
+        "navigation_control": 2420,
+        "diagnostic_yaw_turn": 317,
+        "navigation_control_rejected": 64,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 2
+      },
+      "errors": {
+        "transition_prediction_rejected": 2
+      },
+      "trace_sha256": "dac2558d717bc3b9a689b16b420083ad43cf541d6de0767c7c1fe32f4ff895c6",
+      "summary_sha256": "28caef02371a2c03523bddefcd2323b0015e926006ebf723a598b63526cadb0a",
+      "saturation_rate": 0.11216931216931217,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 646.6266289763153,
+      "audit_sha256": "80acddaa8febc6ab938b51219dec35d80254a2f4a1f7ec923b77e9793f1037d1"
+    },
+    {
+      "seed": 16100030,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 0.4,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 0.00016006827354431152,
+      "pick_closest_tcp_m": 1.218961066938201,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "model_claim_transition": 1,
+        "diagnostic_advisory": 27
+      },
+      "errors": {
+        "transition_prediction_rejected": 27
+      },
+      "trace_sha256": "510a94f73b36e385337547ed358c7ab78a6ce1ff99d54526c5020da1c443de99",
+      "summary_sha256": "e00ea7415495dcc2292a380f1255ba0bca774e06dd415c627ea9cc96da023e2d",
+      "saturation_rate": 0.20719079578139982,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 628.6970867682248,
+      "audit_sha256": "96e0fc1eb87290275da3088cfeb697649cb766c0a8c18bdf92cf12ace8c9be2e"
+    },
+    {
+      "seed": 16100034,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": false,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [],
+      "peak_lift_m": 0.00438264012336731,
+      "pick_closest_tcp_m": null,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 149,
+        "model_response": 149,
+        "navigation_proposal": 149,
+        "navigation_plan": 149,
+        "navigation_control": 2980,
+        "diagnostic_yaw_turn": 1096,
+        "navigation_control_rejected": 137
+      },
+      "errors": {},
+      "trace_sha256": "da4a7e61ec9abe75010df663c641f60793189f48d54898013ac2117247f072fc",
+      "summary_sha256": "1497e53403bb9ae83e73f96a4362986a1febc7f82b13286b1951d87c3c782601",
+      "saturation_rate": null,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 678.6722743213177,
+      "audit_sha256": "940b77b21e81e26a9deee546992bd377d1bc6b3f07952192598262c85d65909d"
+    },
+    {
+      "seed": 16100037,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 55.2,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 55.4,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.0,
+      "pick_closest_tcp_m": 2.072862893978977,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 148,
+        "navigation_plan": 148,
+        "navigation_control": 2960,
+        "diagnostic_yaw_turn": 996,
+        "navigation_control_rejected": 114,
+        "model_claim_transition": 2
+      },
+      "errors": {},
+      "trace_sha256": "db233a1881f9e458a6169996e250a65905f831d959eb4bbe0819ddf08d5e3773",
+      "summary_sha256": "fbcd9c0aba434f10e447aa6cbcc47b0a60b1925d52a04af86ac1d4a11f11252c",
+      "saturation_rate": null,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 652.8196725007147,
+      "audit_sha256": "6358037899d3a94dddf696bb606b0c90e6329a97680a6d5f595121c59c94eb49"
+    },
+    {
+      "seed": 16100044,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 33.6,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 0.00021998584270477295,
+      "pick_closest_tcp_m": 0.18383838840531494,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 83,
+        "navigation_plan": 83,
+        "navigation_control": 1660,
+        "diagnostic_yaw_turn": 212,
+        "navigation_control_rejected": 230,
+        "model_claim_transition": 1,
+        "diagnostic_advisory": 6
+      },
+      "errors": {
+        "transition_prediction_rejected": 6
+      },
+      "trace_sha256": "f26abe51c05b1969ed0888039a33300ea48ea44000cead940950b310d349eab8",
+      "summary_sha256": "d38499c8e282f929b7a72cc2a31c4bda48f57cd8b9566b1a07d13562fa4a1933",
+      "saturation_rate": 0.10238095238095238,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 646.2602214813232,
+      "audit_sha256": "d4480f0b6f96e99a232b8a0bc6fa147ede45026bd7dee579b484a34ca7538643"
+    },
+    {
+      "seed": 16100068,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 18.8,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 25.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.00034117698669433594,
+      "pick_closest_tcp_m": 0.15777758370036477,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 133,
+        "navigation_plan": 133,
+        "navigation_control": 2660,
+        "diagnostic_yaw_turn": 431,
+        "navigation_control_rejected": 78,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 5
+      },
+      "errors": {
+        "transition_prediction_rejected": 5
+      },
+      "trace_sha256": "5542e515e57b949e6b0bcf2bec187c61baee42a31a89a3c802db1f9489d6fee6",
+      "summary_sha256": "4de08a57f93cede50bb971eefcfb4cf21f4d35035111fe1e7d1b7ceebab20426",
+      "saturation_rate": 0.15523809523809523,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 626.9040116649121,
+      "audit_sha256": "f0fa60692a73bfeb6e76a994e1b196e6a486ae91f642c6dbe9f901c2a654a759"
+    },
+    {
+      "seed": 16100069,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 0.4,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 3.5375356674194336e-05,
+      "pick_closest_tcp_m": 1.0065762416214763,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "model_claim_transition": 1,
+        "diagnostic_advisory": 12
+      },
+      "errors": {
+        "transition_prediction_rejected": 12
+      },
+      "trace_sha256": "f7668a966f525fb0b932bd0b10415d171418e35eab00369b8b6c72b92e5c8d5d",
+      "summary_sha256": "16b91a4a54766c0f12f7dbbed360a682e6175a1e36b5c437bb283a19093a4289",
+      "saturation_rate": 0.18791946308724833,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 640.0296249166131,
+      "audit_sha256": "a3d9c1b2059c282a53da6485cdbf3da736a624ce761c4ba3f50269da382b08c0"
+    },
+    {
+      "seed": 16100070,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": false,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [],
+      "peak_lift_m": 0.003093734383583069,
+      "pick_closest_tcp_m": null,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 149,
+        "model_response": 149,
+        "navigation_proposal": 149,
+        "navigation_plan": 149,
+        "navigation_control": 2980,
+        "diagnostic_yaw_turn": 1107,
+        "navigation_control_rejected": 60
+      },
+      "errors": {},
+      "trace_sha256": "49d04b0ba79259a0c5038de25bd682925ede74774ea65f5bfffacedd4c9266c6",
+      "summary_sha256": "050cd287c7c457702b6229daac97fbed47c943dbe18a9fe16688c49e090faf2b",
+      "saturation_rate": null,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 675.429694050923,
+      "audit_sha256": "d52ca84899b15d47a400362751a867a7192c8a25a22a27b7b317945e9e88d711"
+    },
+    {
+      "seed": 16100071,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 4.8,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 14.6,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.00038976967334747314,
+      "pick_closest_tcp_m": 0.25127719137208887,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 124,
+        "navigation_plan": 124,
+        "navigation_control": 2480,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 1,
+        "diagnostic_yaw_turn": 373,
+        "navigation_control_rejected": 42
+      },
+      "errors": {
+        "transition_prediction_rejected": 1
+      },
+      "trace_sha256": "666e40fa87d40febca1a7b3721844be417ca0c676118dde7c94f0d3de69f6018",
+      "summary_sha256": "39155c3f638e43b3272d9cd781f0c08312905cdbfd596fa46bd4bb6bbc0a6eda",
+      "saturation_rate": 0.13988095238095238,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 636.3755331039429,
+      "audit_sha256": "e33d27b640af40829a5e37828bc0c19fb3c013a7b0b2d182707f7646da63b277"
+    },
+    {
+      "seed": 16100076,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 36.0,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 37.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 1.399219036102295e-05,
+      "pick_closest_tcp_m": 2.4529760535406573,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 146,
+        "navigation_plan": 146,
+        "navigation_control": 2920,
+        "diagnostic_yaw_turn": 1182,
+        "navigation_control_rejected": 164,
+        "model_claim_transition": 2
+      },
+      "errors": {},
+      "trace_sha256": "e3b049ea95984df378ed1da25d412ffbe523ce1b3f5dcff6c44131826730d526",
+      "summary_sha256": "4627327eee12170e732738d17b89a0297b03f866ba27bc0934da2a8ae76faa29",
+      "saturation_rate": 0.24285714285714285,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 629.3961928524077,
+      "audit_sha256": "a8acbebf1d45fa75b72c5c7ab74b54a403e5252f78d26d57bf7b16bd7e660f96"
+    },
+    {
+      "seed": 16100078,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 2.4,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 15.0,
+          "active_task": "NAV_TO_TARGET"
+        },
+        {
+          "time_s": 30.400000000000002,
+          "active_task": "PLACE"
+        }
+      ],
+      "peak_lift_m": 0.00016361474990844727,
+      "pick_closest_tcp_m": 0.5491634209404426,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 151,
+        "model_response": 151,
+        "navigation_proposal": 43,
+        "navigation_plan": 43,
+        "navigation_control": 860,
+        "model_claim_transition": 3,
+        "diagnostic_yaw_turn": 75,
+        "navigation_control_rejected": 13
+      },
+      "errors": {},
+      "trace_sha256": "04a668c4cf5e235b8b047ba39663ea242b527df3a11ec0a3ae98acdaa22e58b5",
+      "summary_sha256": "0b57c6426bbd2eed7f9ee555fd5f2e22c2c14058085a9bc5db173296bd7cf447",
+      "saturation_rate": 0.1565986394557823,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 628.4600543119013,
+      "audit_sha256": "36359b9ad71d0e94f7ca61751c57b1c6f75e90e8317dde4f6220631af42b15f3"
+    },
+    {
+      "seed": 16100079,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 5.6000000000000005,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 15.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.0,
+      "pick_closest_tcp_m": 0.1563284915277717,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 125,
+        "navigation_plan": 125,
+        "navigation_control": 2500,
+        "diagnostic_yaw_turn": 360,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 2,
+        "navigation_control_rejected": 59
+      },
+      "errors": {
+        "transition_prediction_rejected": 2
+      },
+      "trace_sha256": "982a57f7c0da481a6b57cabff4a232cd713472ade3af256f71df1df21c235cd9",
+      "summary_sha256": "e98982193525f80835f18790e11024899d615e553af92220c8963c2d29f33258",
+      "saturation_rate": 0.1546583850931677,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 627.3806772958487,
+      "audit_sha256": "0ad61f61d5d66f9a77ed2e6a1a6caacddbead19d206115f07317be4cb5d9baf9"
+    },
+    {
+      "seed": 16100081,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 0.4,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 9.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 5.7324767112731934e-05,
+      "pick_closest_tcp_m": 1.2798170520925527,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 15,
+        "navigation_proposal": 127,
+        "navigation_plan": 127,
+        "navigation_control": 2540,
+        "diagnostic_yaw_turn": 704,
+        "navigation_control_rejected": 133
+      },
+      "errors": {
+        "transition_prediction_rejected": 15
+      },
+      "trace_sha256": "b9463d005f05961882942e469c602787cc8bd6acd9cd3ee99a640ee5ea0726cd",
+      "summary_sha256": "8ced086a8ececd4fdf4eb0c306b13c98046904273fc74c6901f156619907e273",
+      "saturation_rate": 0.18979591836734694,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 753.6364387813956,
+      "audit_sha256": "c5ff0390c55d793d97948dd31cd040ddbb8c9e7410568fbadc98a8361e707ecc"
+    },
+    {
+      "seed": 16100083,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 5.2,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 5.4,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.0054937005043029785,
+      "pick_closest_tcp_m": 0.34319358728779836,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 148,
+        "navigation_plan": 148,
+        "navigation_control": 2960,
+        "diagnostic_yaw_turn": 1519,
+        "model_claim_transition": 2,
+        "navigation_control_rejected": 76
+      },
+      "errors": {},
+      "trace_sha256": "3090147fda1571320f0546b319a4db3dad0dbed021c87aa90be652e0ff4ffafe",
+      "summary_sha256": "7107f0fda2ee6a5ab3c52c420d33b9f3056172241655678fdac3fcb8e67c66d0",
+      "saturation_rate": null,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 652.2601917758584,
+      "audit_sha256": "83b24a7fc8f7e96551fce8237572ba355fd48942f3405fe5a2e8a1b1f29a8893"
+    },
+    {
+      "seed": 16100087,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 42.4,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 50.6,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.00024427473545074463,
+      "pick_closest_tcp_m": 0.12472602497103913,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 128,
+        "navigation_plan": 128,
+        "navigation_control": 2560,
+        "diagnostic_yaw_turn": 315,
+        "navigation_control_rejected": 158,
+        "model_claim_transition": 2,
+        "diagnostic_advisory": 1
+      },
+      "errors": {
+        "transition_prediction_rejected": 1
+      },
+      "trace_sha256": "db0d3b291cb72426a38d19564b4f3fd7556547bf69b66c08746763ad3e99ef4e",
+      "summary_sha256": "61db505dcce6b5ccc4bef4469666ff4b6c0378fae2d219f2eba52a3f061394d3",
+      "saturation_rate": 0.13642857142857143,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 615.5022524483502,
+      "audit_sha256": "7c1d209f71ba640f4bb51dc86c7995adfcb2a74dae873e59d80037d94584a96a"
+    },
+    {
+      "seed": 16100089,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 2.0,
+          "active_task": "PICK"
+        }
+      ],
+      "peak_lift_m": 0.0,
+      "pick_closest_tcp_m": 0.8904816071836514,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 4,
+        "navigation_plan": 4,
+        "navigation_control": 80,
+        "model_claim_transition": 1,
+        "diagnostic_advisory": 14
+      },
+      "errors": {
+        "transition_prediction_rejected": 14
+      },
+      "trace_sha256": "0d64adc949da8d881c6375dec212628c6fe54370443e0fe633fa6917f11f044b",
+      "summary_sha256": "8a99ae341cb21607a702bf526b41204fa95f037674289d57604c2deee9eaa9fc",
+      "saturation_rate": 0.1915270935960591,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 628.7329817675054,
+      "audit_sha256": "579e304898fb451e2f55a451ab65bac80f4b54c26ca7a15afb80eb96ab89db9d"
+    },
+    {
+      "seed": 16100187,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 8.8,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 18.2,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 6.020069122314453e-06,
+      "pick_closest_tcp_m": 0.15782486518594135,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 125,
+        "navigation_plan": 125,
+        "navigation_control": 2500,
+        "diagnostic_yaw_turn": 483,
+        "model_claim_transition": 2,
+        "navigation_control_rejected": 14
+      },
+      "errors": {},
+      "trace_sha256": "1a25077584148d628f1db89e8dc5c449a86139a3bc9d38f353fbda51b1da08aa",
+      "summary_sha256": "08585951d134a177b0b88a982ad364a17c0823bf920c77937f6c75a70f384536",
+      "saturation_rate": 0.14658385093167703,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 647.1844319198281,
+      "audit_sha256": "7ec002f8d792b0eed1366711f20abf19fb48bfe54945f10279915a98976f5425"
+    },
+    {
+      "seed": 16100243,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 8.4,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 17.0,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.00022007524967193604,
+      "pick_closest_tcp_m": 0.23804828100125822,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 127,
+        "navigation_plan": 127,
+        "navigation_control": 2540,
+        "diagnostic_yaw_turn": 651,
+        "navigation_control_rejected": 202,
+        "model_claim_transition": 2
+      },
+      "errors": {},
+      "trace_sha256": "03e06e4abce23d07c09efbea0da250721ca117a39dc186dd50049da1cd216831",
+      "summary_sha256": "d048aa01156bb1f55eb99c4c6a67174ab409a667dc0a0a536eb8f68ebc9a6052",
+      "saturation_rate": 0.15170068027210884,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 620.9099274743348,
+      "audit_sha256": "a45100eb3a6f6d883677866b3ddae8331f8eccc2edbf08d301e226ea17b5523e"
+    },
+    {
+      "seed": 16100249,
+      "clock_s": 60.0,
+      "gates": {
+        "closed_normally_at_60s": true,
+        "continuous_3000_physics_ticks": true,
+        "live_object_tensor_every_tick": true,
+        "model_response_identity_bound": true,
+        "scoring_valid": true,
+        "model_switched_into_pick": true,
+        "legacy_pick_observed": false,
+        "stable_relative_grasp_geometry_1s": false,
+        "independent_lift_close_measured_finger_1s": false,
+        "no_object_attachment_or_reset": true,
+        "video_closed_300_frames": true
+      },
+      "model_claims": [
+        {
+          "time_s": 44.800000000000004,
+          "active_task": "PICK"
+        },
+        {
+          "time_s": 45.800000000000004,
+          "active_task": "NAV_TO_TARGET"
+        }
+      ],
+      "peak_lift_m": 0.00031287968158721924,
+      "pick_closest_tcp_m": 1.8974865030393775,
+      "independent_stable_duration_s": 0.0,
+      "full_task_success": false,
+      "strict_full_success": null,
+      "strict_contact": null,
+      "counts": {
+        "stage_prepared": 1,
+        "simulation_clock_started": 1,
+        "control_step": 3000,
+        "object_live_tensor": 3000,
+        "model_request": 150,
+        "model_response": 150,
+        "navigation_proposal": 146,
+        "navigation_plan": 146,
+        "navigation_control": 2920,
+        "diagnostic_yaw_turn": 1357,
+        "navigation_control_rejected": 77,
+        "model_claim_transition": 2
+      },
+      "errors": {},
+      "trace_sha256": "d9e1722a1380a49854af6a89cf8485b917ec902349eea9e4ffa1ac12c4d04606",
+      "summary_sha256": "aaa6b8d9391d32b61ce75f1851fc3f2e9eddcdc2aeb5933b1c393b4b34b626dc",
+      "saturation_rate": 0.17142857142857143,
+      "saturation_gate_passed": false,
+      "deployment_gate_passed": false,
+      "wall_s": 615.3759456686676,
+      "audit_sha256": "74f40bec7c485533b5168434d6bac45ee0f491a991ed759d68429b14bed12a6b"
+    }
+  ]
+}

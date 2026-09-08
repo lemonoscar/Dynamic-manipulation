@@ -1,0 +1,16 @@
+{
+  "status": "complete",
+  "pid": 999876,
+  "started_at": "2026-09-09T00:25:44.499805+08:00",
+  "source_head": "3af61fa800d09dbfee126dc1ea7b3abaa54bf8fb",
+  "closed": 24,
+  "attempted": 24,
+  "max_attempts": 24,
+  "deadline_at": "2026-09-09T06:08:57+08:00",
+  "seed": 16100020,
+  "physical_pid": 1328590,
+  "updated_at": "2026-09-09T05:17:01.122136+08:00",
+  "last_audit": "/diff/wallx_workspace/dzb/integration_runs/train_demo_search_20260909_v1/seed_16100020/demo_audit.json",
+  "reason": "attempt_budget_exhausted",
+  "ended_at": "2026-09-09T05:17:01.466116+08:00"
+}
