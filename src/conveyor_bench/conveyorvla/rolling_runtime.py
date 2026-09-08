@@ -19,6 +19,7 @@ class ActionRequest:
     task: object
     rtc_context: dict | None
     time_profile: str = 'legacy_future_5hz'
+    plan_context: dict | None = None
 
 
 class FrozenActionBackend:
@@ -66,6 +67,7 @@ class RollingRuntime:
         self.pending = {}
         self.events = []
         self._invalidated_task_id = None
+        self._entered_task_ids = set()
         self.safety_stop_reason = None  # Recovery requires a new, explicitly authorized runtime.
 
     def identity(self):
@@ -74,15 +76,22 @@ class RollingRuntime:
             self.memory.active_task_epoch, task.task_id if task else 'FINISHED',
             self.model_id, self.normalizer.payload['normalizer_id'], self.safety_context_id)
 
+    def _requirements(self, task):
+        # Entry also applies when resuming directly into a task. PLACE may
+        # legitimately stop carrying after release while placement settles.
+        return task.invariants if task.task_id in self._entered_task_ids else task.preconditions+task.invariants
+
     def synchronize_task(self):
         task = self.memory.active_task
         now = max(self.memory.observations.values(), default=0.)
-        if task is not None and any(self.memory.fact_value(p, now) is not True for p in task.preconditions):
+        if task is not None and any(self.memory.fact_value(p, now) is not True for p in self._requirements(task)):
             if self._invalidated_task_id != task.task_id:
                 self.memory.active_task_epoch += 1
                 self.memory.plan_version += 1
                 self._invalidated_task_id = task.task_id
             self.queue.cancel(self.identity(), reason='current_task_precondition_invalid')
+        elif task is not None:
+            self._entered_task_ids.add(task.task_id)
         identity = self.identity()
         if identity != self.queue.identity:
             self.queue.cancel(identity)
@@ -98,7 +107,7 @@ class RollingRuntime:
         if (self.memory.observations.get(observation.observation_id) != observation.time_s
                 or observation.time_s != max(self.memory.observations.values(), default=-1.)):
             raise ValueError('action observation must be the current registered snapshot')
-        if any(self.memory.fact_value(p, observation.time_s) is not True for p in self.memory.active_task.preconditions):
+        if any(self.memory.fact_value(p, observation.time_s) is not True for p in self._requirements(self.memory.active_task)):
             raise ValueError('current_task_precondition_invalid')
         context = None
         mani = self.memory.active_task.primitive in {'PICK', 'PLACE'}
@@ -120,7 +129,12 @@ class RollingRuntime:
                 context = {'previous': normalized, 'weights': weights,
                     'max_guidance_weight': self.max_guidance_weight}
         request = ActionRequest(self.sequence, self.identity(), self.memory.plan_version,
-            observation, self.memory.active_task, context, time_profile=self.profile.name)
+            observation, self.memory.active_task, context, time_profile=self.profile.name,
+            plan_context={
+                'completed_tasks':[e['task']['primitive'] for e in self.memory.events if e['kind']=='TASK_COMPLETED'],
+                'active_task':self.memory.active_task.primitive,
+                'remaining_tasks':[t.primitive for t in self.memory.tasks[self.memory.cursor:]],
+                'current_facts':{}})
         self.pending[self.sequence] = request
         self.sequence += 1
         return request
@@ -130,7 +144,7 @@ class RollingRuntime:
         self.synchronize_task()
         if self.safety_stop_reason is not None:
             raise ValueError('safety_stop_latched: '+self.safety_stop_reason)
-        if any(self.memory.fact_value(p, now_s) is not True for p in request.task.preconditions):
+        if any(self.memory.fact_value(p, now_s) is not True for p in self._requirements(request.task)):
             raise ValueError('current_task_precondition_invalid')
         if request.identity != self.identity():
             raise ValueError('action task invalidated during inference')

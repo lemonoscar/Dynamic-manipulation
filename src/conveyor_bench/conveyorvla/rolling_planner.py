@@ -39,8 +39,8 @@ class RollingPlanner:
         candidate = Task(**response['current_task_candidate'])
         old = self.memory.active_task
         if (candidate.primitive, candidate.target_ref, candidate.destination_ref,
-                candidate.preconditions, candidate.completion_conditions) == (
-                old.primitive, old.target_ref, old.destination_ref, old.preconditions, old.completion_conditions):
+                candidate.preconditions, candidate.completion_conditions, candidate.invariants) == (
+                old.primitive, old.target_ref, old.destination_ref, old.preconditions, old.completion_conditions, old.invariants):
             self.memory.last_model_output = response
             return False
         if candidate.task_id in self.memory._used_tasks or candidate.attempt_id in self.memory._used_attempts:

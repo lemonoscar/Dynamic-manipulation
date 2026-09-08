@@ -1,0 +1,32 @@
+{
+  "schema": "rgb-full-episode-finetune-v1",
+  "training": {
+    "effective_batch": 8,
+    "epochs": 3,
+    "max_wall_seconds": 27000,
+    "seed": 20260908,
+    "action_learning_rate": 0.00001,
+    "qwen_learning_rate": 0.000002,
+    "vision_learning_rate": 0.0000005,
+    "transition_loss_weight": 0.2,
+    "validation_action_rows": 16,
+    "validation_transition_rows": 16,
+    "validation_every": 100,
+    "checkpoint_every": 200,
+    "first_checkpoint_step": 20
+  },
+  "master_budget": {
+    "total_wall_seconds": 28800,
+    "preflight_outer_seconds": 600,
+    "shutdown_reserve_seconds": 120,
+    "gpus": [2,3],
+    "automatic_retry": false
+  },
+  "depth": false,
+  "training_order": "shuffle_families_and_episodes_then_chronological_queries_without_replacement",
+  "parameter_precision": "FP32_master_BF16_autocast",
+  "model_parallel": "Qwen_GPU2_action_experts_GPU3",
+  "full_video_bptt": false,
+  "transition_supervision": "offline_teacher_forced_CONTINUE_ADVANCE_proposals_not_completion_evidence",
+  "finish_labels": 0
+}

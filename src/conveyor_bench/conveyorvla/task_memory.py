@@ -16,10 +16,13 @@ class Task:
     destination_ref: str | None = None
     preconditions: tuple = ()
     completion_conditions: tuple = ()
+    invariants: tuple | None = None
 
     def __post_init__(self):
         object.__setattr__(self, 'preconditions', tuple(self.preconditions))
         object.__setattr__(self, 'completion_conditions', tuple(self.completion_conditions))
+        # Older task records used preconditions for entry and continuous checks.
+        object.__setattr__(self, 'invariants', tuple(self.preconditions if self.invariants is None else self.invariants))
         if self.primitive not in PRIMITIVES or not all((self.task_id, self.attempt_id, self.target_ref)):
             raise ValueError('invalid task identity/primitive')
 
@@ -218,4 +221,5 @@ def transfer_skeleton(target='cola', destination='destination'):
     names = ('NAV_TO_SOURCE', 'PICK', 'NAV_TO_TARGET', 'PLACE')
     conditions = ('source_reached', 'carrying', 'target_reached', 'placed')
     return tuple(Task(f'task-{i}', f'attempt-{i}', name, target, destination,
-        ('carrying',) if i >= 2 else (), (conditions[i],)) for i, name in enumerate(names))
+        ('carrying',) if i >= 2 else (), (conditions[i],),
+        invariants=() if name=='PLACE' else None) for i, name in enumerate(names))

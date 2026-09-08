@@ -62,7 +62,7 @@ class StagedExperts(nn.Module):
             predicted=torch.cat((predicted[:,:,:6],2*torch.sigmoid(predicted[:,:,6:])-1),-1)
         return predicted
 
-    def loss(self, domain, actions, state, conditions, *, prefix_lengths=None, noise=None, time=None,
+    def loss(self, domain, actions, state, conditions, *, action_valid_mask=None, prefix_lengths=None, noise=None, time=None,
              fk=None, anchor_q=None, denormalize=None):
         head=self.manipulation if domain=='MANIPULATION' else self.navigation if domain=='NAVIGATION' else None
         if head is None:
@@ -82,6 +82,15 @@ class StagedExperts(nn.Module):
         else:
             time=time.to(actions)
         suffix=torch.ones((batch,horizon),device=actions.device,dtype=torch.bool)
+        if action_valid_mask is not None:
+            valid=torch.as_tensor(action_valid_mask,device=actions.device)
+            if valid.dtype!=torch.bool or valid.shape!=(batch,horizon) or not valid.any(1).all():
+                raise ValueError('action mask must contain a nonempty valid prefix per row')
+            if ((~valid[:,:-1]) & valid[:,1:]).any():
+                raise ValueError('action mask cannot resume after an invalid interval')
+            suffix=valid
+            # Invalid tail is padding, not a held command or a future task label.
+            actions=torch.where(valid[...,None],actions,torch.zeros_like(actions))
         token_time=time[:,None].expand(-1,horizon)
         if self.config.training_rtc and domain=='MANIPULATION':
             if prefix_lengths is None:
@@ -89,8 +98,10 @@ class StagedExperts(nn.Module):
             lengths=torch.as_tensor(prefix_lengths,device=actions.device)
             if lengths.shape!=(batch,) or (lengths<0).any() or (lengths>=horizon).any() or (lengths!=lengths.long()).any():
                 raise ValueError('RTC needs nonempty suffix per sample')
-            suffix=torch.arange(horizon,device=actions.device)[None]>=lengths[:,None]
-            token_time=torch.where(suffix,token_time,1.)
+            delayed=torch.arange(horizon,device=actions.device)[None]>=lengths[:,None]
+            suffix=suffix & delayed
+            if not suffix.any(1).all():raise ValueError('RTC prefix leaves no valid action suffix')
+            token_time=torch.where(delayed,token_time,1.)
         x=token_time[...,None]*actions+(1-token_time[...,None])*noise
         predicted=self.clean(head,vl,state,x,token_time if self.config.training_rtc and domain=='MANIPULATION' else time,mask,banks)
         error=((predicted-actions)/(1-token_time[...,None]).clamp_min(head.config.time_epsilon)).square()
