@@ -1,0 +1,72 @@
+{
+  "schema": "timer60-validation-v1",
+  "executed_source": "920ccc5b74e097ddf83dfc9ee0c1f039098684ef",
+  "source_files": {
+    "run_full_episode_diagnostic.py": "3c705b0cfd80fb3863888295a97e3ab91493b0d118c14905a53f2428828ca3e4",
+    "joint_trajectory_system.py": "76bf04726f43136becd72e08bd9807f3a792cd0570514488907ed8d6b8c0e0ef",
+    "test_timer_review.py": "b4495a4b1f0aaf59c686370ab42883bea762061a6a566735a909a515d20d3ac5"
+  },
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "normalizer_id": "eb5b5fa3116b595e0e65539b7b9d482a84882971c5b78d31a9cc8f7b05a10ae1",
+  "source_family_seed": 16100000,
+  "tests": {
+    "independent_actual_method_cpu_tests": 6,
+    "existing_navigation_recording_tests": 11,
+    "default_and_none_pct_config_check": true
+  },
+  "actual_attempt": {
+    "pid": 941724,
+    "pgid": 941724,
+    "started_at": "2026-09-08T23:21:25.615657+08:00",
+    "status": "exited",
+    "gpu": 3,
+    "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+    "simulation_clock_limit_s": 60,
+    "wall_clock_termination": false,
+    "returncode": 0,
+    "wall_s": 659.8971798215061,
+    "ended_at": "2026-09-08T23:32:25.516516+08:00"
+  },
+  "normal_termination": "simulation_clock_60s",
+  "clock_elapsed_s": 60.0,
+  "control_steps": 3000,
+  "model_queries": 150,
+  "scoring_valid": true,
+  "full_task_success": false,
+  "final_active_task": "NAV_TO_TARGET",
+  "strict_full_success": null,
+  "saturation_rate": 0.13186813186813187,
+  "old_saturation_gate": 0.005,
+  "old_saturation_gate_passed": false,
+  "saturation_is_stop_condition": false,
+  "training_restarted": false,
+  "depth": false,
+  "rtc": false,
+  "service_cleanup": {
+    "pid": 940379,
+    "ended_at": "2026-09-08T23:32:26.285295+08:00",
+    "returncode": -15,
+    "reason": "owned model service closed after timer60 attempt or setup failure"
+  },
+  "transfer_package_sha256": "0f42ce7e6a0bc48b5e256800843e03e22b0635ee85dc5cb546e3411e839fe030",
+  "artifacts": {
+    "results/ACTIVE_CONTRACT.json": "b986b6b52362a8efff9c1fe0624087a18b97fe01be3c7e69423349cb1bc308fa",
+    "results/service_stop.json": "5234b23b2a13c99a06da98351b1fdb1a8a9c8a0cbd47a5d8cf2d0bf89163cbd5",
+    "results/service_identity.json": "247a75cc31e6996a2d0debcb65c94fd2cffb5b2c9184ab1041d05251bbce7ad9",
+    "results/manifest.json": "a6a4639c6fd08399d4d47304121df48fa6aaca9504c5037650d605719de1b90d",
+    "results/service_launch.json": "6a9fc64ef34172c90af252cebabbf381b6c29beb780ed225094ef7e6f9aa5957",
+    "results/physical_timer60/attempt.json": "4a696f35b97fa835898e2ecb511e568c90313fd6813f114449cf9e6d6477593f",
+    "results/physical_timer60/command.json": "5ecfa038ac700b9bd050d30743564ce81b148a48afc49878203e303e57fbcf3d",
+    "results/physical_timer60/runtime/episode_000000/trace.jsonl": "a9d8660cb9b879210fc81222b403d2a3840e7507bee259b82d21686e3a63df1b",
+    "results/physical_timer60/runtime/episode_000000/summary.json": "244aee60205b2479a97c6bc0c90e74c890ba63e6f302c1019f633442e793eda2",
+    "results/physical_timer60/runtime/episode_000000/overview_videos/episode_000001_composite.mp4": "f25983d9ba3b20c55294e12f80f9ce054e05a4d0c4a10cdff0a92bdca595d872"
+  },
+  "independent_audit": {
+    "file": "TIMER60_AUDIT.json",
+    "sha256": "6c9d57fcfeb5b651a5c1ff44cbd4a82b9caab3d845e9e15cec45b27f3ca0f3f0",
+    "clock_3000_continuous_ticks": true,
+    "request_response_binding_mismatches": 0,
+    "pick_tcp_min_distance_m": 0.2183147135858655,
+    "max_object_displacement_m": 0.0002997275732136524
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "timer-only-diagnostic-active-contract-v1",
+  "source_head": "920ccc5b74e097ddf83dfc9ee0c1f039098684ef",
+  "checkpoint_step": 1700,
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "family_seed": 16100000,
+  "normal_termination": {
+    "clock": "simulation timestamp",
+    "duration_s": 60,
+    "starts": "after source-state initialization; includes initial camera history holds",
+    "wall_clock_limit": null,
+    "query_limit": null,
+    "physical_tick_stop": "check clock before every step"
+  },
+  "runtime_policy": {
+    "measurement_thresholds": "advisory",
+    "pct_snap_stop_m": null,
+    "original_pct_score_m": 0.1,
+    "zero_navigation_command": "record raw/debug, execute bounded zero and continue querying",
+    "invalid_model_or_geometry_proposal": "discard pending action; trusted hold; requery",
+    "evaluator_or_video_fault": "continue physical progress; affected scores unknown",
+    "task_finish": "no early episode termination",
+    "command_joint_position_and_gripper_clipping": true,
+    "command_rate_clipping": true,
+    "model_request_timeout_s": 10,
+    "request_timeout_ends_episode": false
+  },
+  "resources": {
+    "inference_gpu": 2,
+    "simulation_gpu": 3,
+    "physical_attempts": 1
+  },
+  "depth": false,
+  "training": false,
+  "rtc": false,
+  "condition": "new IsaacSim5.1 initialized state, no Sim6 solver restore; model-claimed task transitions; no_grasp_assist with declared support locks",
+  "provenance_note": "manifest.json includes historical parent metadata; its timer60 block and this active contract describe this run; prior max_queries/max_simulation_s/pct_snap_max_m are historical, not active stop criteria",
+  "source_sha256": {
+    "run_full_episode_diagnostic.py": "3c705b0cfd80fb3863888295a97e3ab91493b0d118c14905a53f2428828ca3e4",
+    "joint_trajectory_system.py": "76bf04726f43136becd72e08bd9807f3a792cd0570514488907ed8d6b8c0e0ef",
+    "test_timer_review.py": "b4495a4b1f0aaf59c686370ab42883bea762061a6a566735a909a515d20d3ac5"
+  }
+}

@@ -102,7 +102,7 @@
     "pct_status": "ok/same_floor_direct",
     "third_B_raw_directly_logged": false
   },
-  "physical_complete_episode_status": "not_completed: all three attempts stopped during NAV_TO_SOURCE",
+  "physical_complete_episode_status": "timer60 window completed; PICK attempted without object lift; PLACE not entered; task unsuccessful",
   "local_pending_patch": {
     "pct_snap_max_m": 0.5,
     "uploaded": true,
@@ -129,5 +129,6 @@
     "port_18170_open": false,
     "gpu_compute_processes": "GPU-1f200384-f510-edea-50ea-ac608d97b241, 934046, 8798 MiB\nGPU-1f200384-f510-edea-50ea-ac608d97b241, 3456789, 67668 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 720947, 10124 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 3465841, 67668 MiB\n"
   },
-  "retry3_validation": "retry3/validation.json"
+  "retry3_validation": "retry3/validation.json",
+  "timer60_validation": "timer60/validation.json"
 }
