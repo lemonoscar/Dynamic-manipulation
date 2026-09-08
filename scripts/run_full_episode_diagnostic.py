@@ -51,6 +51,19 @@ def source_query(root, tick):
     return observation, sample, parent
 
 
+def live_object_tensor(sim):
+    view=sim._object._rigid_prim_view
+    if not view.is_physics_handle_valid() or view._physics_view is None:
+        raise RuntimeError('object_physics_handle_invalid_USD_fallback_forbidden')
+    pose=first_array_row(view._physics_view.get_transforms())
+    velocity=first_array_row(view._physics_view.get_velocities())
+    result={'pose_wxyz':[float(v) for v in (*pose[:3],pose[6],*pose[3:6])],
+        'velocity':[float(v) for v in velocity],'physics_handle_valid':True}
+    if len(result['pose_wxyz'])!=7 or len(velocity)!=6 or not all(math.isfinite(v) for v in (*result['pose_wxyz'],*result['velocity'])):
+        raise RuntimeError('invalid_live_object_tensor')
+    return result
+
+
 def install_sim51(sim, obs, sample, parent):
     import numpy as np
     import torch
@@ -71,11 +84,33 @@ def install_sim51(sim, obs, sample, parent):
     targets[names.index('arm_joint7')] = parent['channels']['gripper']['target'][0]
     robot.set_joint_position_target(tensor(targets))
     obj = sample['object_state']
+    view=sim._object._rigid_prim_view
+    handle_before=bool(view.is_physics_handle_valid())
+    if not handle_before:sim._object.initialize()
+    if not view.is_physics_handle_valid() or view._physics_view is None:
+        raise RuntimeError('object_physics_handle_invalid_after_single_rebind')
     result = sim._write_object_physics_state(position_xyz=tuple(obj[:3]),
         quaternion_wxyz=tuple(obj[3:7]), velocity_xyz_rpy=tuple(obj[7:]))
     if result.get('applied') is not True:
         raise ValueError('source object initialization unavailable')
     sim._runtime.scene.write_data_to_sim(); sim._runtime.sim.forward()
+    import omni.physx, omni.usd
+    from pxr import PhysicsSchemaTools,Sdf,UsdPhysics
+    context=omni.usd.get_context();stage_id=context.get_stage_id()
+    body_path=sim._object.prim_path
+    prim=context.get_stage().GetPrimAtPath(body_path)
+    body=UsdPhysics.RigidBodyAPI(prim)
+    enabled=body.GetRigidBodyEnabledAttr().Get();kinematic=body.GetKinematicEnabledAttr().Get()
+    if enabled is not True or kinematic is not False:
+        raise RuntimeError(f'object_not_dynamic_enabled:{enabled}/{kinematic}')
+    interface=omni.physx.get_physx_simulation_interface()
+    encoded=PhysicsSchemaTools.sdfPathToInt(Sdf.Path(body_path))
+    sleep_before=bool(interface.is_sleeping(stage_id,encoded))
+    wake=sim._set_object_sleeping(enabled=False)
+    sleep_after=bool(interface.is_sleeping(stage_id,encoded))
+    if wake.get('applied') is not True or sleep_after:
+        raise RuntimeError('object_wake_verification_failed')
+    tensor_state=live_object_tensor(sim)
     actual = sim.read()
     def error(a,b):
         a,b = np.asarray(a,float),np.asarray(b,float)
@@ -90,14 +125,21 @@ def install_sim51(sim, obs, sample, parent):
               'q':error(actual.joint_positions,q), 'dq':error(actual.joint_velocities,dq),
               'object_xyz':error(actual.object_pose[:3],obj[:3]),
               'object_quaternion':quaternion(actual.object_pose[3:],obj[3:7]),
-              'object_velocity':error(actual.object_velocity,obj[7:])}
+              'object_velocity':error(actual.object_velocity,obj[7:]),
+              'object_tensor_xyz':error(tensor_state['pose_wxyz'][:3],obj[:3]),
+              'object_tensor_quaternion':quaternion(tensor_state['pose_wxyz'][3:],obj[3:7]),
+              'object_tensor_velocity':error(tensor_state['velocity'],obj[7:])}
     if max(errors.values()) > 1e-5:
         raise ValueError(f'source initialization readback failed: {errors}')
     applied = first_array_row(robot.data.joint_pos_target)
     if any(abs(applied[names.index(f'arm_joint{i}')]-targets[names.index(f'arm_joint{i}')])>1e-7 for i in range(1,8)):
         raise ValueError('effective arm/joint7 target install failed')
     return {'errors':errors, 'new_condition_not_solver_restore':True,
-            'source_parent_command_id':parent['command_id'], 'object_write':result}
+            'source_parent_command_id':parent['command_id'], 'object_write':result,
+            'object_tensor_proof':tensor_state,'object_handle_valid_before':handle_before,
+            'object_rebind_attempted':not handle_before,'object_rigid_enabled':enabled,
+            'object_kinematic':kinematic,'object_sleep_before':sleep_before,
+            'object_sleep_after':sleep_after,'object_wake':wake}
 
 
 def camera_times(pair, states, live):
@@ -201,13 +243,27 @@ def pipeline_type(options):
         def safety(self, target, observation):
             if not all(math.isfinite(x) for x in (*observation.q,*observation.dq,*target)):
                 return False,'nonfinite_online_joint_state_or_target'
-            if any(q<lo-1e-5 or q>hi+1e-5 for q,lo,hi in zip(observation.q,LIMITS.lower,LIMITS.upper)):
+            if any(q<lo-options.measured_position_tolerance or q>hi+options.measured_position_tolerance for q,lo,hi in zip(observation.q,LIMITS.lower,LIMITS.upper)):
                 return False,'measured_joint_position_outside_limits'
             if any(abs(v)>options.measured_speed_limit for v in observation.dq):
                 return False,'measured_joint_velocity_above_bound'
             if any(q<lo or q>hi for q,lo,hi in zip(target[:6],LIMITS.lower,LIMITS.upper)) or not 0<=target[6]<=1:
                 return False,'queued_joint_or_gripper_target_outside_limits'
             return True,'bounded_joint_diagnostic_only'
+
+        def _physical_step(self, action, *, route, command_index):
+            state=super()._physical_step(action,route=route,command_index=command_index)
+            if getattr(self,'object_tensor_verified',False):
+                proof=live_object_tensor(self.raw_sim)
+                pose=proof['pose_wxyz'];actual=state.object_pose
+                rotation=min(max(abs(a-b) for a,b in zip(pose[3:],actual[3:])),
+                    max(abs(a+b) for a,b in zip(pose[3:],actual[3:])))
+                error=max(rotation,max(abs(a-b) for a,b in zip(pose[:3],actual[:3])),
+                    max(abs(a-b) for a,b in zip(proof['velocity'],state.object_velocity)))
+                if error>1e-5:raise RuntimeError('object_state_differs_from_live_tensor')
+                self._record('object_live_tensor',{'time_s':state.timestamp,
+                    'readback_error':error,**proof})
+            return state
 
         def _navigation_window(self, plan, query_state):
             from source.navigation.adapters.yaw_align import compute_yaw_align_command, YawAlignConfig
@@ -260,7 +316,7 @@ def pipeline_type(options):
                 'task_context_source':str(options.task_context),'task_context_sha256':sha256(options.task_context),
                 'runner_sha256':sha256(Path(__file__)),'saturation_gate_threshold':.005,
                 'training_weights_modified':False,'depth':False,
-                'online_safety':{'measured_joint_limits_tolerance_rad':1e-5,'measured_joint_speed_limit_rad_s':options.measured_speed_limit,
+                'online_safety':{'measured_joint_limits_tolerance_rad':options.measured_position_tolerance,'measured_joint_speed_limit_rad_s':options.measured_speed_limit,
                     'old_measured_speed_limit_rad_s':3.,
                     'predicted_target_rate_limit_rad_s':3.,'target_rate_interval_s':.2,
                     'target_rate_is_not_50hz_actual_velocity_guarantee':True,'collision_certificate':False}}
@@ -284,6 +340,7 @@ def pipeline_type(options):
                 # Command supervision/readback remains the active joint7 target only.
                 self._prepare_episode()
                 summary['initialization']=install_sim51(self.raw_sim,obs,sample,parent)
+                self.object_tensor_verified=True
                 self._read_trusted()
                 self.physics=FormalPhysics(self.raw_sim,'no_grasp_assist',self._record)
                 self.simulation=self.physics;self.physics.arm()
@@ -437,14 +494,15 @@ def main():
     p.add_argument('--mode',choices=['fixed_task','autonomous','train_seed_full'],required=True)
     p.add_argument('--rtc',action='store_true')
     p.add_argument('--measured-speed-limit',type=float,default=3.)
+    p.add_argument('--measured-position-tolerance',type=float,default=1e-5)
     p.add_argument('--record-contacts',action='store_true')
     p.add_argument('--first-plan',type=Path,help='RTC-off creates; paired RTC-on verifies state and adopts exact first prediction')
     p.add_argument('--simulation-seconds',type=float,default=4.)
     p.add_argument('--max-queries',type=int,default=10)
     p.add_argument('--diffusion-seed',type=int,default=17)
     options,runtime=p.parse_known_args()
-    if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30:
-        raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s')
+    if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30 or not 0<=options.measured_position_tolerance<=.02:
+        raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s, <=.02rad measured tolerance')
     if options.rtc and options.mode=='fixed_task' and (options.first_plan is None or not options.first_plan.is_file()):
         raise ValueError('paired RTC-on requires prior frozen RTC-off first plan')
     if not options.rtc and options.first_plan is not None and options.first_plan.exists():
