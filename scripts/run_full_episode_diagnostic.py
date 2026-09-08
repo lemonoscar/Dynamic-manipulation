@@ -389,6 +389,9 @@ def main():
             if self.device_id != 0:
                 raise ValueError('single-visible-GPU simulation requires logical cuda:0')
             launcher_args.update(physics_gpu=0, active_gpu=3, multi_gpu=False)
+            launcher_args['kit_args'] = (launcher_args.get('kit_args','') +
+                ' --/renderer/multiGpu/enabled=false --/renderer/multiGpu/autoEnable=false'
+                ' --/renderer/multiGpu/maxGpuCount=1').strip()
             print(json.dumps({'event':'explicit_gpu_binding','cuda_visible_devices':'3',
                 'physics_logical_gpu':0,'render_physical_gpu':3,'multi_gpu':False}),flush=True)
     isaac_app.AppLauncher = _SingleGPUAppLauncher
