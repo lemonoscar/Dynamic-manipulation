@@ -8,6 +8,7 @@ ordinary feedback or navigation certificates fail closed and retain artifacts.
 import argparse
 from dataclasses import asdict, replace
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -33,6 +34,10 @@ from conveyor_bench.conveyorvla.rolling_runtime import RollingRuntime
 from conveyor_bench.conveyorvla.staged_training import StagedNormalizer
 from conveyor_bench.conveyorvla.task_memory import TaskMemory, Task, transfer_skeleton
 from conveyor_bench.conveyorvla.full_episode_context import public_context_text
+
+
+class SimulationClockExpired(Exception):
+    """The only normal termination of timer-only research execution."""
 
 
 def source_query(root, tick):
@@ -197,6 +202,16 @@ def advance_model_claim(memory, context, observation):
 
 def pipeline_type(options):
     class FullDiagnostic(old.JointTrajectoryRolloutPipeline):
+        def _check_clock(self):
+            if options.timer_only and hasattr(self,'clock_deadline_s'):
+                now=float(self.raw_sim.read().timestamp)
+                if now>=self.clock_deadline_s-1e-8:
+                    raise SimulationClockExpired()
+
+        def _advisory(self, reason, **detail):
+            if detail.get('scoring_valid') is False:self.scoring_valid=False
+            self._record('diagnostic_advisory',{'reason':reason,**detail})
+
         def _prepare_episode(self):
             self._record('stage_prepared', self.simulation.prepare_episode(self.episode_spec))
             self.simulation.reset(self.episode_spec, seed=self.episode_seed)
@@ -231,16 +246,33 @@ def pipeline_type(options):
             self.simulation.apply(self._measured_hold('full1700_safety_stop'))
 
         def apply(self, target, observation):
+            if options.timer_only:
+                if not all(math.isfinite(v) for v in target):
+                    raise ValueError('nonfinite_target_rejected_for_hold')
+                bounded=tuple(min(hi,max(lo,q)) for q,lo,hi in zip(target[:6],LIMITS.lower,LIMITS.upper))+(min(1.,max(0.,target[6])),)
+                if tuple(target)!=bounded:self._advisory('final_mechanical_clip',requested=list(target),applied=list(bounded))
+                target=bounded
             action=self.action_adapter.manipulation(DirectJointCommand(0,tuple(target[:6]),target[6]),
                 route=self.route,sequence_id=self._query_count)
             self._physical_step(action,route=self.route,command_index=None)
             self._read_trusted()
             applied=(*self.trusted.joint_position,self.trusted.gripper_open_fraction)
             if max(abs(a-b) for a,b in zip(applied,target))>1e-6:
-                raise ValueError('effective controller target differs from queued target')
+                if options.timer_only:self._advisory('effective_controller_target_differs',requested=list(target),applied=list(applied))
+                else:raise ValueError('effective controller target differs from queued target')
             return applied
 
         def safety(self, target, observation):
+            if options.timer_only:
+                if not all(math.isfinite(x) for x in (*observation.q,*observation.dq,*target)):
+                    raise ValueError('nonfinite_online_state_or_target_rejected_for_hold')
+                reasons=[]
+                if any(q<lo-options.measured_position_tolerance or q>hi+options.measured_position_tolerance for q,lo,hi in zip(observation.q,LIMITS.lower,LIMITS.upper)):reasons.append('measured_joint_position_outside_limits')
+                if any(abs(v)>options.measured_speed_limit for v in observation.dq):reasons.append('measured_joint_velocity_above_bound')
+                if any(q<lo or q>hi for q,lo,hi in zip(target[:6],LIMITS.lower,LIMITS.upper)) or not 0<=target[6]<=1:reasons.append('queued_target_requires_mechanical_clip')
+                if reasons:self._advisory('nonterminating_joint_diagnostic',checks=reasons,time_s=observation.time_s)
+                return True,'timer_only_command_clipping_preserved'
+
             if not all(math.isfinite(x) for x in (*observation.q,*observation.dq,*target)):
                 return False,'nonfinite_online_joint_state_or_target'
             if any(q<lo-options.measured_position_tolerance or q>hi+options.measured_position_tolerance for q,lo,hi in zip(observation.q,LIMITS.lower,LIMITS.upper)):
@@ -252,17 +284,34 @@ def pipeline_type(options):
             return True,'bounded_joint_diagnostic_only'
 
         def _physical_step(self, action, *, route, command_index):
-            state=super()._physical_step(action,route=route,command_index=command_index)
+            self._check_clock()
+            if options.timer_only:
+                before=self.raw_sim.read()
+                self.simulation.apply(action)
+                try:self.simulation.step(render=bool(self.config.render))
+                except Exception as error:
+                    # FormalPhysics observes after stepping. Never repeat that step.
+                    if self.raw_sim.read().timestamp<=before.timestamp:raise
+                    self._advisory('post_step_evaluator_error',error=str(error),scoring_valid=False)
+                state=self.raw_sim.read()
+                try:self._capture_tick(before,state,action,route,command_index)
+                except Exception as error:self._advisory('capture_or_audit_error',error=str(error),scoring_valid=False)
+            else:
+                state=super()._physical_step(action,route=route,command_index=command_index)
             if getattr(self,'object_tensor_verified',False):
-                proof=live_object_tensor(self.raw_sim)
-                pose=proof['pose_wxyz'];actual=state.object_pose
-                rotation=min(max(abs(a-b) for a,b in zip(pose[3:],actual[3:])),
-                    max(abs(a+b) for a,b in zip(pose[3:],actual[3:])))
-                error=max(rotation,max(abs(a-b) for a,b in zip(pose[:3],actual[:3])),
-                    max(abs(a-b) for a,b in zip(proof['velocity'],state.object_velocity)))
-                if error>1e-5:raise RuntimeError('object_state_differs_from_live_tensor')
-                self._record('object_live_tensor',{'time_s':state.timestamp,
-                    'readback_error':error,**proof})
+                try:
+                    proof=live_object_tensor(self.raw_sim)
+                    pose=proof['pose_wxyz'];actual=state.object_pose
+                    rotation=min(max(abs(a-b) for a,b in zip(pose[3:],actual[3:])),
+                        max(abs(a+b) for a,b in zip(pose[3:],actual[3:])))
+                    error=max(rotation,max(abs(a-b) for a,b in zip(pose[:3],actual[:3])),
+                        max(abs(a-b) for a,b in zip(proof['velocity'],state.object_velocity)))
+                    if error>1e-5:raise RuntimeError('object_state_differs_from_live_tensor')
+                    self._record('object_live_tensor',{'time_s':state.timestamp,
+                        'readback_error':error,**proof})
+                except Exception as error:
+                    if not options.timer_only:raise
+                    self._advisory('object_evidence_invalid',error=str(error),scoring_valid=False)
             return state
 
         def _navigation_window(self, plan, query_state):
@@ -270,7 +319,7 @@ def pipeline_type(options):
             from conveyor_bench.conveyorvla.waypoint import wrap_to_pi
             nav = self.system.navigation_executor
             points = tuple(tuple(p) for p in plan['reference_query_body'])
-            nav.config=replace(nav.config,pct_snap_max_m=options.diagnostic_pct_snap_max)
+            nav.config=replace(nav.config,pct_snap_max_m=None if options.timer_only else options.diagnostic_pct_snap_max)
             try:
                 path = nav.begin(NavigationReference(points,points[-1],.2),
                     query_state.robot_root_pose,timestamp_s=query_state.timestamp)
@@ -281,7 +330,7 @@ def pipeline_type(options):
             self._record('navigation_plan',{**dict(path.trace),
                 'original_raw_snap_gate_m':.1,
                 'original_raw_snap_gate_passed':path.pct_plan.snap_distance_m<=.1,
-                'diagnostic_snap_stop_m':options.diagnostic_pct_snap_max})
+                'diagnostic_snap_stop_m':None if options.timer_only else options.diagnostic_pct_snap_max})
             local_map=self._local_map(self.route)
             for _ in range(20):
                 live = self.simulation.read(); observation = self._obs(live)
@@ -301,7 +350,11 @@ def pipeline_type(options):
                         config=YawAlignConfig(kp=2.,min_wz=.15,max_wz=.35,activation_vx=0.))
                     self._record('diagnostic_yaw_turn',{'certificate':'unknown','command':command})
                 elif control.requires_requery and not control.reached_local_goal:
-                    raise ValueError('navigation_rejected:'+str(control.reason))
+                    self._record('navigation_control_rejected',{'reason':control.reason,
+                        'guarded_command':list(control.base_velocity),'trace':dict(control.trace),
+                        'dwa_debug':old.waypoint_runner._jsonable(getattr(nav.dwa_controller,'last_trace',None)),
+                        'terminates_episode':not options.timer_only})
+                    if not options.timer_only:raise ValueError('navigation_rejected:'+str(control.reason))
                 self._record('navigation_control',{'reason':control.reason,'command':command,
                     'trace':dict(control.trace),'deployment_certificate':'unknown'})
                 action=self.action_adapter.navigation(command,self.trusted,
@@ -316,7 +369,7 @@ def pipeline_type(options):
             self.raw_sim=self.simulation
             summary={'schema':'full1700-physical-diagnostic-v1','status':'running','success':False,
                 'full_task_success':None,'deployment_gate_passed':False,'strict_full_success':None,
-                'execution_mode':options.mode,'rtc':options.rtc,'pure_physics_success':None,
+                'execution_mode':options.mode,'timer_only':options.timer_only,'normal_termination':'simulation_clock_60s' if options.timer_only else 'legacy_bounded','rtc':options.rtc,'pure_physics_success':None,
                 'state_trace':self._state_trace,'history_source':'model_claim_not_verified_completion' if options.mode=='train_seed_full' else 'fixed_context',
                 'planner_FINISH':None,'time_profile':'causal_command_5hz',
                 'replan_period_s':.4,'control_period_s':.02,'inference_pauses_simulation':True,
@@ -327,12 +380,12 @@ def pipeline_type(options):
                 'training_weights_modified':False,'depth':False,
                 'online_safety':{'measured_joint_limits_tolerance_rad':options.measured_position_tolerance,'measured_joint_speed_limit_rad_s':options.measured_speed_limit,
                     'old_measured_speed_limit_rad_s':3.,
-                    'diagnostic_pct_snap_stop_m':options.diagnostic_pct_snap_max,'original_pct_snap_gate_m':.1,
+                    'diagnostic_pct_snap_stop_m':None if options.timer_only else options.diagnostic_pct_snap_max,'original_pct_snap_gate_m':.1,
                     'predicted_target_rate_limit_rad_s':3.,'target_rate_interval_s':.2,
                     'target_rate_is_not_50hz_actual_velocity_guarantee':True,'collision_certificate':False}}
             started=time.perf_counter(); probe=None
             try:
-                self.client=old.JointTrajectoryHTTPClient(options.endpoint,timeout_s=180.)
+                self.client=old.JointTrajectoryHTTPClient(options.endpoint,timeout_s=10. if options.timer_only else 180.)
                 health=self.client.health()
                 if health.get('protocol_version')!=PROTOCOL or health.get('global_step')!=1700 or health.get('weights_sha256')!=options.expected_sha256 or not health.get('strict_load'):
                     raise ValueError('full1700 service identity mismatch')
@@ -376,90 +429,113 @@ def pipeline_type(options):
                     summary.update(status='blocked',failure_reason='independent_current_carrying_feedback_unavailable')
                     return summary
                 control_start=None
-                for query in range(options.max_queries):
-                    payload,state=self._next_request()
-                    if control_start is None:control_start=self._control_steps
-                    pair=self.frames.pair_after(None)
-                    stamps=camera_times(pair,self._camera_states,state)
-                    observation=self._obs(state,stamps);self.memory.observe(observation)
-                    request=runtime.prepare_request(observation)
-                    request=replace(request,plan_context=context)
-                    runtime.pending[request.request_id]=request
-                    wire=asdict(request);wire['observation'].pop('images')
-                    packet={'protocol_version':PROTOCOL,'request':wire,
-                        'instruction':str(self.episode_spec.instruction),
-                        'head_images':payload['head_images'],'wrist_images':payload['wrist_images'],
-                        'diffusion_seed':(options.diffusion_seed+query*1009)%(2**32),
-                        'predict_transition':options.mode=='autonomous' or (options.mode=='train_seed_full' and self.route!=JointTrajectoryRoute.PLACE)}
-                    packet=old.waypoint_runner._jsonable(packet)
-                    self._record('model_request',packet)
-                    before=self.simulation.read().step_index;request_started=time.perf_counter()
-                    if query==0 and options.rtc and options.first_plan is not None:
-                        saved=json.loads(options.first_plan.read_text())
-                        prior=saved['request']; prior_obs=prior['request']['observation']
-                        compare_shared_state(saved['query_state'],old.waypoint_runner._state_snapshot(state))
-                        if saved['response']['weights_sha256']!=options.expected_sha256 or prior['request']['plan_context']!=context or prior['instruction']!=packet['instruction']:
-                            raise ValueError('shared first plan model/task changed')
-                        if prior_obs['time_s']!=wire['observation']['time_s'] or prior_obs['image_times_s']!=list(stamps):
-                            raise ValueError('shared first plan time differs')
-                        for key in ('q','dq','base_xyyaw'):
-                            if max(abs(a-b) for a,b in zip(prior_obs[key],wire['observation'][key]))>1e-5:
-                                raise ValueError(f'shared first plan measured {key} differs')
-                        if abs(prior_obs['gripper']-observation.gripper)>1e-5:
-                            raise ValueError('shared first measured gripper differs')
-                        summary['shared_first_rgb_hash_equal']={k:[a==b for a,b in zip(prior[k],packet[k])] for k in ('head_images','wrist_images')}
-                        summary['shared_first_plan_sha256']=sha256(options.first_plan)
-                        response={**saved['response'],'request_id':request.request_id,'identity':wire['identity'],
-                            'observation_id':observation.observation_id,'query_time_s':observation.time_s}
-                        self._record('adopted_shared_first_proposal',{'original_request':prior['request'],
-                            'first_plan_sha256':summary['shared_first_plan_sha256'],'new_identity':wire['identity']})
-                    else:
-                        response=self.client.infer(packet)
-                        if query==0 and options.first_plan is not None:
-                            with options.first_plan.open('x') as out:json.dump({'request':packet,'response':response,
-                                'query_state':old.waypoint_runner._jsonable(old.waypoint_runner._state_snapshot(state))},out)
-                    if self.simulation.read().step_index!=before:raise ValueError('paused inference moved physics')
-                    self._record('model_response',{'response':response,'client_roundtrip_s':time.perf_counter()-request_started})
-                    if response['identity']!=wire['identity'] or response['request_id']!=request.request_id or response['observation_id']!=observation.observation_id or response['query_time_s']!=observation.time_s or response['time_profile']!='causal_command_5hz' or response['weights_sha256']!=options.expected_sha256 or response['rtc_applied']!=(request.rtc_context is not None):
-                        raise ValueError('foreign/stale model proposal')
-                    self._query_count+=1
-                    self._state_trace.append(self.route.value)
-                    transition=response.get('transition')
-                    if transition is not None and transition['proposal']['operation']=='ADVANCE':
-                        if options.mode=='train_seed_full':
-                            runtime.pending.pop(request.request_id)
-                            context=advance_model_claim(self.memory,context,observation)
-                            self.route=JointTrajectoryRoute(context['active_task'])
-                            runtime.synchronize_task()
-                            self._record('model_claim_transition',{'context':context,
-                                'active_task_epoch':self.memory.active_task_epoch,
-                                'completion_verified':False,'discarded_old_task_action':True})
-                            continue
-                        summary.update(status='blocked',failure_reason='ADVANCE_without_independent_completion_feedback',blocked_proposal=transition)
-                        break
-                    plan=runtime.complete_request(request.request_id,response['physical_actions'],now_s=observation.time_s)
-                    if self.route.value.startswith('NAV_'):
-                        self._record('navigation_proposal',old.waypoint_runner._jsonable(plan))
-                        if options.mode=='train_seed_full':
-                            self._navigation_window(plan,state)
-                            if runtime.safety_stop_reason is not None:
-                                summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason);break
-                            if self._control_steps-control_start>=round(options.simulation_seconds/.02):
-                                summary.update(status='complete',failure_reason='bounded_diagnostic_window_complete');break
-                            continue
-                        summary.update(status='blocked',failure_reason='navigation_online_geometry_and_stop_certificate_unavailable')
-                        break
-                    for _ in range(20):
-                        live=self.simulation.read(); current=self._obs(live)
-                        runtime.tick(current,safety=self.safety,controller=self)
-                        if runtime.safety_stop_reason is not None:
-                            summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason)
+                if options.timer_only:
+                    self.clock_start_s=float(self.raw_sim.read().timestamp)
+                    self.clock_deadline_s=self.clock_start_s+60.
+                    self.max_control_steps=math.inf
+                    summary['clock_start_s']=self.clock_start_s
+                    summary['clock_deadline_s']=self.clock_deadline_s
+                    self._record('simulation_clock_started',{'start_s':self.clock_start_s,'deadline_s':self.clock_deadline_s})
+                for query in (itertools.count() if options.timer_only else range(options.max_queries)):
+                    try:
+                        self._check_clock()
+                        payload,state=self._next_request()
+                        if control_start is None:control_start=self._control_steps
+                        pair=self.frames.pair_after(None)
+                        stamps=camera_times(pair,self._camera_states,state)
+                        observation=self._obs(state,stamps);self.memory.observe(observation)
+                        request=runtime.prepare_request(observation)
+                        request=replace(request,plan_context=context)
+                        runtime.pending[request.request_id]=request
+                        wire=asdict(request);wire['observation'].pop('images')
+                        packet={'protocol_version':PROTOCOL,'request':wire,
+                            'instruction':str(self.episode_spec.instruction),
+                            'head_images':payload['head_images'],'wrist_images':payload['wrist_images'],
+                            'diffusion_seed':(options.diffusion_seed+query*1009)%(2**32),
+                            'predict_transition':options.mode=='autonomous' or (options.mode=='train_seed_full' and self.route!=JointTrajectoryRoute.PLACE)}
+                        packet=old.waypoint_runner._jsonable(packet)
+                        self._record('model_request',packet)
+                        before=self.simulation.read().step_index;request_started=time.perf_counter()
+                        if query==0 and options.rtc and options.first_plan is not None:
+                            saved=json.loads(options.first_plan.read_text())
+                            prior=saved['request']; prior_obs=prior['request']['observation']
+                            compare_shared_state(saved['query_state'],old.waypoint_runner._state_snapshot(state))
+                            if saved['response']['weights_sha256']!=options.expected_sha256 or prior['request']['plan_context']!=context or prior['instruction']!=packet['instruction']:
+                                raise ValueError('shared first plan model/task changed')
+                            if prior_obs['time_s']!=wire['observation']['time_s'] or prior_obs['image_times_s']!=list(stamps):
+                                raise ValueError('shared first plan time differs')
+                            for key in ('q','dq','base_xyyaw'):
+                                if max(abs(a-b) for a,b in zip(prior_obs[key],wire['observation'][key]))>1e-5:
+                                    raise ValueError(f'shared first plan measured {key} differs')
+                            if abs(prior_obs['gripper']-observation.gripper)>1e-5:
+                                raise ValueError('shared first measured gripper differs')
+                            summary['shared_first_rgb_hash_equal']={k:[a==b for a,b in zip(prior[k],packet[k])] for k in ('head_images','wrist_images')}
+                            summary['shared_first_plan_sha256']=sha256(options.first_plan)
+                            response={**saved['response'],'request_id':request.request_id,'identity':wire['identity'],
+                                'observation_id':observation.observation_id,'query_time_s':observation.time_s}
+                            self._record('adopted_shared_first_proposal',{'original_request':prior['request'],
+                                'first_plan_sha256':summary['shared_first_plan_sha256'],'new_identity':wire['identity']})
+                        else:
+                            response=self.client.infer(packet)
+                            if query==0 and options.first_plan is not None:
+                                with options.first_plan.open('x') as out:json.dump({'request':packet,'response':response,
+                                    'query_state':old.waypoint_runner._jsonable(old.waypoint_runner._state_snapshot(state))},out)
+                        if self.simulation.read().step_index!=before:raise ValueError('paused inference moved physics')
+                        self._record('model_response',{'response':response,'client_roundtrip_s':time.perf_counter()-request_started})
+                        if response['identity']!=wire['identity'] or response['request_id']!=request.request_id or response['observation_id']!=observation.observation_id or response['query_time_s']!=observation.time_s or response['time_profile']!='causal_command_5hz' or response['weights_sha256']!=options.expected_sha256 or response['rtc_applied']!=(request.rtc_context is not None):
+                            raise ValueError('foreign/stale model proposal')
+                        self._query_count+=1
+                        self._state_trace.append(self.route.value)
+                        transition=response.get('transition')
+                        if transition is not None and transition['proposal']['operation']=='ADVANCE':
+                            if options.mode=='train_seed_full':
+                                runtime.pending.pop(request.request_id)
+                                context=advance_model_claim(self.memory,context,observation)
+                                self.route=JointTrajectoryRoute(context['active_task'])
+                                runtime.synchronize_task()
+                                self._record('model_claim_transition',{'context':context,
+                                    'active_task_epoch':self.memory.active_task_epoch,
+                                    'completion_verified':False,'discarded_old_task_action':True})
+                                if options.timer_only:self.hold(observation,'task_transition_wait')
+                                continue
+                            summary.update(status='blocked',failure_reason='ADVANCE_without_independent_completion_feedback',blocked_proposal=transition)
                             break
-                    if runtime.safety_stop_reason is not None:break
-                    if self._control_steps-control_start>=round(options.simulation_seconds/.02):
-                        summary.update(status='complete',failure_reason=None);break
+                        plan=runtime.complete_request(request.request_id,response['physical_actions'],now_s=observation.time_s)
+                        if self.route.value.startswith('NAV_'):
+                            self._record('navigation_proposal',old.waypoint_runner._jsonable(plan))
+                            if options.mode=='train_seed_full':
+                                self._navigation_window(plan,state)
+                                if runtime.safety_stop_reason is not None and not options.timer_only:
+                                    summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason);break
+                                if not options.timer_only and self._control_steps-control_start>=round(options.simulation_seconds/.02):
+                                    summary.update(status='complete',failure_reason='bounded_diagnostic_window_complete');break
+                                continue
+                            summary.update(status='blocked',failure_reason='navigation_online_geometry_and_stop_certificate_unavailable')
+                            break
+                        for _ in range(20):
+                            live=self.simulation.read(); current=self._obs(live)
+                            runtime.tick(current,safety=self.safety,controller=self)
+                            if runtime.safety_stop_reason is not None and not options.timer_only:
+                                summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason)
+                                break
+                        if runtime.safety_stop_reason is not None and not options.timer_only:break
+                        if not options.timer_only and self._control_steps-control_start>=round(options.simulation_seconds/.02):
+                            summary.update(status='complete',failure_reason=None);break
+                    except SimulationClockExpired:
+                        raise
+                    except Exception as error:
+                        if not options.timer_only:raise
+                        self._advisory('query_or_action_rejected',error_type=type(error).__name__,error=str(error),traceback=traceback.format_exc())
+                        runtime.pending.clear()
+                        runtime.queue.cancel(reason='timer_only_requery')
+                        runtime.safety_stop_reason=None
+                        self.system.navigation_executor.reset()
+                        for _ in range(20):
+                            self._physical_step(self._measured_hold('timer_only_recovery_hold'),route=self.route,command_index=None)
                 else:
                     summary.update(status='complete',failure_reason='query_budget_reached')
+            except SimulationClockExpired:
+                summary.update(status='complete',failure_reason=None,termination_reason='simulation_clock_60s',clock_elapsed_s=float(self.raw_sim.read().timestamp)-self.clock_start_s)
             except Exception as error:
                 summary.update(status='failed',failure_reason=f'{type(error).__name__}:{error}',traceback=traceback.format_exc())
             finally:
@@ -474,10 +550,14 @@ def pipeline_type(options):
                     summary['saturation_rate']=counts/denom if denom else None
                     summary['saturation_gate_passed']=bool(denom and counts/denom<=.005)
                     self.runtime.queue.cancel(reason='diagnostic_end')
+                try:evidence=None if self.physics is None else self.physics.evidence()
+                except Exception as error:
+                    evidence=None;self._advisory('final_evaluator_error',error=str(error),scoring_valid=False)
                 summary.update(wall_s=time.perf_counter()-started,model_queries=self._query_count,
-                    control_steps=self._control_steps,physics_evidence=None if self.physics is None else self.physics.evidence(),
+                    scoring_valid=getattr(self,'scoring_valid',True),
+                    control_steps=self._control_steps,physics_evidence=evidence,
                     success=False,success_semantics='diagnostic_completion_is_not_task_success')
-                if self.physics is not None:
+                if self.physics is not None and evidence is not None and summary['scoring_valid']:
                     evidence=summary['physics_evidence']
                     summary['full_task_success']=bool(evidence['pick_verified'] and evidence['carry_verified'] and evidence['release_observed'] and not evidence['drop_detected'] and self._latest_truth is not None and self._latest_truth.success.success)
                     summary['full_task_score_source']='independent_evaluator_not_planner_input'
@@ -503,6 +583,7 @@ def main():
     p.add_argument('--endpoint',default='http://127.0.0.1:18170')
     p.add_argument('--mode',choices=['fixed_task','autonomous','train_seed_full'],required=True)
     p.add_argument('--rtc',action='store_true')
+    p.add_argument('--timer-only',action='store_true',help='research only: all runtime diagnostics advisory; finish at 60 simulation seconds')
     p.add_argument('--measured-speed-limit',type=float,default=3.)
     p.add_argument('--measured-position-tolerance',type=float,default=1e-5)
     p.add_argument('--diagnostic-pct-snap-max',type=float,default=.1)
@@ -514,6 +595,7 @@ def main():
     options,runtime=p.parse_known_args()
     if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30 or not 0<=options.measured_position_tolerance<=.02 or not 0<options.diagnostic_pct_snap_max<=.5:
         raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s, <=.02rad measured tolerance')
+    if options.timer_only and options.mode!='train_seed_full':raise ValueError('timer-only requires train_seed_full')
     if options.rtc and options.mode=='fixed_task' and (options.first_plan is None or not options.first_plan.is_file()):
         raise ValueError('paired RTC-on requires prior frozen RTC-off first plan')
     if not options.rtc and options.first_plan is not None and options.first_plan.exists():

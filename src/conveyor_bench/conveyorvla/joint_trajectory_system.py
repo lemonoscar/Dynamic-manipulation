@@ -48,7 +48,7 @@ class JointNavigationConfig:
     execution_window_s: float = NAVIGATION_WINDOW_S
     goal_tolerance_m: float = 0.12
     yaw_tolerance_rad: float = 0.14
-    pct_snap_max_m: float = 0.10
+    pct_snap_max_m: float | None = 0.10
 
     def __post_init__(self) -> None:
         if not math.isclose(self.control_stride_s, CONTROL_STRIDE_S):
@@ -60,10 +60,12 @@ class JointNavigationConfig:
             for value in (
                 self.goal_tolerance_m,
                 self.yaw_tolerance_rad,
-                self.pct_snap_max_m,
             )
         ):
             raise ValueError("navigation tolerances must be finite and positive")
+
+        if self.pct_snap_max_m is not None and (not math.isfinite(self.pct_snap_max_m) or self.pct_snap_max_m<=0):
+            raise ValueError('enabled PCT snap limit must be finite and positive')
 
     @property
     def maximum_control_ticks(self) -> int:
@@ -181,7 +183,7 @@ class PCTDWAJointNavigationExecutor:
         )
         if len(pct_plan.path_world) < 2:
             raise JointNavigationPlanError("PCT plan must contain at least two path points", plan.trace)
-        if pct_plan.snap_distance_m > self.config.pct_snap_max_m:
+        if self.config.pct_snap_max_m is not None and pct_plan.snap_distance_m > self.config.pct_snap_max_m:
             raise JointNavigationPlanError("PCT endpoint snap exceeds the joint-trajectory limit", plan.trace)
         self._active = plan
         return plan
