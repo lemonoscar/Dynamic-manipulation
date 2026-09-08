@@ -223,7 +223,8 @@ def pipeline_type(options):
                 fraction=parent['channels']['gripper']['target'][0]/.04
                 if not 0<=fraction<=1:raise ValueError('trusted initial joint7 command invalid')
                 self.trusted=DirectJointCommand(0,tuple(parent['channels']['arm']['target']),fraction)
-                self.action_adapter.gripper_joint_names=('arm_joint7',)
+                # The pinned simulator requires both named fields and mirrors joint7.
+                # Command supervision/readback remains the active joint7 target only.
                 self._prepare_episode()
                 summary['initialization']=install_sim51(self.raw_sim,obs,sample,parent)
                 self._read_trusted()
