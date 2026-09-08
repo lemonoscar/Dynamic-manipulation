@@ -1,0 +1,252 @@
+{
+  "evidence_kind": "cpu_reconstruction_not_original_failure_trace",
+  "run": "/diff/wallx_workspace/dzb/integration_runs/train_seed_fit_20260908_v1/physical_02_full_off_live",
+  "source_head": "691a14444d22d18ef2c3c742ebbfab2062732b23",
+  "reference_head": "388b6818f4c605a707d13c519fbb58b1d07acd92",
+  "inputs": "logged navigation_proposal goal_world and preceding measured robot_root_pose; bound PCT assets",
+  "configuration": "Actual CLI fixes identity coordinates and three asset paths; other PCT fields match pinned CLI/NavigationSettings/PCTPlannerConfig defaults.",
+  "map": {
+    "resolution": 0.2,
+    "center": [
+      -6.915245056152344,
+      13.82486629486084
+    ],
+    "shape": [
+      6,
+      275,
+      443
+    ],
+    "hard_obstacle_count": 81451
+  },
+  "queries": [
+    {
+      "query_time_s": 0.4,
+      "logged_A_xyyaw": [
+        -0.7550328655035918,
+        6.396442815379259,
+        1.3245535586927373
+      ],
+      "logged_query_root_xyz": [
+        -0.8662387132644653,
+        5.761139392852783,
+        0.1990961879491806
+      ],
+      "reconstructed_PCT_response": {
+        "status": "ok",
+        "traj": [
+          [
+            -0.9152450561523438,
+            5.82486629486084,
+            0.0
+          ],
+          [
+            -0.7152450561523436,
+            6.4248662948608395,
+            0.0
+          ]
+        ],
+        "slice_start": 0,
+        "slice_end": 0,
+        "snap_start_dist": 1,
+        "snap_end_dist": 1,
+        "snap_start_distance_m": 0.08039116669627805,
+        "snap_end_distance_m": 0.048897484176705044,
+        "snapped_start_xyz": [
+          -0.9152450561523438,
+          5.82486629486084,
+          0.0
+        ],
+        "snapped_end_xyz": [
+          -0.7152450561523436,
+          6.4248662948608395,
+          0.0
+        ],
+        "planner": "pct_grid",
+        "path_mode": "same_floor_direct",
+        "cross_floor": false,
+        "hard_obstacle_cells": 81451,
+        "hard_obstacle_mode": "body_clearance_volume",
+        "hard_obstacle_min_slices": 7,
+        "default_hard_obstacle_min_slices": 7,
+        "cross_floor_hard_obstacle_min_slices": 9,
+        "cross_floor_gateway_count": 1,
+        "cross_floor_stair_exit_count": 1,
+        "cross_floor_stair_midpoint_count": 4,
+        "cross_floor_gateway_radius_m": 0.6,
+        "cross_floor_gateway_cells": 238,
+        "cross_floor_stair_vertical_cells": 243,
+        "cross_floor_gateway_mode": null,
+        "robot_root_to_floor_m": 0.45,
+        "planning_start_z": -0.2509038120508194,
+        "planning_end_z": -0.2509038120508194,
+        "stair_vertical_radius_m": 0.6,
+        "stair_constraint_mode": "surface_3d",
+        "stair_progress_tolerance": 0.35,
+        "stair_progress_cost_weight": 20.0
+      },
+      "reconstructed_B_raw_xyyaw": [
+        -0.7152450561523436,
+        6.4248662948608395,
+        1.3245535586927373
+      ],
+      "historical_snap_0_10_pass": true
+    },
+    {
+      "query_time_s": 0.8,
+      "logged_A_xyyaw": [
+        -0.7923000621260269,
+        6.408593627614552,
+        1.3993944831054028
+      ],
+      "logged_query_root_xyz": [
+        -0.8636482954025269,
+        5.774389266967773,
+        0.2055114060640335
+      ],
+      "reconstructed_PCT_response": {
+        "status": "ok",
+        "traj": [
+          [
+            -0.9152450561523438,
+            5.82486629486084,
+            0.0
+          ],
+          [
+            -0.7152450561523436,
+            6.4248662948608395,
+            0.0
+          ]
+        ],
+        "slice_start": 1,
+        "slice_end": 1,
+        "snap_start_dist": 0,
+        "snap_end_dist": 0,
+        "snap_start_distance_m": 0.07218141079801121,
+        "snap_end_distance_m": 0.07875451507636096,
+        "snapped_start_xyz": [
+          -0.9152450561523438,
+          5.82486629486084,
+          0.0
+        ],
+        "snapped_end_xyz": [
+          -0.7152450561523436,
+          6.4248662948608395,
+          0.0
+        ],
+        "planner": "pct_grid",
+        "path_mode": "same_floor_direct",
+        "cross_floor": false,
+        "hard_obstacle_cells": 81451,
+        "hard_obstacle_mode": "body_clearance_volume",
+        "hard_obstacle_min_slices": 7,
+        "default_hard_obstacle_min_slices": 7,
+        "cross_floor_hard_obstacle_min_slices": 9,
+        "cross_floor_gateway_count": 1,
+        "cross_floor_stair_exit_count": 1,
+        "cross_floor_stair_midpoint_count": 4,
+        "cross_floor_gateway_radius_m": 0.6,
+        "cross_floor_gateway_cells": 238,
+        "cross_floor_stair_vertical_cells": 243,
+        "cross_floor_gateway_mode": null,
+        "robot_root_to_floor_m": 0.45,
+        "planning_start_z": -0.2444885939359665,
+        "planning_end_z": -0.2444885939359665,
+        "stair_vertical_radius_m": 0.6,
+        "stair_constraint_mode": "surface_3d",
+        "stair_progress_tolerance": 0.35,
+        "stair_progress_cost_weight": 20.0
+      },
+      "reconstructed_B_raw_xyyaw": [
+        -0.7152450561523436,
+        6.4248662948608395,
+        1.3993944831054028
+      ],
+      "historical_snap_0_10_pass": true
+    },
+    {
+      "query_time_s": 1.2,
+      "logged_A_xyyaw": [
+        -0.8217518278597127,
+        6.355894411628077,
+        1.393521708708934
+      ],
+      "logged_query_root_xyz": [
+        -0.8432921171188354,
+        5.848455429077148,
+        0.22831079363822937
+      ],
+      "reconstructed_PCT_response": {
+        "status": "ok",
+        "traj": [
+          [
+            -0.9152450561523438,
+            5.82486629486084,
+            0.0
+          ],
+          [
+            -0.9152450561523438,
+            6.4248662948608395,
+            0.0
+          ]
+        ],
+        "slice_start": 1,
+        "slice_end": 1,
+        "snap_start_dist": 0,
+        "snap_end_dist": 0,
+        "snap_start_distance_m": 0.07572101880346555,
+        "snap_end_distance_m": 0.11618134279328975,
+        "snapped_start_xyz": [
+          -0.9152450561523438,
+          5.82486629486084,
+          0.0
+        ],
+        "snapped_end_xyz": [
+          -0.9152450561523438,
+          6.4248662948608395,
+          0.0
+        ],
+        "planner": "pct_grid",
+        "path_mode": "same_floor_direct",
+        "cross_floor": false,
+        "hard_obstacle_cells": 81451,
+        "hard_obstacle_mode": "body_clearance_volume",
+        "hard_obstacle_min_slices": 7,
+        "default_hard_obstacle_min_slices": 7,
+        "cross_floor_hard_obstacle_min_slices": 9,
+        "cross_floor_gateway_count": 1,
+        "cross_floor_stair_exit_count": 1,
+        "cross_floor_stair_midpoint_count": 4,
+        "cross_floor_gateway_radius_m": 0.6,
+        "cross_floor_gateway_cells": 238,
+        "cross_floor_stair_vertical_cells": 243,
+        "cross_floor_gateway_mode": null,
+        "robot_root_to_floor_m": 0.45,
+        "planning_start_z": -0.22168920636177064,
+        "planning_end_z": -0.22168920636177064,
+        "stair_vertical_radius_m": 0.6,
+        "stair_constraint_mode": "surface_3d",
+        "stair_progress_tolerance": 0.35,
+        "stair_progress_cost_weight": 20.0
+      },
+      "reconstructed_B_raw_xyyaw": [
+        -0.9152450561523438,
+        6.4248662948608395,
+        1.393521708708934
+      ],
+      "historical_snap_0_10_pass": false
+    }
+  ],
+  "sha256": {
+    "--pct-tomogram-path": "d02f04ffecb33b16bd277d941920bcf7399eda33e8baecaf1a1b3e436fa515a4",
+    "--pct-walkable-path": "8abfb58f5c0de3ae5d1827b646fafcf6e937352490c4a88e2e266d32887a2e0b",
+    "--pct-collision-ply-path": "85c2a2e745905eb9e83cc46c8f68e1706431658598d783c94f022f8131ad78de",
+    "--pct-server-script": "d506a44bff125ce7d74ead1fa90f4520c9a9f3a0a31dd7f4a622d37e488295d9"
+  },
+  "verification": {
+    "query_0_4_logged_snap": 0.048897484176705044,
+    "query_0_8_logged_snap": 0.07875451507636096,
+    "first_two_match_logged_exactly": true,
+    "third_B_and_snap_directly_logged": false,
+    "third_failure_interpretation": "PCT status ok; same_floor_direct; snap_end_dist zero means rounded endpoint already walkable. 0.2 m grid quantization exceeds historical 0.10 m threshold."
+  }
+}

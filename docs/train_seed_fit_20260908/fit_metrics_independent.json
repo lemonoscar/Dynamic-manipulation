@@ -1,0 +1,415 @@
+{
+  "schema": "train-family-fit-independent-analysis-v1",
+  "family": "liangzhu_seed_16100000",
+  "model_step": 1700,
+  "action_queries": 96,
+  "transition_queries": 6,
+  "artifact_hashes_verified": true,
+  "recorded_observations": true,
+  "autonomous_physics": false,
+  "weighting": "query-equal across valid-prefix means; point-micro separately identified",
+  "routes": {
+    "NAV_TO_SOURCE": {
+      "queries": 5,
+      "windows": {
+        "first": {
+          "mae_query_mean": 0.008091328041722268,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.016034282788261058
+        },
+        "executed_prefix": {
+          "mae_query_mean": 0.008355490277910237,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.016072051519335828
+        },
+        "full_valid": {
+          "mae_query_mean": 0.010560073689575572,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.019749171988683638
+        }
+      },
+      "strata": {
+        "boundary_1s": {
+          "queries": 2,
+          "first": 0.01571020507043545,
+          "executed_prefix": 0.02132974581953855,
+          "full_valid": 0.029417349785293548
+        },
+        "interior": {
+          "queries": 3,
+          "first": 0.0162503346001448,
+          "executed_prefix": 0.012566921985867348,
+          "full_valid": 0.01330372012427703
+        },
+        "partial": {
+          "queries": 4,
+          "first": 0.01530423690437558,
+          "executed_prefix": 0.01627300561224232,
+          "full_valid": 0.019551137459474687
+        }
+      },
+      "gripper": {}
+    },
+    "PICK": {
+      "queries": 19,
+      "windows": {
+        "first": {
+          "mae_query_mean": 0.015857527430902626,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        },
+        "executed_prefix": {
+          "mae_query_mean": 0.018502797914191293,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        },
+        "full_valid": {
+          "mae_query_mean": 0.04343715116496658,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        }
+      },
+      "strata": {
+        "boundary_1s": {
+          "queries": 4,
+          "first": 0.018250980340399032,
+          "executed_prefix": 0.016349891944184014,
+          "full_valid": 0.052548081151561676
+        },
+        "interior": {
+          "queries": 15,
+          "first": 0.015219273321703582,
+          "executed_prefix": 0.0190769061728599,
+          "full_valid": 0.0410075698352079
+        },
+        "partial": {
+          "queries": 4,
+          "first": 0.009686698718422995,
+          "executed_prefix": 0.016327607968450036,
+          "full_valid": 0.03098365468914024
+        }
+      },
+      "gripper": {
+        "first": {
+          "query_macro_accuracy": 1.0,
+          "point_micro_accuracy": 1.0,
+          "valid_points": 19,
+          "wrong_points": 0,
+          "expected_closed_predicted_open": 0,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.06360321962519695,
+          "wrong_prediction_quantiles": null,
+          "wrong_target_quantiles": null,
+          "wrong_predictions_within_005_of_threshold": 0,
+          "wrong_predictions_within_010_of_threshold": 0,
+          "wrong_median_joint7_target_error_mm": null
+        },
+        "executed_prefix": {
+          "query_macro_accuracy": 1.0,
+          "point_micro_accuracy": 1.0,
+          "valid_points": 38,
+          "wrong_points": 0,
+          "expected_closed_predicted_open": 0,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.0786530954554971,
+          "wrong_prediction_quantiles": null,
+          "wrong_target_quantiles": null,
+          "wrong_predictions_within_005_of_threshold": 0,
+          "wrong_predictions_within_010_of_threshold": 0,
+          "wrong_median_joint7_target_error_mm": null
+        },
+        "full_valid": {
+          "query_macro_accuracy": 0.9684210526315788,
+          "point_micro_accuracy": 0.9647058823529412,
+          "valid_points": 170,
+          "wrong_points": 6,
+          "expected_closed_predicted_open": 6,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.08320432258358992,
+          "wrong_prediction_quantiles": [
+            0.583984375,
+            0.6995849497616291,
+            0.951171875,
+            1.0068359375,
+            1.03125
+          ],
+          "wrong_target_quantiles": [
+            0.0,
+            0.0,
+            0.0,
+            0.046988237590994686,
+            0.06265098345465958
+          ],
+          "wrong_predictions_within_005_of_threshold": 0,
+          "wrong_predictions_within_010_of_threshold": 1,
+          "wrong_median_joint7_target_error_mm": 36.79385533090681
+        }
+      }
+    },
+    "NAV_TO_TARGET": {
+      "queries": 54,
+      "windows": {
+        "first": {
+          "mae_query_mean": 0.007903557383444419,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.015299591319829222
+        },
+        "executed_prefix": {
+          "mae_query_mean": 0.007174806048491711,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.013460966963747554
+        },
+        "full_valid": {
+          "mae_query_mean": 0.012833442559152222,
+          "unit": "m",
+          "dimensions": "XY coordinate errors",
+          "xy_euclidean_ade_m": 0.02167741292330502
+        }
+      },
+      "strata": {
+        "boundary_1s": {
+          "queries": 4,
+          "first": 0.019388527019547328,
+          "executed_prefix": 0.01785685518996963,
+          "full_valid": 0.019765513117159433
+        },
+        "interior": {
+          "queries": 50,
+          "first": 0.014972476463851773,
+          "executed_prefix": 0.01310929590564979,
+          "full_valid": 0.021830364907796666
+        },
+        "partial": {
+          "queries": 5,
+          "first": 0.01701113124774883,
+          "executed_prefix": 0.01501849316119654,
+          "full_valid": 0.012037285709285745
+        }
+      },
+      "gripper": {}
+    },
+    "PLACE": {
+      "queries": 18,
+      "windows": {
+        "first": {
+          "mae_query_mean": 0.007843233394124752,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        },
+        "executed_prefix": {
+          "mae_query_mean": 0.011623958276399988,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        },
+        "full_valid": {
+          "mae_query_mean": 0.02549262693568402,
+          "unit": "rad",
+          "dimensions": "arm_joint1..6",
+          "xy_euclidean_ade_m": null
+        }
+      },
+      "strata": {
+        "boundary_1s": {
+          "queries": 3,
+          "first": 0.013964438299521468,
+          "executed_prefix": 0.022185590078057038,
+          "full_valid": 0.07825435922154388
+        },
+        "interior": {
+          "queries": 15,
+          "first": 0.006618992413045408,
+          "executed_prefix": 0.00951163191606858,
+          "full_valid": 0.014940280478512048
+        },
+        "partial": {
+          "queries": 5,
+          "first": 0.0069317825358736485,
+          "executed_prefix": 0.007108340648510207,
+          "full_valid": 0.005934535064766964
+        }
+      },
+      "gripper": {
+        "first": {
+          "query_macro_accuracy": 0.5,
+          "point_micro_accuracy": 0.5,
+          "valid_points": 18,
+          "wrong_points": 9,
+          "expected_closed_predicted_open": 9,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.057185310766928725,
+          "wrong_prediction_quantiles": [
+            0.5008926391601562,
+            0.5076599102467299,
+            0.51519775390625,
+            0.550537109375,
+            0.5703125
+          ],
+          "wrong_target_quantiles": [
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914
+          ],
+          "wrong_predictions_within_005_of_threshold": 6,
+          "wrong_predictions_within_010_of_threshold": 9,
+          "wrong_median_joint7_target_error_mm": 2.6397547125816345
+        },
+        "executed_prefix": {
+          "query_macro_accuracy": 0.4166666666666667,
+          "point_micro_accuracy": 0.4,
+          "valid_points": 35,
+          "wrong_points": 21,
+          "expected_closed_predicted_open": 21,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.08896872034030301,
+          "wrong_prediction_quantiles": [
+            0.5008926391601562,
+            0.5245361328125,
+            0.550537109375,
+            0.5849609375,
+            0.78515625
+          ],
+          "wrong_target_quantiles": [
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914
+          ],
+          "wrong_predictions_within_005_of_threshold": 10,
+          "wrong_predictions_within_010_of_threshold": 17,
+          "wrong_median_joint7_target_error_mm": 4.0533289313316345
+        },
+        "full_valid": {
+          "query_macro_accuracy": 0.4666666666666667,
+          "point_micro_accuracy": 0.38064516129032255,
+          "valid_points": 155,
+          "wrong_points": 96,
+          "expected_closed_predicted_open": 96,
+          "expected_open_predicted_closed": 0,
+          "continuous_gripper_mae": 0.1109284746430574,
+          "wrong_prediction_quantiles": [
+            0.5002975463867188,
+            0.5257568359375,
+            0.5546875,
+            0.59765625,
+            1.015625
+          ],
+          "wrong_target_quantiles": [
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914,
+            0.44920388609170914
+          ],
+          "wrong_predictions_within_005_of_threshold": 43,
+          "wrong_predictions_within_010_of_threshold": 72,
+          "wrong_median_joint7_target_error_mm": 4.2193445563316345
+        }
+      }
+    }
+  },
+  "saturation": {
+    "counts": {
+      "position_events": 69,
+      "rate_events": 2,
+      "gripper_events": 138
+    },
+    "denominator": 2590,
+    "rate": 0.0806949806949807,
+    "limit": 0.005,
+    "passed": false
+  },
+  "transitions": [
+    {
+      "tick": 180,
+      "time_s": 3.6,
+      "truth": {
+        "operation": "CONTINUE",
+        "next_task": "NAV_TO_SOURCE"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "correct": true
+    },
+    {
+      "tick": 200,
+      "time_s": 4.0,
+      "truth": {
+        "operation": "ADVANCE",
+        "next_task": "PICK"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "correct": false
+    },
+    {
+      "tick": 580,
+      "time_s": 11.6,
+      "truth": {
+        "operation": "CONTINUE",
+        "next_task": "PICK"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_TARGET",
+        "operation": "ADVANCE"
+      },
+      "correct": false
+    },
+    {
+      "tick": 600,
+      "time_s": 12.0,
+      "truth": {
+        "operation": "ADVANCE",
+        "next_task": "NAV_TO_TARGET"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_TARGET",
+        "operation": "ADVANCE"
+      },
+      "correct": true
+    },
+    {
+      "tick": 1660,
+      "time_s": 33.2,
+      "truth": {
+        "operation": "CONTINUE",
+        "next_task": "NAV_TO_TARGET"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_TARGET",
+        "operation": "CONTINUE"
+      },
+      "correct": true
+    },
+    {
+      "tick": 1680,
+      "time_s": 33.6,
+      "truth": {
+        "operation": "ADVANCE",
+        "next_task": "PLACE"
+      },
+      "prediction": {
+        "next_task": "NAV_TO_TARGET",
+        "operation": "CONTINUE"
+      },
+      "correct": false
+    }
+  ],
+  "transition_correct": 3
+}

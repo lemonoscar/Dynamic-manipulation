@@ -1,0 +1,575 @@
+{
+  "method": "deterministic reconstruction from frozen trainer scheduling, manifest rows, seed and optimizer-completed step/cursor events; not direct per-row execution logging",
+  "trainer_source_sha256": "acee2ebd21868927cd0b84916a0ce3cc91b2d67323d233fe7f19748e5a53662d",
+  "train_config": {
+    "effective_batch": 8,
+    "epochs": 3,
+    "max_wall_seconds": 27000,
+    "seed": 20260908,
+    "action_learning_rate": 1e-05,
+    "qwen_learning_rate": 2e-06,
+    "vision_learning_rate": 5e-07,
+    "transition_loss_weight": 0.2,
+    "validation_action_rows": 16,
+    "validation_transition_rows": 16,
+    "validation_every": 100,
+    "checkpoint_every": 200,
+    "first_checkpoint_step": 20
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "family_order_positions_0based": [
+        1119,
+        1220
+      ],
+      "scheduled_steps": [
+        140,
+        153
+      ],
+      "reconstructed_consumption_before1700": {
+        "action": 96,
+        "transition": 6
+      },
+      "per_row_reconstructed_steps": [
+        {
+          "step": 140,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t80:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t100:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t120:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t140:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t160:pre"
+        },
+        {
+          "step": 141,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t180:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t200:pre"
+        },
+        {
+          "step": 141,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t200:pre"
+        },
+        {
+          "step": 141,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t220:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t240:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t260:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t280:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t300:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t320:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t340:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t360:pre"
+        },
+        {
+          "step": 142,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t380:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t400:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t420:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t440:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t460:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t480:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t500:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t520:pre"
+        },
+        {
+          "step": 143,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t540:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t560:pre"
+        },
+        {
+          "step": 144,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t580:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t600:pre"
+        },
+        {
+          "step": 144,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t600:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t620:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t640:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t660:pre"
+        },
+        {
+          "step": 144,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t680:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t700:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t720:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t740:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t760:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t780:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t800:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t820:pre"
+        },
+        {
+          "step": 145,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t840:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t860:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t880:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t900:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t920:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t940:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t960:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t980:pre"
+        },
+        {
+          "step": 146,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1000:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1020:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1040:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1060:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1080:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1100:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1120:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1140:pre"
+        },
+        {
+          "step": 147,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1160:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1180:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1200:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1220:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1240:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1260:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1280:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1300:pre"
+        },
+        {
+          "step": 148,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1320:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1340:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1360:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1380:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1400:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1420:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1440:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1460:pre"
+        },
+        {
+          "step": 149,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1480:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1500:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1520:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1540:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1560:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1580:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1600:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1620:pre"
+        },
+        {
+          "step": 150,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1640:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1660:pre"
+        },
+        {
+          "step": 151,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1660:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1680:pre"
+        },
+        {
+          "step": 151,
+          "kind": "transition",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1680:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1700:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1720:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1740:pre"
+        },
+        {
+          "step": 151,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1760:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1780:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1800:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1820:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1840:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1860:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1880:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1900:pre"
+        },
+        {
+          "step": 152,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1920:pre"
+        },
+        {
+          "step": 153,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1940:pre"
+        },
+        {
+          "step": 153,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1960:pre"
+        },
+        {
+          "step": 153,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t1980:pre"
+        },
+        {
+          "step": 153,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t2000:pre"
+        },
+        {
+          "step": 153,
+          "kind": "action",
+          "observation_id": "97550c83-0fe7-46b6-9ac9-be34c00a0a70:r1:t2020:pre"
+        }
+      ]
+    },
+    {
+      "epoch": 2,
+      "family_order_positions_0based": [
+        7053,
+        7154
+      ],
+      "scheduled_steps": [
+        1869,
+        1882
+      ],
+      "reconstructed_consumption_before1700": {},
+      "per_row_reconstructed_steps": []
+    }
+  ],
+  "epoch1_complete_event": {
+    "event": "epoch_complete",
+    "epoch": 1,
+    "rows_seen_once": 7896,
+    "elapsed_wall_s": 7177.112718947232,
+    "timestamp_unix_s": 1788858910.8041837
+  },
+  "step1700": {
+    "step": 1700,
+    "epoch": 2,
+    "cursor": 5704,
+    "epoch_rows": 7896
+  },
+  "direct_per_sample_execution_log": false
+}

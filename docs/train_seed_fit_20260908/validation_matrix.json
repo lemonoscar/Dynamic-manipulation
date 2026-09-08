@@ -1,0 +1,132 @@
+{
+  "schema": "train-seed1700-validation-v1",
+  "created_at": "2026-09-08T22:33:18.708181+08:00",
+  "checkpoint_step": 1700,
+  "training_restarted": false,
+  "depth": false,
+  "train_family": 16100000,
+  "recorded_episode_fit": {
+    "action_queries": 96,
+    "transition_queries": 6,
+    "actual_completed": true,
+    "transition_correct": 3,
+    "saturation_rate": 0.08069498069498068,
+    "standard_gate": 0.005,
+    "standard_gate_passed": false,
+    "single_training_family_only": true
+  },
+  "physical_attempts": [
+    {
+      "name": "physical_01_full_off",
+      "process": {
+        "pid": 880035,
+        "pgid": 880035,
+        "started_at": "2026-09-08T22:12:55.306800+08:00",
+        "status": "exited",
+        "gpu": 3,
+        "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+        "max_wall_s": 1200,
+        "absolute_deadline_unix_s": 1788878969.321377,
+        "returncode": 0,
+        "wall_s": 169.65593632683158,
+        "ended_at": "2026-09-08T22:15:44.966060+08:00"
+      },
+      "status": "failed",
+      "reason": "safety_stop_measured_joint_position_outside_limits",
+      "last_task": "NAV_TO_SOURCE",
+      "counts": {
+        "model_response": 2,
+        "control_step": 42,
+        "navigation_control": 22,
+        "object_live_tensor": 0,
+        "model_claim_transition": 0
+      },
+      "full_task_completed": false,
+      "object_score_eligibility": "unknown prior object tensor/sleep provenance",
+      "strict_contact": "unknown",
+      "source_head": "92dfddc5d12b345daa5e8a88964a79153841825d"
+    },
+    {
+      "name": "physical_02_full_off_live",
+      "process": {
+        "pid": 889352,
+        "pgid": 889352,
+        "started_at": "2026-09-08T22:22:38.914533+08:00",
+        "status": "exited",
+        "gpu": 3,
+        "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+        "max_wall_s": 1200,
+        "absolute_deadline_unix_s": 1788878969.321377,
+        "returncode": 0,
+        "wall_s": 175.92250865139067,
+        "ended_at": "2026-09-08T22:25:34.841578+08:00"
+      },
+      "status": "failed",
+      "reason": "JointNavigationPlanError:PCT endpoint snap exceeds the joint-trajectory limit",
+      "last_task": "NAV_TO_SOURCE",
+      "counts": {
+        "model_response": 3,
+        "control_step": 60,
+        "navigation_control": 40,
+        "object_live_tensor": 60,
+        "model_claim_transition": 0
+      },
+      "full_task_completed": false,
+      "object_score_eligibility": "verified live tensor; rollout stopped before grasp",
+      "strict_contact": "unknown",
+      "source_head": "691a14444d22d18ef2c3c742ebbfab2062732b23"
+    }
+  ],
+  "additional_attempt": "not_started; user reply still pending at closure",
+  "artifacts": {
+    "FIT_ANALYSIS.md": "1d02491a940f4d7e7766e19506e697ce46124c076420653e41c2ed192b2851a3",
+    "fit_metrics_independent.json": "26f832541f7af323129763d5f91e016347bf8f0345ad1cfdc7e2f5d03e996de3",
+    "results/events.jsonl": "270bb170e5843a2875a78d64b71db40621595fe0a52e9cde4c358475183e5cc8",
+    "results/protocol.json": "0bfd71f25e477564d15b7b97500e828e0d697f93b1c13274d59257c13a5eb32e",
+    "results/selection.json": "1d5643cc831e674a03a0ac3c093b4dd4a71247fcd19daf245b4343e9d41e037b",
+    "results/strict_load.json": "87fe1e538a1947dbfec47ad981304952dd17f2e6e9bcc62c748e6c8f0a972bf5",
+    "results/train_predictions.jsonl": "9b3b81df3d067a3b59c7e11c2652c66e46f71cb146865e1203dd9cb722e29dc5",
+    "results/train_report.json": "bb1e846d16c0fde9869fbddd9f089685c92ae449c0666cf1c1e9e15f2de9f96f",
+    "results/train_transitions.jsonl": "8fd0b699053c04d53f8840439da6f2801ee39c0ee2a2527e13ab894d0cc87181",
+    "train_consumption_reconstruction.json": "e9aad43264c0fe14b136ed3fd46c3f01bada13e94177ca1e8a6f53f6d1612b11",
+    "training_seed16100000_fit.png": "f3c12e236e3fbef13b8953cd0d5924971b49fcf0505ea5dd2655edbdc7702f2f",
+    "pct_reconstruction.json": "e0d390966ce206ed1bad40d19bd15b6597f49dec9a31c3dc51cbca745b68ce21",
+    "reconstruct_physical02_pct_cpu.py": "38393f6790c28aca87eabe36679bc8494384cbcb2c2c23e744bc93c7018ceae7",
+    "physical_results/service_stop.json": "52710b69820bd70807530591e8488872b0832e34e328bbb25dce138eabe5b9fe",
+    "executed_source/run_full_episode_diagnostic_691a144.py": "5b6ddb066b9888a40f6a9bfe892ab530362adb76af11fe0e6a1c0f529083224e"
+  },
+  "pct_failure_reconstruction": {
+    "evidence_kind": "CPU reconstruction, first two logged B/snap matched exactly",
+    "third_snap_m": 0.11618134279328975,
+    "original_limit_m": 0.1,
+    "pct_status": "ok/same_floor_direct",
+    "third_B_raw_directly_logged": false
+  },
+  "physical_complete_episode_status": "not_completed: both attempts stopped during NAV_TO_SOURCE",
+  "local_pending_patch": {
+    "pct_snap_max_m": 0.5,
+    "uploaded": false,
+    "executed": false,
+    "cpu_tests_passed": 6
+  },
+  "service_cleanup": {
+    "at": "2026-09-08T22:40:02.764613+08:00",
+    "pid": 878648,
+    "command": [
+      "/diff/wallx_workspace/dzb/ConveyorVLA-train-seed-fit-20260908/artifacts/.conda-envs/conveyorvla-al0-lerobot044/bin/python",
+      "/diff/wallx_workspace/dzb/ConveyorVLA-train-seed-fit-20260908/scripts/serve_full_episode_diagnostic.py",
+      "--checkpoint",
+      "/diff/wallx_workspace/dzb/integration_runs/rgb_full_episode_20260908_v1/trained/best.pt",
+      "--legacy-checkpoint",
+      "/diff/wallx_workspace/dzb/training_runs/conveyorvla-abot-m0-liangzhunew500-5hz-formal-20260905-r1/checkpoints/step_002414",
+      "--expected-sha256",
+      "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+      "--identity-output",
+      "/diff/wallx_workspace/dzb/integration_runs/train_seed_fit_20260908_v1/service_identity.json"
+    ],
+    "reason": "two physical attempts closed; additional attempt awaiting user reply; release idle service",
+    "alive_after": false,
+    "port_18170_open": false,
+    "gpu_compute_processes": "GPU-1f200384-f510-edea-50ea-ac608d97b241, 934046, 8798 MiB\nGPU-1f200384-f510-edea-50ea-ac608d97b241, 3456789, 67668 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 720947, 10124 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 3465841, 67668 MiB\n"
+  }
+}
