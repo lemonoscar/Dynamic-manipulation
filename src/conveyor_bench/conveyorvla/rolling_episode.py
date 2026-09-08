@@ -92,15 +92,21 @@ def run_rolling_episode(runtime, planner, action_backend, *, observer, feedback_
                 controller.hold(observation,reason='verification_pending')
             else:
                 runtime.tick(observation,safety=safety,controller=controller)
+                if runtime.safety_stop_reason is not None:
+                    break
         runtime.queue.cancel(reason='episode_budget_or_finish')
         return {'control_ticks':tick+1,'model_latencies':latencies,'failures':failures,
             'planner_finished':runtime.memory.finished,'geometry_transfer_success':None,
             'strict_full_success':None,'deployment_gate_passed':False,
+            'safety_stop_reason':runtime.safety_stop_reason,
             'inference_pauses_simulation':not realtime,'planner_calls_synchronous':not realtime}
     finally:
         # Own worker only. Never terminate other processes/services.
         if pending is not None:pending.cancel()
         if planner_pending is not None:planner_pending.cancel()
-        controller.hold(observer(),reason='episode_final_hold')
+        if runtime.safety_stop_reason is not None:
+            controller.stop(observer(),reason=runtime.safety_stop_reason)
+        else:
+            controller.hold(observer(),reason='episode_final_hold')
         executor.shutdown(wait=True,cancel_futures=True)
         planner_executor.shutdown(wait=True,cancel_futures=True)

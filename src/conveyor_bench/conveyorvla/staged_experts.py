@@ -110,13 +110,31 @@ class StagedExperts(nn.Module):
         return loss
 
     @torch.no_grad()
-    def sample(self, domain, state, conditions, *, noise=None, steps=None):
+    def sample(self, domain, state, conditions, *, noise=None, steps=None, rtc_context=None):
         if self.config.training_rtc:
             raise ValueError('training-time RTC deployment requires an explicit committed prefix; use sample_prefix')
-        return self.sample_prefix(domain,state,conditions,noise=noise,steps=steps)
+        if rtc_context is None:
+            return self.sample_prefix(domain,state,conditions,noise=noise,steps=steps)
+        if domain!='MANIPULATION':
+            raise ValueError('inference VJP RTC is only defined for Mani')
+        if self.config.coupling!='C0' or self.config.depth or self.config.bounded_gripper:
+            raise ValueError('staged inference VJP RTC requires the RGB C0 ordinary-head contract')
+        from .rtc_sampling import sample_rtc
+        vl,mask,_=self.banks(**conditions)
+        previous=torch.as_tensor(rtc_context['previous'],device=vl.device,dtype=vl.dtype)
+        weights=torch.as_tensor(rtc_context['weights'],device=vl.device,dtype=vl.dtype)
+        if previous.ndim==2:previous=previous[None]
+        if weights.ndim==1:weights=weights[None,:,None]
+        return sample_rtc(self.manipulation,vl,state,previous=previous,weights=weights,
+            encoder_attention_mask=mask,noise=noise,steps=steps,
+            max_guidance_weight=rtc_context.get('max_guidance_weight',5.))
 
     @torch.no_grad()
     def sample_prefix(self, domain, state, conditions, *, prefix=None, prefix_length=0, noise=None, steps=None):
+        if domain not in {'MANIPULATION','NAVIGATION'}:
+            raise ValueError('unknown expert domain')
+        if domain=='NAVIGATION' and (prefix is not None or prefix_length):
+            raise ValueError('NAV clean prefix was not trained')
         head=self.manipulation if domain=='MANIPULATION' else self.navigation
         vl,mask,banks=self.banks(**conditions)
         state=None if state is None else state[:,None] if state.ndim==2 else state
@@ -128,6 +146,8 @@ class StagedExperts(nn.Module):
             raise ValueError('invalid sampling steps/prefix length')
         if prefix_length and (not self.config.training_rtc or prefix is None or prefix.shape!=x[:,:prefix_length].shape):
             raise ValueError('clean prefix requires trained token-time contract and aligned shape')
+        if prefix is not None and not torch.isfinite(prefix).all():
+            raise ValueError('nonfinite committed prefix')
         for i in range(count):
             time=torch.full((shape[0],),i/count,device=x.device,dtype=x.dtype)
             if prefix_length:

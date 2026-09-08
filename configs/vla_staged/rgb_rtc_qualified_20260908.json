@@ -1,0 +1,38 @@
+{
+  "schema": "vla-staged-experiment-v2",
+  "candidate": {
+    "name": "rgb_c0_causal5_rtc_ready_20260908",
+    "time_profile": "causal_command_5hz",
+    "nav_output": "trajectory",
+    "coupling": "C0",
+    "depth": false,
+    "training_rtc": false,
+    "bounded_gripper": false,
+    "fk_loss_weight": 0.0,
+    "update_period_s": 0.4,
+    "depth_tokens": 16
+  },
+  "status": "qualified_existing_rgb_action_training_not_deployment_acceptance",
+  "training": {
+    "encoder": "frozen_identity_bound_condition_cache",
+    "steps": 1000,
+    "effective_batch": 16,
+    "learning_rate": 2e-05,
+    "seed": 20260908,
+    "progress_loss_weight": 0.0,
+    "checkpoint_every": 100,
+    "validation_every": 100,
+    "validation_rows": 64,
+    "max_wall_seconds": 7200
+  },
+  "evaluation": {
+    "geometry_transfer_success": null,
+    "strict_full_success": null,
+    "deployment_gate_passed": false
+  },
+  "rtc": {
+    "inference": "VJP guidance with identity-bound queue overlap",
+    "training_time_prefix": false
+  },
+  "planner_training": false
+}

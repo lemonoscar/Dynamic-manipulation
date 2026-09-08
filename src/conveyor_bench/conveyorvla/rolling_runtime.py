@@ -18,6 +18,7 @@ class ActionRequest:
     observation: object
     task: object
     rtc_context: dict | None
+    time_profile: str = 'legacy_future_5hz'
 
 
 class FrozenActionBackend:
@@ -65,6 +66,7 @@ class RollingRuntime:
         self.pending = {}
         self.events = []
         self._invalidated_task_id = None
+        self.safety_stop_reason = None  # Recovery requires a new, explicitly authorized runtime.
 
     def identity(self):
         task = self.memory.active_task
@@ -87,6 +89,8 @@ class RollingRuntime:
 
     def prepare_request(self, observation, *, expected_delay_s=0., margin_s=0.):
         self.synchronize_task()
+        if self.safety_stop_reason is not None:
+            raise ValueError('safety_stop_latched: '+self.safety_stop_reason)
         if self.memory.finished or self.memory.active_task.primitive == 'VERIFY':
             raise ValueError('no continuous action for FINISH/VERIFY')
         if observation.mission_id != self.memory.mission_id:
@@ -116,7 +120,7 @@ class RollingRuntime:
                 context = {'previous': normalized, 'weights': weights,
                     'max_guidance_weight': self.max_guidance_weight}
         request = ActionRequest(self.sequence, self.identity(), self.memory.plan_version,
-            observation, self.memory.active_task, context)
+            observation, self.memory.active_task, context, time_profile=self.profile.name)
         self.pending[self.sequence] = request
         self.sequence += 1
         return request
@@ -124,6 +128,8 @@ class RollingRuntime:
     def complete_request(self, request_id, physical_actions, *, now_s, max_age_s=2.):
         request = self.pending.pop(request_id)
         self.synchronize_task()
+        if self.safety_stop_reason is not None:
+            raise ValueError('safety_stop_latched: '+self.safety_stop_reason)
         if any(self.memory.fact_value(p, now_s) is not True for p in request.task.preconditions):
             raise ValueError('current_task_precondition_invalid')
         if request.identity != self.identity():
@@ -166,6 +172,9 @@ class RollingRuntime:
 
     def tick(self, observation, *, safety, controller):
         self.synchronize_task()
+        if self.safety_stop_reason is not None:
+            controller.stop(observation, reason=self.safety_stop_reason)
+            return QueueCommand(None, 'safety_stop_'+self.safety_stop_reason)
         command = self.queue.next_for_control_time(observation.time_s)
         if command.target is None:
             controller.hold(observation, reason=command.reason)
@@ -174,8 +183,9 @@ class RollingRuntime:
         # just the query anchor or old predicted path. No callback means no motion.
         safe, reason = safety(command.target, observation)
         if not safe:
+            self.safety_stop_reason = reason
             self.queue.cancel(reason='safety_stop_'+reason)
-            controller.hold(observation, reason=reason)
+            controller.stop(observation, reason=reason)
             return QueueCommand(None, 'safety_stop_'+reason)
         applied = controller.apply(command.target, observation)
         self.queue.record_applied(observation.time_s, command, applied)

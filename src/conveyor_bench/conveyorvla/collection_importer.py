@@ -11,7 +11,7 @@ import numpy as np
 from .staged_data import RawEpisode, ARM_NAMES, jsonl, digest
 from .contracts.observation import CurrentObservation
 
-IMPORTER_VERSION = 'collection-to-staged-v1'
+IMPORTER_VERSION = 'collection-to-staged-v2'
 
 
 def pose_matrix(pose):
@@ -70,7 +70,8 @@ def sample_depth(sample, observation, camera):
 
 
 class CollectionEpisode(RawEpisode):
-    def __init__(self, root):
+    def __init__(self, root, *, modalities='rgbd'):
+        if modalities not in {'rgb','rgbd'}:raise ValueError('unsupported input modalities')
         self.root=Path(root); source=json.loads((self.root/'manifest.json').read_text())
         if source.get('schema')!='raw-control-v2' or source.get('action_contract')!='joint6_gripper2_effective_and_base_twist3':
             raise ValueError('unsupported collection actuator contract')
@@ -88,6 +89,7 @@ class CollectionEpisode(RawEpisode):
             'assistance_profile':'source_manifest_and_interventions_bound',
             'observation_contract':'named-q6-dq6-gripper-rgb-v2','joint_unit':'rad',
             'gripper_unit':'open_fraction','joint_names':list(ARM_NAMES),'importer_version':IMPORTER_VERSION,
+            'input_modalities':modalities,
             'source_manifest_sha256':digest(self.root/'manifest.json'),'planner_eligible':False,
             'nav_label_semantics':'future_measured_reference_not_goal_command'}
         self.gripper_size=1; self.order=list(range(6))
@@ -97,7 +99,7 @@ class CollectionEpisode(RawEpisode):
         controls=jsonl(self.root/'control_effective_50hz.jsonl')
         by_command={r['command_id']:r for r in controls}
         if len(by_command)!=len(controls):raise ValueError('duplicate source command ID')
-        samples={}; self.import_audit={'version':IMPORTER_VERSION,'source_depth_metadata_conflicts':0,
+        samples={}; self.import_audit={'version':IMPORTER_VERSION,'input_modalities':modalities,'source_depth_metadata_conflicts':0,
             'measured_gripper_out_of_range':0,'command_gripper_out_of_range':0,'command_gripper_out_of_range_ticks':[],'task_status':'unresolved_not_used_for_training'}
         # Explicit command identity join. Only allowlisted sample fields survive.
         for s in jsonl(self.root/'samples.jsonl'):
@@ -155,8 +157,10 @@ class CollectionEpisode(RawEpisode):
                     'nav_reference_source':'future_measured_reference'}
                 if ref==c['observation_ref'] and c['control_tick'] in samples:
                     tick=c['control_tick'];s=samples[tick];previous=samples.get(tick-10)
-                    raw['depth']=[sample_depth(s,o,camera) for camera in ('front','wrist')]
-                    if not o.get('depth',{}).get('valid',False):self.import_audit['source_depth_metadata_conflicts']+=1
+                    raw['control_tick']=tick
+                    if modalities=='rgbd':
+                        raw['depth']=[sample_depth(s,o,camera) for camera in ('front','wrist')]
+                        if not o.get('depth',{}).get('valid',False):self.import_audit['source_depth_metadata_conflicts']+=1
                     if previous is not None:
                         frames=[previous['camera_frames']['front'],s['camera_frames']['front'],
                             previous['camera_frames']['wrist'],s['camera_frames']['wrist']]
@@ -203,6 +207,12 @@ class CollectionEpisode(RawEpisode):
         return []
 
 
-def load_episode(root):
+def load_episode(root, *, modalities='rgbd'):
     m=json.loads((Path(root)/'manifest.json').read_text())
-    return CollectionEpisode(root) if m.get('action_contract')=='joint6_gripper2_effective_and_base_twist3' else RawEpisode(root)
+    if m.get('action_contract')=='joint6_gripper2_effective_and_base_twist3':
+        return CollectionEpisode(root,modalities=modalities)
+    episode=RawEpisode(root)
+    if modalities=='rgb':
+        for _,raw in episode.observations.values():raw.pop('depth',None)
+    elif modalities!='rgbd':raise ValueError('unsupported input modalities')
+    return episode
