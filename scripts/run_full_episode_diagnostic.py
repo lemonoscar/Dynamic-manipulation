@@ -270,9 +270,18 @@ def pipeline_type(options):
             from conveyor_bench.conveyorvla.waypoint import wrap_to_pi
             nav = self.system.navigation_executor
             points = tuple(tuple(p) for p in plan['reference_query_body'])
-            path = nav.begin(NavigationReference(points,points[-1],.2),
-                query_state.robot_root_pose,timestamp_s=query_state.timestamp)
-            self._record('navigation_plan',dict(path.trace))
+            nav.config=replace(nav.config,pct_snap_max_m=options.diagnostic_pct_snap_max)
+            try:
+                path = nav.begin(NavigationReference(points,points[-1],.2),
+                    query_state.robot_root_pose,timestamp_s=query_state.timestamp)
+            except Exception as error:
+                self._record('navigation_plan_rejected',{'reason':str(error),
+                    'trace':dict(getattr(error,'trace',{}))})
+                raise
+            self._record('navigation_plan',{**dict(path.trace),
+                'original_raw_snap_gate_m':.1,
+                'original_raw_snap_gate_passed':path.pct_plan.snap_distance_m<=.1,
+                'diagnostic_snap_stop_m':options.diagnostic_pct_snap_max})
             local_map=self._local_map(self.route)
             for _ in range(20):
                 live = self.simulation.read(); observation = self._obs(live)
@@ -318,6 +327,7 @@ def pipeline_type(options):
                 'training_weights_modified':False,'depth':False,
                 'online_safety':{'measured_joint_limits_tolerance_rad':options.measured_position_tolerance,'measured_joint_speed_limit_rad_s':options.measured_speed_limit,
                     'old_measured_speed_limit_rad_s':3.,
+                    'diagnostic_pct_snap_stop_m':options.diagnostic_pct_snap_max,'original_pct_snap_gate_m':.1,
                     'predicted_target_rate_limit_rad_s':3.,'target_rate_interval_s':.2,
                     'target_rate_is_not_50hz_actual_velocity_guarantee':True,'collision_certificate':False}}
             started=time.perf_counter(); probe=None
@@ -495,13 +505,14 @@ def main():
     p.add_argument('--rtc',action='store_true')
     p.add_argument('--measured-speed-limit',type=float,default=3.)
     p.add_argument('--measured-position-tolerance',type=float,default=1e-5)
+    p.add_argument('--diagnostic-pct-snap-max',type=float,default=.1)
     p.add_argument('--record-contacts',action='store_true')
     p.add_argument('--first-plan',type=Path,help='RTC-off creates; paired RTC-on verifies state and adopts exact first prediction')
     p.add_argument('--simulation-seconds',type=float,default=4.)
     p.add_argument('--max-queries',type=int,default=10)
     p.add_argument('--diffusion-seed',type=int,default=17)
     options,runtime=p.parse_known_args()
-    if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30 or not 0<=options.measured_position_tolerance<=.02:
+    if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30 or not 0<=options.measured_position_tolerance<=.02 or not 0<options.diagnostic_pct_snap_max<=.5:
         raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s, <=.02rad measured tolerance')
     if options.rtc and options.mode=='fixed_task' and (options.first_plan is None or not options.first_plan.is_file()):
         raise ValueError('paired RTC-on requires prior frozen RTC-off first plan')
