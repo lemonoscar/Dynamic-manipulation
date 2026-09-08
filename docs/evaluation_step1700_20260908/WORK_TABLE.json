@@ -1,0 +1,69 @@
+{
+  "requested_checkpoint_step": 1700,
+  "source_model_commit": "e03cb0bffd1a3bdeabd39ad8e94e1bbfd9a3e532",
+  "model_host": "4xH20 / VM-0-3-ubuntu",
+  "run_root": "/diff/wallx_workspace/dzb/integration_runs/full_step1700_evaluation_20260908_v1",
+  "depth": false,
+  "units": [
+    {
+      "owner": "master",
+      "task": "strict full-model load and full held-out open loop",
+      "status": "complete; validation and test saturation gates failed",
+      "gpu": [
+        2
+      ],
+      "wall_limit_s": 2700,
+      "scope": "1022 validation + 1094 test action queries, seeds17/29/43; 66+66 transition generations",
+      "depends_on": "best1700 + frozen full release",
+      "next": "report full frozen results",
+      "actual_wall_s": 868.8254
+    },
+    {
+      "owner": "deployment_adapter_audit",
+      "task": "minimal causal full-model physical diagnostic bridge",
+      "status": "implemented, CPU checked, integrated as separate new scripts",
+      "gpu": [],
+      "next": "complete; physical evidence owned and reviewed by master"
+    },
+    {
+      "owner": "closed_loop_preflight",
+      "task": "source Sim6/resources and independent open-loop contract audit",
+      "status": "completed",
+      "gpu": [],
+      "findings": "source GPUs4/5/6 occupied by other users; no source workloads launched; full normalizer+source identity gates requested and integrated"
+    },
+    {
+      "owner": "master",
+      "task": "closed-loop protocol and execution",
+      "status": "closed: 6 attempts, 4 physical safety failures, full autonomous test blocked",
+      "gpu": [
+        2,
+        3
+      ],
+      "next": "no further GPU work; publish evidence",
+      "max_attempts": 6,
+      "absolute_deadline_unix_s": 1788880366.1446278,
+      "actual_attempts": 6
+    }
+  ],
+  "closed_loop_scope_question": "new 78-attempt/14h matrix remains unapproved; bounded verification uses existing 8h window only",
+  "training_status": "terminated at user request; never restart",
+  "semantics": "Conditional action metrics are not autonomous route accuracy; model transition proposals are not independent completion evidence; strict contact missing remains unknown.",
+  "resource_cleanup": {
+    "verified_at": "2026-09-08T21:48:49.938238+08:00",
+    "all_owned_processes_absent": [
+      824950,
+      831097,
+      835032,
+      840852,
+      847562,
+      851999,
+      855641
+    ],
+    "gpu2_gpu3_no_compute_process": true,
+    "port18170_closed": true,
+    "service_exit": "-15",
+    "other_gpu_snapshot": "GPU-1f200384-f510-edea-50ea-ac608d97b241, 934046, 8798 MiB\nGPU-1f200384-f510-edea-50ea-ac608d97b241, 3456789, 67668 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 720947, 10124 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 3465841, 67668 MiB\n",
+    "training_restarted": false
+  }
+}
