@@ -9,7 +9,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'src')]
-PROTOCOL = 'full-episode-rgb-diagnostic-v1'
+PROTOCOL = 'full-episode-rgb-diagnostic-v2'
 
 
 def validate_payload(payload):
@@ -66,7 +66,7 @@ class FullEpisodeService:
             proposal = None
             if payload['predict_transition']:
                 proposal = propose_transition(self.backend.policy.qwen, images,
-                    instruction=payload['instruction'], context=request.plan_context)
+                    instruction=payload['instruction'], context=request.plan_context, allow_invalid=True)
         return {'request_id': request.request_id, 'identity': r['identity'],
                 'observation_id': request.observation.observation_id,
                 'query_time_s': request.observation.time_s, 'time_profile': request.time_profile,

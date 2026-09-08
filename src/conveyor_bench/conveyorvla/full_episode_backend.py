@@ -45,7 +45,31 @@ def load_full_episode_backend(checkpoint, *, legacy_checkpoint, repo_root, devic
     return StagedRGBBackend(policy,model,normalizer,checkpoint_id,checkpoint_id,use_plan_context=True)
 
 
-def propose_transition(qwen, images, *, instruction, context):
+def validate_transition_text(raw_text, context, *, allow_invalid=False):
+    """Reject invalid model text without inventing a task decision."""
+    response = None
+    expected = None
+    try:
+        response = json.loads(raw_text)
+        if not isinstance(response, dict) or set(response) != {'operation', 'next_task'} or response['operation'] not in ('CONTINUE', 'ADVANCE'):
+            raise ValueError('untrained or malformed transition operation')
+        expected = context['active_task'] if response['operation'] == 'CONTINUE' else (
+            context['remaining_tasks'][1] if len(context['remaining_tasks']) > 1 else None)
+        if expected is None or response['next_task'] != expected:
+            raise ValueError('transition proposal does not preserve the remaining plan')
+    except ValueError as exc:
+        if not allow_invalid:
+            raise
+        return {'proposal': None, 'valid': False, 'raw_text': raw_text,
+                'parsed': response, 'expected_next_task': expected, 'error': str(exc),
+                'completion_evidence': False, 'execution_authorized': False}
+    result = {'proposal': response, 'completion_evidence': False, 'execution_authorized': False}
+    if allow_invalid:
+        result.update(valid=True, raw_text=raw_text)
+    return result
+
+
+def propose_transition(qwen, images, *, instruction, context, allow_invalid=False):
     from .full_episode_data import transition_prompt
     if len(images)!=4:raise ValueError('four current/history RGB frames required')
     from .full_episode_context import public_context_text
@@ -55,11 +79,5 @@ def propose_transition(qwen, images, *, instruction, context):
     inputs.pop('labels',None)
     with torch.inference_mode():
         tokens=qwen.model.generate(**inputs,max_new_tokens=96,do_sample=False)
-    response=json.loads(qwen.processor.tokenizer.decode(tokens[0,inputs['input_ids'].shape[1]:],skip_special_tokens=True))
-    if set(response)!={'operation','next_task'} or response['operation'] not in {'CONTINUE','ADVANCE'}:
-        raise ValueError('untrained or malformed transition operation')
-    expected=context['active_task'] if response['operation']=='CONTINUE' else (
-        context['remaining_tasks'][1] if len(context['remaining_tasks'])>1 else None)
-    if expected is None or response['next_task'] != expected:
-        raise ValueError('transition proposal does not preserve the remaining plan')
-    return {'proposal':response,'completion_evidence':False,'execution_authorized':False}
+    raw_text=qwen.processor.tokenizer.decode(tokens[0,inputs['input_ids'].shape[1]:],skip_special_tokens=True)
+    return validate_transition_text(raw_text, context, allow_invalid=allow_invalid)

@@ -419,7 +419,10 @@ def pipeline_type(options):
                     probe=IsaacGraspContactProbe(self.raw_sim,self._record);self.raw_sim.read_grasp_contacts=probe.read
                 mission=f'full1700:{self.episode_seed}:{hashlib.sha256(str(self.episode_dir).encode()).hexdigest()[:12]}'
                 tasks=tuple(Task(f'diagnostic-task-{i}',f'diagnostic-attempt-{i}',name,'cola','destination') for i,name in enumerate(('NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'))) if options.mode=='train_seed_full' else transfer_skeleton() if options.mode=='autonomous' else (Task('fixed-diagnostic','fixed-attempt',self.route.value,'cola','destination'),)
-                self.memory=TaskMemory(mission,str(self.episode_spec.instruction),tasks,mode='H1')
+                model_instruction=options.model_instruction or str(self.episode_spec.instruction)
+                summary['model_instruction']=model_instruction
+                summary['source_task_instruction']=str(self.episode_spec.instruction)
+                self.memory=TaskMemory(mission,model_instruction,tasks,mode='H1')
                 runtime=RollingRuntime(self.memory,model_id=health['checkpoint_id'],
                     normalizer=StagedNormalizer(health['normalizer']),safety_context_id='bounded-diagnostic-joint-limits',
                     limits=LIMITS,rtc=options.rtc,time_profile='causal_command_5hz')
@@ -449,7 +452,7 @@ def pipeline_type(options):
                         runtime.pending[request.request_id]=request
                         wire=asdict(request);wire['observation'].pop('images')
                         packet={'protocol_version':PROTOCOL,'request':wire,
-                            'instruction':str(self.episode_spec.instruction),
+                            'instruction':model_instruction,
                             'head_images':payload['head_images'],'wrist_images':payload['wrist_images'],
                             'diffusion_seed':(options.diffusion_seed+query*1009)%(2**32),
                             'predict_transition':options.mode=='autonomous' or (options.mode=='train_seed_full' and self.route!=JointTrajectoryRoute.PLACE)}
@@ -487,7 +490,9 @@ def pipeline_type(options):
                         self._query_count+=1
                         self._state_trace.append(self.route.value)
                         transition=response.get('transition')
-                        if transition is not None and transition['proposal']['operation']=='ADVANCE':
+                        if transition is not None and transition.get('valid') is False:
+                            self._advisory('transition_prediction_rejected',request_id=request.request_id,transition=transition)
+                        if transition is not None and transition.get('proposal') is not None and transition['proposal']['operation']=='ADVANCE':
                             if options.mode=='train_seed_full':
                                 runtime.pending.pop(request.request_id)
                                 context=advance_model_claim(self.memory,context,observation)
@@ -578,6 +583,7 @@ def main():
     p.add_argument('--source-episode',type=Path,required=True)
     p.add_argument('--query-tick',type=int,required=True)
     p.add_argument('--task-context',type=Path,required=True)
+    p.add_argument('--model-instruction',help='explicit instruction from the frozen training view; source spatial task is unchanged')
     p.add_argument('--condition-label',required=True)
     p.add_argument('--expected-sha256',required=True)
     p.add_argument('--endpoint',default='http://127.0.0.1:18170')
