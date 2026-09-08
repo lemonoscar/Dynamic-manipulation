@@ -10,6 +10,7 @@ from dataclasses import asdict, replace
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import time
@@ -376,6 +377,21 @@ def main():
         kwargs['enable_verified_grasp_fixed_joint']=False
         return original(*args,**kwargs)
     simulation.IsaacLabNavigationRuntimeConfig=config
+    # CUDA sees only physical GPU3; RTX/Vulkan retains the physical ordinal.
+    # Verified against this bundled IsaacLab5.1 _resolve_device_settings method.
+    import isaaclab.app as isaac_app
+    if os.environ.get('CUDA_VISIBLE_DEVICES') != '3':
+        raise ValueError('this frozen H20 diagnostic requires physical GPU3 exclusively')
+    base = isaac_app.AppLauncher
+    class _SingleGPUAppLauncher(base):
+        def _resolve_device_settings(self, launcher_args):
+            super()._resolve_device_settings(launcher_args)
+            if self.device_id != 0:
+                raise ValueError('single-visible-GPU simulation requires logical cuda:0')
+            launcher_args.update(physics_gpu=0, active_gpu=3, multi_gpu=False)
+            print(json.dumps({'event':'explicit_gpu_binding','cuda_visible_devices':'3',
+                'physics_logical_gpu':0,'render_physical_gpu':3,'multi_gpu':False}),flush=True)
+    isaac_app.AppLauncher = _SingleGPUAppLauncher
     old.JointTrajectoryRolloutPipeline=pipeline_type(options)
     return old.main(runtime)
 
