@@ -1,0 +1,114 @@
+{
+  "physical_ticks": 161,
+  "sim_duration_s": 3.22,
+  "base_initial": [
+    -0.8623843193054199,
+    5.764451026916504,
+    0.20535483956336975,
+    0.7548710703849792,
+    0.01515895500779152,
+    -0.008248383179306984,
+    0.6556460857391357
+  ],
+  "base_final": [
+    -0.8809037804603577,
+    6.3405585289001465,
+    0.23098032176494598,
+    0.6166454553604126,
+    0.009134208783507347,
+    -0.0026572300121188164,
+    0.7871834635734558
+  ],
+  "base_net_xy_displacement_m": 0.5764050869686197,
+  "model_query_count": 8,
+  "transitions": [
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    },
+    {
+      "proposal": {
+        "next_task": "NAV_TO_SOURCE",
+        "operation": "CONTINUE"
+      },
+      "completion_evidence": false,
+      "execution_authorized": false
+    }
+  ],
+  "snap_distances_m": [
+    0.048961967046434164,
+    0.07875451507636096,
+    0.11641858088729813,
+    0.06241145661762785,
+    0.04725368496688724,
+    0.07332101641686478,
+    0.03443069139713261,
+    0.10363674917199298
+  ],
+  "snap_old_gate_fail_count": 2,
+  "live_object_checks": 161,
+  "max_object_readback_error": 0.0,
+  "event_counts": {
+    "stage_prepared": 1,
+    "control_step": 161,
+    "object_live_tensor": 161,
+    "model_request": 8,
+    "model_response": 8,
+    "navigation_proposal": 8,
+    "navigation_plan": 8,
+    "navigation_control": 141,
+    "diagnostic_yaw_turn": 20
+  }
+}

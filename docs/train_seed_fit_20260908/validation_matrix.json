@@ -77,7 +77,7 @@
       "source_head": "691a14444d22d18ef2c3c742ebbfab2062732b23"
     }
   ],
-  "additional_attempt": "not_started; user reply still pending at closure",
+  "additional_attempt": "user_authorized_and_completed_retry3",
   "artifacts": {
     "FIT_ANALYSIS.md": "1d02491a940f4d7e7766e19506e697ce46124c076420653e41c2ed192b2851a3",
     "fit_metrics_independent.json": "26f832541f7af323129763d5f91e016347bf8f0345ad1cfdc7e2f5d03e996de3",
@@ -102,11 +102,11 @@
     "pct_status": "ok/same_floor_direct",
     "third_B_raw_directly_logged": false
   },
-  "physical_complete_episode_status": "not_completed: both attempts stopped during NAV_TO_SOURCE",
+  "physical_complete_episode_status": "not_completed: all three attempts stopped during NAV_TO_SOURCE",
   "local_pending_patch": {
     "pct_snap_max_m": 0.5,
-    "uploaded": false,
-    "executed": false,
+    "uploaded": true,
+    "executed": true,
     "cpu_tests_passed": 6
   },
   "service_cleanup": {
@@ -128,5 +128,6 @@
     "alive_after": false,
     "port_18170_open": false,
     "gpu_compute_processes": "GPU-1f200384-f510-edea-50ea-ac608d97b241, 934046, 8798 MiB\nGPU-1f200384-f510-edea-50ea-ac608d97b241, 3456789, 67668 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 720947, 10124 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 3465841, 67668 MiB\n"
-  }
+  },
+  "retry3_validation": "retry3/validation.json"
 }

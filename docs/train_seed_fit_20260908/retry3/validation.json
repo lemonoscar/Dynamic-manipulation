@@ -1,0 +1,183 @@
+{
+  "schema": "step1700-physical-retry3-v1",
+  "source_head": "772d5a1833f449f8e3e6e4a7993b527130c936f4",
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "checkpoint_step": 1700,
+  "normalizer_id": "eb5b5fa3116b595e0e65539b7b9d482a84882971c5b78d31a9cc8f7b05a10ae1",
+  "train_seed": 16100000,
+  "attempt": {
+    "pid": 921118,
+    "pgid": 921118,
+    "started_at": "2026-09-08T22:59:01.753362+08:00",
+    "status": "exited",
+    "gpu": 3,
+    "gpu_uuid": "GPU-75c5e401-ba99-d869-5237-77bde2370458",
+    "max_wall_s": 567,
+    "absolute_deadline_unix_s": 1788880169.0,
+    "returncode": 0,
+    "wall_s": 196.86074911616743,
+    "ended_at": "2026-09-08T23:02:18.618151+08:00"
+  },
+  "result": "failed_navigation_before_pick",
+  "failure_reason": "ValueError:navigation_rejected:dwa_zero_control_before_reach",
+  "metrics": {
+    "physical_ticks": 161,
+    "sim_duration_s": 3.22,
+    "base_initial": [
+      -0.8623843193054199,
+      5.764451026916504,
+      0.20535483956336975,
+      0.7548710703849792,
+      0.01515895500779152,
+      -0.008248383179306984,
+      0.6556460857391357
+    ],
+    "base_final": [
+      -0.8809037804603577,
+      6.3405585289001465,
+      0.23098032176494598,
+      0.6166454553604126,
+      0.009134208783507347,
+      -0.0026572300121188164,
+      0.7871834635734558
+    ],
+    "base_net_xy_displacement_m": 0.5764050869686197,
+    "model_query_count": 8,
+    "transitions": [
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      },
+      {
+        "proposal": {
+          "next_task": "NAV_TO_SOURCE",
+          "operation": "CONTINUE"
+        },
+        "completion_evidence": false,
+        "execution_authorized": false
+      }
+    ],
+    "snap_distances_m": [
+      0.048961967046434164,
+      0.07875451507636096,
+      0.11641858088729813,
+      0.06241145661762785,
+      0.04725368496688724,
+      0.07332101641686478,
+      0.03443069139713261,
+      0.10363674917199298
+    ],
+    "snap_old_gate_fail_count": 2,
+    "live_object_checks": 161,
+    "max_object_readback_error": 0.0,
+    "event_counts": {
+      "stage_prepared": 1,
+      "control_step": 161,
+      "object_live_tensor": 161,
+      "model_request": 8,
+      "model_response": 8,
+      "navigation_proposal": 8,
+      "navigation_plan": 8,
+      "navigation_control": 141,
+      "diagnostic_yaw_turn": 20
+    }
+  },
+  "full_task_completed": false,
+  "strict_contact": "unknown",
+  "rtc": false,
+  "training_restarted": false,
+  "depth": false,
+  "video_partial": {
+    "frame_count": 16,
+    "dropped": 9,
+    "reason": "observation_overview_missing"
+  },
+  "service_cleanup": {
+    "at": "2026-09-08T23:03:33.826106+08:00",
+    "pid": 919636,
+    "command": [
+      "/diff/wallx_workspace/dzb/ConveyorVLA-train-seed-fit-20260908/artifacts/.conda-envs/conveyorvla-al0-lerobot044/bin/python",
+      "/diff/wallx_workspace/dzb/ConveyorVLA-train-seed-fit-20260908/scripts/serve_full_episode_diagnostic.py",
+      "--checkpoint",
+      "/diff/wallx_workspace/dzb/integration_runs/rgb_full_episode_20260908_v1/trained/best.pt",
+      "--legacy-checkpoint",
+      "/diff/wallx_workspace/dzb/training_runs/conveyorvla-abot-m0-liangzhunew500-5hz-formal-20260905-r1/checkpoints/step_002414",
+      "--expected-sha256",
+      "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+      "--identity-output",
+      "/diff/wallx_workspace/dzb/integration_runs/train_seed_fit_20260908_retry3/service_identity.json"
+    ],
+    "reason": "authorized retry3 completed; DWA zero before reach; release owned service",
+    "alive_after": false,
+    "port_18170_open": false,
+    "gpu_compute_processes": "GPU-1f200384-f510-edea-50ea-ac608d97b241, 934046, 8798 MiB\nGPU-1f200384-f510-edea-50ea-ac608d97b241, 3456789, 67668 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 720947, 10124 MiB\nGPU-379db317-a866-d7a2-e6da-8df5acc1027f, 3465841, 67668 MiB\n"
+  },
+  "artifact_sha256": {
+    "results/service_stop.json": "f8a2fb849dbb70458992eb73077715ca9653328c72a7a9646b0874db2b365cba",
+    "results/attempt.json": "466eee4ff727c4afedde2928e81a6baeb4f742cb6bb0c4d890bb432e8ae80e6f",
+    "results/service_identity.json": "a62834c7d9c2135ab7b32aa8d30ff8c1751e225e0127e3cd1deb089c9afa5449",
+    "results/budget.json": "cbfa9cf74e1712b2ef425f815124a2667074904b59d6a77da52fec1714984c63",
+    "results/command.json": "38414d80d40cac46578acc7f2fcab89d1fea9b6dc7ff4142963098927912c2c4",
+    "results/process.log": "01190ecaf31ae58ae3d3a328224b18a8d9b2625aabdddc53262490cc55adae55",
+    "results/episode_000001_composite.mp4": "3206418aa86cb1fc44e55a8b8a9d254db302dea9f8b9bbfe0a6b32b0ce789b5b",
+    "results/manifest.json": "c0fab93afc21b64220572b6ba858935966651eb4a1af0319a2ef5aa533287cf8",
+    "results/service_launch.json": "3fadadbd1c9473fe9702f2b5d5cff6abdbe1550df04e171d977ad056e88c2f21",
+    "results/runtime/episode_000000/trace.jsonl": "12d084f842e1d17af00167c4f2edcbdd50cfc62f3626a29fb4ac7c31e4bd6a1e",
+    "results/runtime/episode_000000/summary.json": "9f89a098eed8be581dd1f0f1e1de13e13d292ba4dd14ca457d01291b374132d7",
+    "DWA_FAILURE_AUDIT.md": "872b82ab3e4f01d0a7bb5077f1e7d86e5ee5eafffd831f254093d8ca1e9f1d84",
+    "DWA_FAILURE_AUDIT.json": "db9dac449954decbbbc8be5fb9f2107f2c5befe0006d9466a4e3716d09818afe"
+  },
+  "dwa_audit": "DWA_FAILURE_AUDIT.json"
+}

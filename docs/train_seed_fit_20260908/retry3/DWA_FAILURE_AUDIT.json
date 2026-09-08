@@ -1,0 +1,78 @@
+{
+  "source_head": "772d5a1833f449f8e3e6e4a7993b527130c936f4",
+  "reference_head": "388b6818f4c605a707d13c519fbb58b1d07acd92",
+  "direct_log": {
+    "query_time_s": 3.2,
+    "last_control": {
+      "event": "navigation_control",
+      "timestamp_unix_s": 1788879734.9374168,
+      "reason": "validated_in_place_turn_required",
+      "command": [
+        0.0,
+        0.0,
+        -0.35
+      ],
+      "trace": {
+        "elapsed_s": 0.0,
+        "distance_to_snapped_goal_m": 0.11872928663886055,
+        "yaw_error_to_snapped_goal_rad": 0.3750588297843933,
+        "measured_pose_C_xyyaw": [
+          -0.8811202049255371,
+          6.33858585357666,
+          1.8200183924277846
+        ]
+      },
+      "deployment_certificate": "unknown"
+    },
+    "A_xyyaw": [
+      -0.8620812138770301,
+      6.313827981296429,
+      1.4449595626433913
+    ],
+    "B_raw_xyyaw": [
+      -0.9152450561523438,
+      6.224866294860839,
+      1.4449595626433913
+    ],
+    "snap_m": 0.10363674917199298,
+    "last_physics_time_s": 3.22,
+    "last_robot_root_pose": [
+      -0.8809037804603577,
+      6.3405585289001465,
+      0.23098032176494598,
+      0.6166454553604126,
+      0.009134208783507347,
+      -0.0026572300121188164,
+      0.7871834635734558
+    ],
+    "error": "navigation_rejected:dwa_zero_control_before_reach",
+    "model_queries": 8,
+    "all_routes": "NAV_TO_SOURCE"
+  },
+  "calculated_from_logged_state": {
+    "distance_to_B_m": 0.12068146598860498,
+    "distance_excess_above_0_12_m": 0.0006814659886049818,
+    "yaw_rad": 1.8125102514123381,
+    "yaw_error_to_B_rad": 0.3675506887689468
+  },
+  "source_verified": {
+    "DWA_tolerance_m": 0.12,
+    "outer_tolerance_m": 0.12,
+    "binding": "PCTDWAJointNavigationExecutor.__init__ calls ArmVLADWAControllerAdapter.bind_reach_config; replaces source DWA goal_tolerance with .12",
+    "guard": "guard_longitudinal_command zeroes nonzero abs(vx)<.16; rejects vy; clips vx/wz; nonzero wz not zeroed",
+    "boundary_switch": "distance<=.12 and yaw_error>.14 dispatches validated_in_place_turn_required; distance>.12 invokes DWA",
+    "logging_gap": "runner raises before recording rejected control; system zero-command branch omits raw_dwa_command and adapter.last_trace"
+  },
+  "conclusion": "Observed .1187292866 to .1206814660 m boundary crossing returns controller from in-place yaw to DWA. Subsequent guarded zero is known; raw-zero versus guard-zero is unknown. Tolerance mismatch is ruled out by source binding. No evidence of completed NAV or PICK.",
+  "not_proven": [
+    "exact raw DWA command at failing tick",
+    "DWA feasible candidate/debug state",
+    "whether guard introduced zero",
+    "whether one more legal controller step would complete task"
+  ],
+  "minimum_next_fix": "Log rejected control.trace plus DWA adapter.last_trace/raw/guarded commands before raise. Use one consistent terminal approach/turn state with explicit hysteresis and defined braking-zero semantics, preserving .12/.14 scoring. CPU test boundary crossing before any future physical budget.",
+  "sha256": {
+    "trace.jsonl": "12d084f842e1d17af00167c4f2edcbdd50cfc62f3626a29fb4ac7c31e4bd6a1e",
+    "summary.json": "9f89a098eed8be581dd1f0f1e1de13e13d292ba4dd14ca457d01291b374132d7"
+  }
+}
