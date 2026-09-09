@@ -1,5 +1,8 @@
 # 接近并抓起：独立任务分支
 
+当前工作服务器已改为 10.130.130.37；以下 H20 内容仅是历史验证记录。
+新路径与数据核查见 [数据与服务器交接](approach_grasp_data_20260909.md)。
+
 分支：`feat/approach-grasp-task-20260909`，基于
 `fix/mani-visual-conditioning-20260909@4e0fabf8c09fdf9fab8a130dfe0a363fa3369fad`。
 2026-09-09 用户明确将此新分支目标简化；原完整搬运分支与数据保留。
