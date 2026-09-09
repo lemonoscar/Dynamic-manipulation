@@ -64,3 +64,13 @@ PYTHONPATH=src:scripts python -m pytest -q -p no:cacheprovider \
 覆盖两任务上下文、PICK 无后续任务、实际物理步进函数的连续抓起窗口、
 实测张开/未抬起/辅助与无效证据拒绝、旧四任务和 3000 tick 时钟回归。
 这些是 CPU 测试，不计作 Isaac 物理实验。
+
+## 本次验证记录
+
+H20 主机 VM-0-3-ubuntu、隔离 worktree
+`/diff/wallx_workspace/dzb/ConveyorVLA-approach-grasp-20260909`，
+实现提交 `41d5887`：上述 4 个测试文件共 **15 项通过**、退出码 0。
+使用现有 Python 环境、GPU 可见性为空、120 秒 CPU 墙钟上限、0 优化步。
+日志：`/diff/wallx_workspace/dzb/integration_runs/approach_grasp_branch_20260909_v1/tests.log`；
+专用测试 tmux 已随任务结束退出。物理试验 0 条、训练 0 轮。
+本地默认 Python 缺少 pytest，未安装依赖，正式测试在 H20 既有环境执行。
