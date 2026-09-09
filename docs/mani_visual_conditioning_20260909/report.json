@@ -1,0 +1,239 @@
+{
+  "checkpoint": "/diff/wallx_workspace/dzb/integration_runs/rgb_full_episode_20260908_v1/trained/best.pt",
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "source_head": "4fba360d853d7fe9e5f6a3e5244bfc0fcd58f876",
+  "diagnostic_sha256": "47ff47778e82a31e85acc6fd06824c6e8b077437ee18fb00b61062fdbce94f6f",
+  "families": [
+    16100021,
+    16100026
+  ],
+  "max_queries": 8,
+  "max_wall_s": 1200,
+  "optimization_steps": 0,
+  "interpretation": "paired input interventions, not causal modality-importance percentages",
+  "variants": [
+    "baseline",
+    "swap_rgb",
+    "black_rgb",
+    "swap_qpos",
+    "swap_dq",
+    "swap_state"
+  ],
+  "queries": [
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t340:pre",
+      "images": [
+        "images/front/camera0_00330.jpg",
+        "images/front/camera0_00340.jpg",
+        "images/wrist/wrist_00330.jpg",
+        "images/wrist/wrist_00340.jpg"
+      ],
+      "query_time_s": 6.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t560:pre",
+      "images": [
+        "images/front/camera0_00550.jpg",
+        "images/front/camera0_00560.jpg",
+        "images/wrist/wrist_00550.jpg",
+        "images/wrist/wrist_00560.jpg"
+      ],
+      "query_time_s": 11.200000000000001
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1620:pre",
+      "images": [
+        "images/front/camera0_01610.jpg",
+        "images/front/camera0_01620.jpg",
+        "images/wrist/wrist_01610.jpg",
+        "images/wrist/wrist_01620.jpg"
+      ],
+      "query_time_s": 32.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1780:pre",
+      "images": [
+        "images/front/camera0_01770.jpg",
+        "images/front/camera0_01780.jpg",
+        "images/wrist/wrist_01770.jpg",
+        "images/wrist/wrist_01780.jpg"
+      ],
+      "query_time_s": 35.6
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t320:pre",
+      "images": [
+        "images/front/camera0_00310.jpg",
+        "images/front/camera0_00320.jpg",
+        "images/wrist/wrist_00310.jpg",
+        "images/wrist/wrist_00320.jpg"
+      ],
+      "query_time_s": 6.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t520:pre",
+      "images": [
+        "images/front/camera0_00510.jpg",
+        "images/front/camera0_00520.jpg",
+        "images/wrist/wrist_00510.jpg",
+        "images/wrist/wrist_00520.jpg"
+      ],
+      "query_time_s": 10.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1640:pre",
+      "images": [
+        "images/front/camera0_01630.jpg",
+        "images/front/camera0_01640.jpg",
+        "images/wrist/wrist_01630.jpg",
+        "images/wrist/wrist_01640.jpg"
+      ],
+      "query_time_s": 32.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1800:pre",
+      "images": [
+        "images/front/camera0_01790.jpg",
+        "images/front/camera0_01800.jpg",
+        "images/wrist/wrist_01790.jpg",
+        "images/wrist/wrist_01800.jpg"
+      ],
+      "query_time_s": 36.0
+    }
+  ],
+  "status": "complete",
+  "elapsed_s": 90.812749536708,
+  "by_route": {
+    "PICK": {
+      "baseline": {
+        "joint_target_mae_rad": 0.045313426045836186,
+        "gripper_target_mae_fraction": 0.03239699994317359,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "swap_rgb": {
+        "joint_target_mae_rad": 0.08020798272390023,
+        "gripper_target_mae_fraction": 0.030007134491784708,
+        "joint_change_mae_rad": 0.07128606963549355,
+        "gripper_change_mae_fraction": 0.015242513020833334
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.14884967197030186,
+        "gripper_target_mae_fraction": 0.4126330423582759,
+        "joint_change_mae_rad": 0.17026198510700608,
+        "gripper_change_mae_fraction": 0.4257266574435764
+      },
+      "swap_qpos": {
+        "joint_target_mae_rad": 0.054234627901040784,
+        "gripper_target_mae_fraction": 0.029296414005673593,
+        "joint_change_mae_rad": 0.01907087308394509,
+        "gripper_change_mae_fraction": 0.006871202256944445
+      },
+      "swap_dq": {
+        "joint_target_mae_rad": 0.043554118835156544,
+        "gripper_target_mae_fraction": 0.03258688709595137,
+        "joint_change_mae_rad": 0.010326994389228038,
+        "gripper_change_mae_fraction": 0.0020616319444444445
+      },
+      "swap_state": {
+        "joint_target_mae_rad": 0.05748355403697389,
+        "gripper_target_mae_fraction": 0.03011021608900693,
+        "joint_change_mae_rad": 0.029855294762415885,
+        "gripper_change_mae_fraction": 0.00859103732638889
+      }
+    },
+    "PLACE": {
+      "baseline": {
+        "joint_target_mae_rad": 0.017351806071156398,
+        "gripper_target_mae_fraction": 0.051523700309917334,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "swap_rgb": {
+        "joint_target_mae_rad": 0.0176397201834527,
+        "gripper_target_mae_fraction": 0.0511007463093847,
+        "joint_change_mae_rad": 0.008281431592877898,
+        "gripper_change_mae_fraction": 0.009392261505126953
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.03773901166014593,
+        "gripper_target_mae_fraction": 0.2638792023994029,
+        "joint_change_mae_rad": 0.03960429805936973,
+        "gripper_change_mae_fraction": 0.26413574209436774
+      },
+      "swap_qpos": {
+        "joint_target_mae_rad": 0.01868710566082979,
+        "gripper_target_mae_fraction": 0.050973621523007745,
+        "joint_change_mae_rad": 0.0050732988781747555,
+        "gripper_change_mae_fraction": 0.003765678405761719
+      },
+      "swap_dq": {
+        "joint_target_mae_rad": 0.017407836947731972,
+        "gripper_target_mae_fraction": 0.0514914661180228,
+        "joint_change_mae_rad": 0.0003313737263344399,
+        "gripper_change_mae_fraction": 0.00041866302490234375
+      },
+      "swap_state": {
+        "joint_target_mae_rad": 0.01871649812895,
+        "gripper_target_mae_fraction": 0.0511007463093847,
+        "joint_change_mae_rad": 0.005148168367336474,
+        "gripper_change_mae_fraction": 0.003999996185302734
+      }
+    },
+    "ALL": {
+      "baseline": {
+        "joint_target_mae_rad": 0.03133261605849629,
+        "gripper_target_mae_fraction": 0.04196035012654546,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "swap_rgb": {
+        "joint_target_mae_rad": 0.04892385145367646,
+        "gripper_target_mae_fraction": 0.04055394040058471,
+        "joint_change_mae_rad": 0.03978375061418572,
+        "gripper_change_mae_fraction": 0.012317387262980144
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.09329434181522388,
+        "gripper_target_mae_fraction": 0.3382561223788394,
+        "joint_change_mae_rad": 0.10493314158318791,
+        "gripper_change_mae_fraction": 0.3449311997689721
+      },
+      "swap_qpos": {
+        "joint_target_mae_rad": 0.03646086678093528,
+        "gripper_target_mae_fraction": 0.04013501776434067,
+        "joint_change_mae_rad": 0.012072085981059922,
+        "gripper_change_mae_fraction": 0.005318440331353082
+      },
+      "swap_dq": {
+        "joint_target_mae_rad": 0.030480977891444258,
+        "gripper_target_mae_fraction": 0.04203917660698708,
+        "joint_change_mae_rad": 0.00532918405778124,
+        "gripper_change_mae_fraction": 0.0012401474846733941
+      },
+      "swap_state": {
+        "joint_target_mae_rad": 0.03810002608296194,
+        "gripper_target_mae_fraction": 0.04060548119919582,
+        "joint_change_mae_rad": 0.01750173156487618,
+        "gripper_change_mae_fraction": 0.006295516755845811
+      }
+    }
+  },
+  "gpu_peak_allocated_bytes": 28705637376
+}

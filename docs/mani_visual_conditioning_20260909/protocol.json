@@ -1,0 +1,120 @@
+{
+  "checkpoint": "/diff/wallx_workspace/dzb/integration_runs/rgb_full_episode_20260908_v1/trained/best.pt",
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "source_head": "4fba360d853d7fe9e5f6a3e5244bfc0fcd58f876",
+  "diagnostic_sha256": "47ff47778e82a31e85acc6fd06824c6e8b077437ee18fb00b61062fdbce94f6f",
+  "families": [
+    16100021,
+    16100026
+  ],
+  "max_queries": 8,
+  "max_wall_s": 1200,
+  "optimization_steps": 0,
+  "interpretation": "paired input interventions, not causal modality-importance percentages",
+  "variants": [
+    "baseline",
+    "swap_rgb",
+    "black_rgb",
+    "swap_qpos",
+    "swap_dq",
+    "swap_state"
+  ],
+  "queries": [
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t340:pre",
+      "images": [
+        "images/front/camera0_00330.jpg",
+        "images/front/camera0_00340.jpg",
+        "images/wrist/wrist_00330.jpg",
+        "images/wrist/wrist_00340.jpg"
+      ],
+      "query_time_s": 6.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t560:pre",
+      "images": [
+        "images/front/camera0_00550.jpg",
+        "images/front/camera0_00560.jpg",
+        "images/wrist/wrist_00550.jpg",
+        "images/wrist/wrist_00560.jpg"
+      ],
+      "query_time_s": 11.200000000000001
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1620:pre",
+      "images": [
+        "images/front/camera0_01610.jpg",
+        "images/front/camera0_01620.jpg",
+        "images/wrist/wrist_01610.jpg",
+        "images/wrist/wrist_01620.jpg"
+      ],
+      "query_time_s": 32.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1780:pre",
+      "images": [
+        "images/front/camera0_01770.jpg",
+        "images/front/camera0_01780.jpg",
+        "images/wrist/wrist_01770.jpg",
+        "images/wrist/wrist_01780.jpg"
+      ],
+      "query_time_s": 35.6
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t320:pre",
+      "images": [
+        "images/front/camera0_00310.jpg",
+        "images/front/camera0_00320.jpg",
+        "images/wrist/wrist_00310.jpg",
+        "images/wrist/wrist_00320.jpg"
+      ],
+      "query_time_s": 6.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t520:pre",
+      "images": [
+        "images/front/camera0_00510.jpg",
+        "images/front/camera0_00520.jpg",
+        "images/wrist/wrist_00510.jpg",
+        "images/wrist/wrist_00520.jpg"
+      ],
+      "query_time_s": 10.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1640:pre",
+      "images": [
+        "images/front/camera0_01630.jpg",
+        "images/front/camera0_01640.jpg",
+        "images/wrist/wrist_01630.jpg",
+        "images/wrist/wrist_01640.jpg"
+      ],
+      "query_time_s": 32.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1800:pre",
+      "images": [
+        "images/front/camera0_01790.jpg",
+        "images/front/camera0_01800.jpg",
+        "images/wrist/wrist_01790.jpg",
+        "images/wrist/wrist_01800.jpg"
+      ],
+      "query_time_s": 36.0
+    }
+  ]
+}
