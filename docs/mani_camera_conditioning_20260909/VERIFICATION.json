@@ -1,0 +1,12 @@
+{
+  "hashes": {
+    "results/protocol.json": "4232dabec268b4cd492bbcf7a8790533a3186e2e3a4e67d566e8486463dda5b8",
+    "results/queries.jsonl": "21f640ea4f98077b38f1083c0cb4640e6e989ecdda6339ca0e87d1524e1d8090",
+    "results/report.json": "21bfed581d6d373e978ec3d800b826627b66ad618079e64d450a9861eda8a4f4"
+  },
+  "exit": "0\n",
+  "tests_exit": "0\n",
+  "tests_log": "..........                                                               [100%]\n",
+  "tmux": "conveyorvla_lz500_5hz_formal_r1\n",
+  "gpu_processes": "934046, GPU-1f200384-f510-edea-50ea-ac608d97b241, 8798 MiB\n3456789, GPU-1f200384-f510-edea-50ea-ac608d97b241, 67668 MiB\n720947, GPU-379db317-a866-d7a2-e6da-8df5acc1027f, 10124 MiB\n3465841, GPU-379db317-a866-d7a2-e6da-8df5acc1027f, 67668 MiB\n"
+}

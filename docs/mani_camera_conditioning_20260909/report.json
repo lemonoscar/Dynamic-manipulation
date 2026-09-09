@@ -1,0 +1,259 @@
+{
+  "checkpoint": "/diff/wallx_workspace/dzb/integration_runs/rgb_full_episode_20260908_v1/trained/best.pt",
+  "checkpoint_sha256": "474d03ff22da939f763574bf434c75226a2a2533ae984ced80e25e34a1df7fa0",
+  "source_head": "d671765a6a6907a7f324ec3ab795c6199c6b2276",
+  "diagnostic_sha256": "5b0a3d62a56c665ce46b1edf74882449206bbdacde1fd2897a25ce01f3d744ee",
+  "families": [
+    16100021,
+    16100026
+  ],
+  "max_queries": 8,
+  "max_wall_s": 600,
+  "optimization_steps": 0,
+  "study": "cameras",
+  "interpretation": "paired input interventions, not causal modality-importance percentages",
+  "variants": [
+    "baseline",
+    "black_front",
+    "black_wrist",
+    "swap_front",
+    "swap_wrist",
+    "black_rgb",
+    "exchange_camera_roles"
+  ],
+  "queries": [
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t340:pre",
+      "images": [
+        "images/front/camera0_00330.jpg",
+        "images/front/camera0_00340.jpg",
+        "images/wrist/wrist_00330.jpg",
+        "images/wrist/wrist_00340.jpg"
+      ],
+      "query_time_s": 6.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PICK",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t560:pre",
+      "images": [
+        "images/front/camera0_00550.jpg",
+        "images/front/camera0_00560.jpg",
+        "images/wrist/wrist_00550.jpg",
+        "images/wrist/wrist_00560.jpg"
+      ],
+      "query_time_s": 11.200000000000001
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1620:pre",
+      "images": [
+        "images/front/camera0_01610.jpg",
+        "images/front/camera0_01620.jpg",
+        "images/wrist/wrist_01610.jpg",
+        "images/wrist/wrist_01620.jpg"
+      ],
+      "query_time_s": 32.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100021",
+      "route": "PLACE",
+      "observation_id": "09d8f7f1-da79-4a6c-926f-332074ce2bef:r22:t1780:pre",
+      "images": [
+        "images/front/camera0_01770.jpg",
+        "images/front/camera0_01780.jpg",
+        "images/wrist/wrist_01770.jpg",
+        "images/wrist/wrist_01780.jpg"
+      ],
+      "query_time_s": 35.6
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t320:pre",
+      "images": [
+        "images/front/camera0_00310.jpg",
+        "images/front/camera0_00320.jpg",
+        "images/wrist/wrist_00310.jpg",
+        "images/wrist/wrist_00320.jpg"
+      ],
+      "query_time_s": 6.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PICK",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t520:pre",
+      "images": [
+        "images/front/camera0_00510.jpg",
+        "images/front/camera0_00520.jpg",
+        "images/wrist/wrist_00510.jpg",
+        "images/wrist/wrist_00520.jpg"
+      ],
+      "query_time_s": 10.4
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1640:pre",
+      "images": [
+        "images/front/camera0_01630.jpg",
+        "images/front/camera0_01640.jpg",
+        "images/wrist/wrist_01630.jpg",
+        "images/wrist/wrist_01640.jpg"
+      ],
+      "query_time_s": 32.8
+    },
+    {
+      "task_family_id": "liangzhu_seed_16100026",
+      "route": "PLACE",
+      "observation_id": "594f6489-81f7-4ebd-b4e2-3a5a00ed31b9:r27:t1800:pre",
+      "images": [
+        "images/front/camera0_01790.jpg",
+        "images/front/camera0_01800.jpg",
+        "images/wrist/wrist_01790.jpg",
+        "images/wrist/wrist_01800.jpg"
+      ],
+      "query_time_s": 36.0
+    }
+  ],
+  "status": "complete",
+  "elapsed_s": 95.22037423960865,
+  "by_route": {
+    "PICK": {
+      "baseline": {
+        "joint_target_mae_rad": 0.045313426045836186,
+        "gripper_target_mae_fraction": 0.03239699994317359,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "black_front": {
+        "joint_target_mae_rad": 0.07214511766573467,
+        "gripper_target_mae_fraction": 0.026757350388086507,
+        "joint_change_mae_rad": 0.0536814329072864,
+        "gripper_change_mae_fraction": 0.012953016493055556
+      },
+      "black_wrist": {
+        "joint_target_mae_rad": 0.07212850437047141,
+        "gripper_target_mae_fraction": 0.08827561828204326,
+        "joint_change_mae_rad": 0.0695221572400031,
+        "gripper_change_mae_fraction": 0.08002590621925063
+      },
+      "swap_front": {
+        "joint_target_mae_rad": 0.07047816336297563,
+        "gripper_target_mae_fraction": 0.03277677424872915,
+        "joint_change_mae_rad": 0.05346750507865233,
+        "gripper_change_mae_fraction": 0.01656901041666667
+      },
+      "swap_wrist": {
+        "joint_target_mae_rad": 0.053179593947555455,
+        "gripper_target_mae_fraction": 0.03704923518622915,
+        "joint_change_mae_rad": 0.022594045898910065,
+        "gripper_change_mae_fraction": 0.006437174479166667
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.14884967197030186,
+        "gripper_target_mae_fraction": 0.4126330423582759,
+        "joint_change_mae_rad": 0.17026198510700608,
+        "gripper_change_mae_fraction": 0.4257266574435764
+      },
+      "exchange_camera_roles": {
+        "joint_target_mae_rad": 0.06174737905063608,
+        "gripper_target_mae_fraction": 0.03361770250938005,
+        "joint_change_mae_rad": 0.044120215141139875,
+        "gripper_change_mae_fraction": 0.007020399305555555
+      }
+    },
+    "PLACE": {
+      "baseline": {
+        "joint_target_mae_rad": 0.017351806071156398,
+        "gripper_target_mae_fraction": 0.051523700309917334,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "black_front": {
+        "joint_target_mae_rad": 0.04174068335374101,
+        "gripper_target_mae_fraction": 0.1452830056194216,
+        "joint_change_mae_rad": 0.055428954960250104,
+        "gripper_change_mae_fraction": 0.14836363792419432
+      },
+      "black_wrist": {
+        "joint_target_mae_rad": 0.021545336420495408,
+        "gripper_target_mae_fraction": 0.09800152441021054,
+        "joint_change_mae_rad": 0.01231019563922893,
+        "gripper_change_mae_fraction": 0.053141021798364815
+      },
+      "swap_front": {
+        "joint_target_mae_rad": 0.017901759287051858,
+        "gripper_target_mae_fraction": 0.050308623863384125,
+        "joint_change_mae_rad": 0.009686714098340946,
+        "gripper_change_mae_fraction": 0.00845651626586914
+      },
+      "swap_wrist": {
+        "joint_target_mae_rad": 0.017260464703848823,
+        "gripper_target_mae_fraction": 0.05056776711717248,
+        "joint_change_mae_rad": 0.003512153137301314,
+        "gripper_change_mae_fraction": 0.005134296417236329
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.03773901166014593,
+        "gripper_target_mae_fraction": 0.2638792023994029,
+        "joint_change_mae_rad": 0.03960429805936973,
+        "gripper_change_mae_fraction": 0.26413574209436774
+      },
+      "exchange_camera_roles": {
+        "joint_target_mae_rad": 0.037480251221011826,
+        "gripper_target_mae_fraction": 0.15928851580247283,
+        "joint_change_mae_rad": 0.04292724775456048,
+        "gripper_change_mae_fraction": 0.10986442542634905
+      }
+    },
+    "ALL": {
+      "baseline": {
+        "joint_target_mae_rad": 0.03133261605849629,
+        "gripper_target_mae_fraction": 0.04196035012654546,
+        "joint_change_mae_rad": 0.0,
+        "gripper_change_mae_fraction": 0.0
+      },
+      "black_front": {
+        "joint_target_mae_rad": 0.05694290050973785,
+        "gripper_target_mae_fraction": 0.08602017800375404,
+        "joint_change_mae_rad": 0.05455519393376826,
+        "gripper_change_mae_fraction": 0.08065832720862495
+      },
+      "black_wrist": {
+        "joint_target_mae_rad": 0.046836920395483414,
+        "gripper_target_mae_fraction": 0.09313857134612691,
+        "joint_change_mae_rad": 0.040916176439616016,
+        "gripper_change_mae_fraction": 0.06658346400880773
+      },
+      "swap_front": {
+        "joint_target_mae_rad": 0.044189961325013745,
+        "gripper_target_mae_fraction": 0.041542699056056634,
+        "joint_change_mae_rad": 0.031577109588496646,
+        "gripper_change_mae_fraction": 0.012512763341267904
+      },
+      "swap_wrist": {
+        "joint_target_mae_rad": 0.03522002932570214,
+        "gripper_target_mae_fraction": 0.04380850115170082,
+        "joint_change_mae_rad": 0.013053099518105689,
+        "gripper_change_mae_fraction": 0.005785735448201498
+      },
+      "black_rgb": {
+        "joint_target_mae_rad": 0.09329434181522388,
+        "gripper_target_mae_fraction": 0.3382561223788394,
+        "joint_change_mae_rad": 0.10493314158318791,
+        "gripper_change_mae_fraction": 0.3449311997689721
+      },
+      "exchange_camera_roles": {
+        "joint_target_mae_rad": 0.049613815135823955,
+        "gripper_target_mae_fraction": 0.09645310915592645,
+        "joint_change_mae_rad": 0.043523731447850184,
+        "gripper_change_mae_fraction": 0.058442412365952295
+      }
+    }
+  },
+  "gpu_peak_allocated_bytes": 28710004224
+}
