@@ -19,12 +19,15 @@ class StagedConfig:
     fk_loss_weight: float = 0.
     update_period_s: float = .4
     depth_tokens: int = 16
+    mani_state_dropout: float = 0.
 
     def __post_init__(self):
         if self.time_profile not in TIME_PROFILES or self.nav_output not in {'trajectory','endpoint'} or self.coupling not in {'C0','C1'}:
             raise ValueError('unsupported staged configuration')
         if self.update_period_s!=.4 or self.depth_tokens<=0 or self.fk_loss_weight<0:
             raise ValueError('invalid staged timing/loss budget')
+        if not 0 <= self.mani_state_dropout <= 1:
+            raise ValueError('mani_state_dropout must be in [0,1]')
 
 
 class StagedExperts(nn.Module):
@@ -56,8 +59,9 @@ class StagedExperts(nn.Module):
         banks=None if self.config.coupling=='C0' else ((task_tokens,task_mask),(live_tokens,live_mask))
         return combined,mask,banks
 
-    def clean(self, head, vl, state, x, time, mask, banks):
-        predicted=head._predict_clean(vl,state,x,time,mask,condition_banks=banks)
+    def clean(self, head, vl, state, x, time, mask, banks, *, state_token_keep=None):
+        kwargs={} if state_token_keep is None else {'state_token_keep':state_token_keep}
+        predicted=head._predict_clean(vl,state,x,time,mask,condition_banks=banks,**kwargs)
         if head is self.manipulation and self.config.bounded_gripper:
             predicted=torch.cat((predicted[:,:,:6],2*torch.sigmoid(predicted[:,:,6:])-1),-1)
         return predicted
@@ -103,7 +107,13 @@ class StagedExperts(nn.Module):
             if not suffix.any(1).all():raise ValueError('RTC prefix leaves no valid action suffix')
             token_time=torch.where(delayed,token_time,1.)
         x=token_time[...,None]*actions+(1-token_time[...,None])*noise
-        predicted=self.clean(head,vl,state,x,token_time if self.config.training_rtc and domain=='MANIPULATION' else time,mask,banks)
+        state_token_keep=None
+        if self.training and domain=='MANIPULATION' and self.config.mani_state_dropout:
+            # One mask per query, shared by its whole action chunk. No state
+            # corruption in validation, sampling or VJP RTC; p=0 consumes no RNG.
+            state_token_keep=torch.rand(batch,device=actions.device)>=self.config.mani_state_dropout
+        predicted=self.clean(head,vl,state,x,token_time if self.config.training_rtc and domain=='MANIPULATION' else time,mask,banks,
+            state_token_keep=state_token_keep)
         error=((predicted-actions)/(1-token_time[...,None]).clamp_min(head.config.time_epsilon)).square()
         loss=(error*suffix[...,None]).sum()/(suffix.sum()*dim)
         if domain=='MANIPULATION' and self.config.fk_loss_weight:

@@ -12,7 +12,7 @@ import random
 import sys
 import time
 from collections import Counter, defaultdict
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -240,6 +240,10 @@ def main(argv=None):
     old = validate_formal_checkpoint(args.legacy_checkpoint, ROOT / 'configs/manipulation_navi_v1.json')
     saved = torch.load(args.staged_checkpoint, map_location='cpu', weights_only=True)
     candidate = StagedConfig(**saved['candidate'])
+    # Explicitly opted-in training regularization; saved with the new candidate.
+    # Old configurations/checkpoints retain p=0 and their exact inference path.
+    if 'mani_state_dropout' in budget:
+        candidate = replace(candidate, mani_state_dropout=budget['mani_state_dropout'])
     if candidate.depth or candidate.training_rtc or candidate.time_profile != manifest['time_profile']:
         raise ValueError('staged initializer must be compatible RGB causal inference-RTC weights')
     normalizer = StagedNormalizer(saved['normalizer'])

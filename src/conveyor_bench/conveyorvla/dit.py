@@ -555,7 +555,7 @@ class M0DiTActionHead(nn.Module):
         noisy_actions: torch.Tensor,
         time: torch.Tensor,
         encoder_attention_mask: torch.Tensor | None,
-        *, condition_banks=None,
+        *, condition_banks=None, state_token_keep=None,
     ) -> torch.Tensor:
         discrete_time = (time * self.config.num_timestep_buckets).long()
         action_features = self.action_encoder(noisy_actions, discrete_time)
@@ -568,7 +568,16 @@ class M0DiTActionHead(nn.Module):
         if self.state_encoder is not None:
             if state is None:
                 raise ValueError("stateful ABot-M0 action head requires state")
-            hidden_parts.append(self.state_encoder(state))
+            state_features = self.state_encoder(state)
+            if state_token_keep is not None:
+                if state_token_keep.dtype != torch.bool or state_token_keep.shape != (state.shape[0],):
+                    raise ValueError('state token keep mask must be bool [batch]')
+                # Mask after the MLP, including its bias; retained tokens keep
+                # their original magnitude. The real execution anchor is separate.
+                state_features = state_features.masked_fill(~state_token_keep[:, None, None], 0)
+            hidden_parts.append(state_features)
+        elif state_token_keep is not None:
+            raise ValueError('stateless head cannot mask a state token')
         hidden_parts.extend((future, action_features))
         hidden = torch.cat(hidden_parts, dim=1)
         model_time = discrete_time
