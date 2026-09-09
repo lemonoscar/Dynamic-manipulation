@@ -85,6 +85,19 @@ def test_mask_is_per_query_and_retained_token_not_rescaled():
     with pytest.raises(ValueError):head._predict_clean(vl,s[:,None],a,kw['time'],mask,state_token_keep=torch.ones(2))
 
 
+def test_loss_draws_one_whole_token_mask_per_query(monkeypatch):
+    model,c,s,a,kw=inputs(.5)
+    calls=[]
+    def draw(*shape, **kwargs):
+        calls.append(shape)
+        return torch.tensor([.1,.9],device=kwargs['device'])
+    monkeypatch.setattr(torch,'rand',draw)
+    loss=model.loss('MANIPULATION',a,s,c,**kw)
+    loss.backward()
+    assert calls==[(2,)]
+    assert s.grad[0].abs().sum()==0 and s.grad[1].abs().sum()>0
+
+
 @pytest.mark.parametrize('value',[-.1,1.1,float('nan'),float('inf')])
 def test_probability_is_validated(value):
     with pytest.raises(ValueError):StagedConfig(mani_state_dropout=value)
