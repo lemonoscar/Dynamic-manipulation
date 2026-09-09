@@ -25,6 +25,7 @@ from scripts.serve_full_episode_diagnostic import PROTOCOL
 from conveyor_bench.conveyorvla.contracts.observation import CurrentObservation
 from conveyor_bench.conveyorvla.formal_checkpoint import sha256, write_json
 from conveyor_bench.conveyorvla.formal_physics import FormalPhysics
+from conveyor_bench.conveyorvla.physical_events import RelativeGraspEvaluator
 from conveyor_bench.conveyorvla.joint_trajectory import JointTrajectoryRoute
 from conveyor_bench.conveyorvla.joint_trajectory_system import measured_named_joint_state
 from conveyor_bench.conveyorvla.joint_trajectory_runtime import DirectJointCommand, NavigationReference
@@ -38,6 +39,44 @@ from conveyor_bench.conveyorvla.full_episode_context import public_context_text
 
 class SimulationClockExpired(Exception):
     """The only normal termination of timer-only research execution."""
+
+
+APPROACH_GRASP_INSTRUCTION = 'Approach the cola can, grasp it, and lift it stably.'
+
+
+def initial_task_context(mode):
+    tasks = ['NAV_TO_SOURCE', 'PICK']
+    if mode != 'approach_grasp':
+        tasks += ['NAV_TO_TARGET', 'PLACE']
+    return {'completed_tasks': [], 'active_task': tasks[0],
+            'remaining_tasks': tasks, 'current_facts': {}}
+
+
+def predicts_transition(mode, context):
+    return mode == 'autonomous' or (mode in {'train_seed_full', 'approach_grasp'}
+                                   and len(context['remaining_tasks']) > 1)
+
+
+def approach_grasp_result(summary, grasp_evidence, first_success_time_s):
+    """Offline score only; a planner claim never establishes a physical grasp."""
+    physics = summary.get('physics_evidence') or {}
+    gates = {
+        'scoring_valid': summary.get('scoring_valid') is True,
+        'closed_at_60s': summary.get('status') == 'complete' and
+            abs(summary.get('clock_elapsed_s', -1) - 60.) < 1e-7,
+        'stable_lift_with_measured_and_commanded_closed_gripper':
+            grasp_evidence.get('ever_geometry_hold_proxy') is True,
+        'physical_pick_observed': physics.get('pick_verified') is True,
+        'no_attachment_or_reset': physics.get('profile') == 'no_grasp_assist' and
+            physics.get('grasp_constraint_created') is False and
+            physics.get('mid_episode_object_resets') == 0,
+    }
+    return {'schema': 'approach-grasp-score-v1', 'success': all(gates.values()),
+            'gates': gates, 'first_success_time_s': first_success_time_s,
+            'geometry_evidence': grasp_evidence,
+            'success_semantics': 'stable_lift_geometry_proxy_not_contact_verified',
+            'strict_contact_success': (physics.get('evaluation_v2') or {}).get(
+                'ever_contact_grasp_verified')}
 
 
 def source_query(root, tick):
@@ -312,6 +351,16 @@ def pipeline_type(options):
                 except Exception as error:
                     if not options.timer_only:raise
                     self._advisory('object_evidence_invalid',error=str(error),scoring_valid=False)
+            if hasattr(self,'approach_grasp_evaluator') and route==JointTrajectoryRoute.PICK:
+                try:
+                    # Both command and measured joint7 must stay closed in the SAME window.
+                    closed=max(self.physics.command_fraction,
+                        measured_named_joint_state(state).gripper_open_fraction)
+                    result=self.approach_grasp_evaluator.observe(state,closed)
+                    if result['geometry_hold_proxy'] and self.approach_grasp_first_success_s is None:
+                        self.approach_grasp_first_success_s=float(state.timestamp)-self.clock_start_s
+                except Exception as error:
+                    self._advisory('approach_grasp_evaluator_error',error=str(error),scoring_valid=False)
             return state
 
         def _navigation_window(self, plan, query_state):
@@ -370,7 +419,7 @@ def pipeline_type(options):
             summary={'schema':'full1700-physical-diagnostic-v1','status':'running','success':False,
                 'full_task_success':None,'deployment_gate_passed':False,'strict_full_success':None,
                 'execution_mode':options.mode,'timer_only':options.timer_only,'normal_termination':'simulation_clock_60s' if options.timer_only else 'legacy_bounded','rtc':options.rtc,'pure_physics_success':None,
-                'state_trace':self._state_trace,'history_source':'model_claim_not_verified_completion' if options.mode=='train_seed_full' else 'fixed_context',
+                'state_trace':self._state_trace,'history_source':'model_claim_not_verified_completion' if options.mode in {'train_seed_full','approach_grasp'} else 'fixed_context',
                 'planner_FINISH':None,'time_profile':'causal_command_5hz',
                 'replan_period_s':.4,'control_period_s':.02,'inference_pauses_simulation':True,
                 'new_condition':options.condition_label,'source_solver_reproduction':False,
@@ -392,8 +441,8 @@ def pipeline_type(options):
                 summary['model_identity']=health
                 context=json.loads(options.task_context.read_text());public_context_text(context)
                 self.route=JointTrajectoryRoute(context['active_task'])
-                if options.mode in {'autonomous','train_seed_full'} and context != {'completed_tasks':[],'active_task':'NAV_TO_SOURCE','remaining_tasks':['NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'],'current_facts':{}}:
-                    raise ValueError('autonomous attempt must start at complete four-task skeleton')
+                if options.mode in {'autonomous','train_seed_full','approach_grasp'} and context != initial_task_context(options.mode):
+                    raise ValueError('attempt must start at the exact task skeleton for its mode')
                 obs,sample,parent=source_query(options.source_episode,options.query_tick)
                 summary['source_hashes']={n:sha256(options.source_episode/n) for n in ('manifest.json','control_effective_50hz.jsonl','observations.jsonl','samples.jsonl')}
                 fraction=parent['channels']['gripper']['target'][0]/.04
@@ -408,6 +457,11 @@ def pipeline_type(options):
                 self.physics=FormalPhysics(self.raw_sim,'no_grasp_assist',self._record)
                 self.simulation=self.physics;self.physics.arm()
                 self.physics.previous_fraction=self.physics.command_fraction=fraction
+                if options.mode=='approach_grasp':
+                    self.approach_grasp_evaluator=RelativeGraspEvaluator(
+                        self.physics.initial_pose[2],
+                        lambda event, data: self._record('approach_grasp_'+event, data))
+                    self.approach_grasp_first_success_s=None
                 self.config=replace(self.config,video=replace(self.config.video,fps=5.))
                 self._start_video()
                 self.frames=PolicyCameraGrid(separation_steps=10,jpeg_quality=self.jpeg_quality)
@@ -418,8 +472,8 @@ def pipeline_type(options):
                     from conveyor_bench.isaac.grasp_contact_probe import IsaacGraspContactProbe
                     probe=IsaacGraspContactProbe(self.raw_sim,self._record);self.raw_sim.read_grasp_contacts=probe.read
                 mission=f'full1700:{self.episode_seed}:{hashlib.sha256(str(self.episode_dir).encode()).hexdigest()[:12]}'
-                tasks=tuple(Task(f'diagnostic-task-{i}',f'diagnostic-attempt-{i}',name,'cola','destination') for i,name in enumerate(('NAV_TO_SOURCE','PICK','NAV_TO_TARGET','PLACE'))) if options.mode=='train_seed_full' else transfer_skeleton() if options.mode=='autonomous' else (Task('fixed-diagnostic','fixed-attempt',self.route.value,'cola','destination'),)
-                model_instruction=options.model_instruction or str(self.episode_spec.instruction)
+                tasks=tuple(Task(f'diagnostic-task-{i}',f'diagnostic-attempt-{i}',name,'cola',None if options.mode=='approach_grasp' else 'destination') for i,name in enumerate(context['remaining_tasks'])) if options.mode in {'train_seed_full','approach_grasp'} else transfer_skeleton() if options.mode=='autonomous' else (Task('fixed-diagnostic','fixed-attempt',self.route.value,'cola','destination'),)
+                model_instruction=options.model_instruction or (APPROACH_GRASP_INSTRUCTION if options.mode=='approach_grasp' else str(self.episode_spec.instruction))
                 summary['model_instruction']=model_instruction
                 summary['source_task_instruction']=str(self.episode_spec.instruction)
                 self.memory=TaskMemory(mission,model_instruction,tasks,mode='H1')
@@ -455,7 +509,7 @@ def pipeline_type(options):
                             'instruction':model_instruction,
                             'head_images':payload['head_images'],'wrist_images':payload['wrist_images'],
                             'diffusion_seed':(options.diffusion_seed+query*1009)%(2**32),
-                            'predict_transition':options.mode=='autonomous' or (options.mode=='train_seed_full' and self.route!=JointTrajectoryRoute.PLACE)}
+                            'predict_transition':predicts_transition(options.mode,context)}
                         packet=old.waypoint_runner._jsonable(packet)
                         self._record('model_request',packet)
                         before=self.simulation.read().step_index;request_started=time.perf_counter()
@@ -492,8 +546,11 @@ def pipeline_type(options):
                         transition=response.get('transition')
                         if transition is not None and transition.get('valid') is False:
                             self._advisory('transition_prediction_rejected',request_id=request.request_id,transition=transition)
+                        if options.mode=='approach_grasp' and transition is not None and transition.get('proposal') is not None and transition['proposal']['operation']=='ADVANCE' and not packet['predict_transition']:
+                            self._advisory('terminal_task_transition_ignored',transition=transition)
+                            transition=None
                         if transition is not None and transition.get('proposal') is not None and transition['proposal']['operation']=='ADVANCE':
-                            if options.mode=='train_seed_full':
+                            if options.mode in {'train_seed_full','approach_grasp'}:
                                 runtime.pending.pop(request.request_id)
                                 context=advance_model_claim(self.memory,context,observation)
                                 self.route=JointTrajectoryRoute(context['active_task'])
@@ -508,7 +565,7 @@ def pipeline_type(options):
                         plan=runtime.complete_request(request.request_id,response['physical_actions'],now_s=observation.time_s)
                         if self.route.value.startswith('NAV_'):
                             self._record('navigation_proposal',old.waypoint_runner._jsonable(plan))
-                            if options.mode=='train_seed_full':
+                            if options.mode in {'train_seed_full','approach_grasp'}:
                                 self._navigation_window(plan,state)
                                 if runtime.safety_stop_reason is not None and not options.timer_only:
                                     summary.update(status='failed',failure_reason='safety_stop_'+runtime.safety_stop_reason);break
@@ -566,6 +623,13 @@ def pipeline_type(options):
                     evidence=summary['physics_evidence']
                     summary['full_task_success']=bool(evidence['pick_verified'] and evidence['carry_verified'] and evidence['release_observed'] and not evidence['drop_detected'] and self._latest_truth is not None and self._latest_truth.success.success)
                     summary['full_task_score_source']='independent_evaluator_not_planner_input'
+                if options.mode=='approach_grasp':
+                    score=approach_grasp_result(summary,
+                        self.approach_grasp_evaluator.evidence() if hasattr(self,'approach_grasp_evaluator') else {},
+                        getattr(self,'approach_grasp_first_success_s',None))
+                    summary.update(task_contract='approach-grasp-v1',approach_grasp=score,
+                        success=score['success'],success_semantics=score['success_semantics'],
+                        full_task_success=None,full_task_score_source='not_applicable_approach_grasp_task')
                 try:
                     if hasattr(self,'trusted'):self.simulation.apply(self._measured_hold('full1700_final_hold'))
                     summary['video']=self._close_video(summary['status'])
@@ -587,7 +651,7 @@ def main():
     p.add_argument('--condition-label',required=True)
     p.add_argument('--expected-sha256',required=True)
     p.add_argument('--endpoint',default='http://127.0.0.1:18170')
-    p.add_argument('--mode',choices=['fixed_task','autonomous','train_seed_full'],required=True)
+    p.add_argument('--mode',choices=['fixed_task','autonomous','train_seed_full','approach_grasp'],required=True)
     p.add_argument('--rtc',action='store_true')
     p.add_argument('--timer-only',action='store_true',help='research only: all runtime diagnostics advisory; finish at 60 simulation seconds')
     p.add_argument('--measured-speed-limit',type=float,default=3.)
@@ -601,7 +665,8 @@ def main():
     options,runtime=p.parse_known_args()
     if not 0<options.simulation_seconds<=600 or not 0<options.max_queries<=1500 or not 0<options.measured_speed_limit<=30 or not 0<=options.measured_position_tolerance<=.02 or not 0<options.diagnostic_pct_snap_max<=.5:
         raise ValueError('bounded diagnostic only: <=600 physics seconds, <=1500 queries, <=30rad/s, <=.02rad measured tolerance')
-    if options.timer_only and options.mode!='train_seed_full':raise ValueError('timer-only requires train_seed_full')
+    if options.timer_only and options.mode not in {'train_seed_full','approach_grasp'}:raise ValueError('timer-only requires train_seed_full or approach_grasp')
+    if options.mode=='approach_grasp' and not options.timer_only:raise ValueError('approach_grasp requires --timer-only (60 simulation seconds)')
     if options.rtc and options.mode=='fixed_task' and (options.first_plan is None or not options.first_plan.is_file()):
         raise ValueError('paired RTC-on requires prior frozen RTC-off first plan')
     if not options.rtc and options.first_plan is not None and options.first_plan.exists():
