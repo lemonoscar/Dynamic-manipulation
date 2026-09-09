@@ -88,3 +88,16 @@ def test_mask_is_per_query_and_retained_token_not_rescaled():
 @pytest.mark.parametrize('value',[-.1,1.1,float('nan'),float('inf')])
 def test_probability_is_validated(value):
     with pytest.raises(ValueError):StagedConfig(mani_state_dropout=value)
+
+
+def test_old_resume_defaults_only_zero_dropout():
+    from scripts.train_staged_vla import check_resume
+    current=dict(candidate=asdict(StagedConfig()),release='bound-source')
+    old=json.loads(json.dumps(current));old['candidate'].pop('mani_state_dropout')
+    saved=dict(schema='staged-training-state-v1',training_binding=old,
+        optimizer={},rng={},model={},training_steps=1,elapsed_wall_s=1,best_validation_loss=1)
+    check_resume(saved,current)
+    current['candidate']['mani_state_dropout']=.3
+    with pytest.raises(ValueError):check_resume(saved,current)
+    current['candidate']['mani_state_dropout']=0.;current['release']='foreign'
+    with pytest.raises(ValueError):check_resume(saved,current)

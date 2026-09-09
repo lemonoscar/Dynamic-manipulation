@@ -140,7 +140,11 @@ def restore_rng(saved, generator):
 
 
 def check_resume(saved, binding):
-    if saved.get('schema') != 'staged-training-state-v1' or saved.get('training_binding') != binding:
+    def canonical(value):
+        if isinstance(value, dict) and isinstance(value.get('candidate'), dict):
+            return {**value, 'candidate': asdict(StagedConfig(**value['candidate']))}
+        return value
+    if saved.get('schema') != 'staged-training-state-v1' or canonical(saved.get('training_binding')) != canonical(binding):
         raise ValueError('resume release/cache/encoder/normalizer/config identity mismatch')
     for key in ('optimizer', 'rng', 'model', 'training_steps', 'elapsed_wall_s', 'best_validation_loss'):
         if key not in saved:
@@ -219,7 +223,7 @@ def main(argv=None):
     if a.resume or a.initialization:
         checkpoint = a.resume or a.initialization
         saved = torch.load(checkpoint, map_location='cpu', weights_only=True)
-        if saved['candidate'] != asdict(config):
+        if StagedConfig(**saved['candidate']) != config:
             raise ValueError('staged checkpoint candidate mismatch')
         if saved['encoder_model_id'] != a.encoder_model_id or saved['normalizer'] != normalizer.payload:
             raise ValueError('staged initialization encoder/normalizer mismatch')
